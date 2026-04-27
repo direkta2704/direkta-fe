@@ -11,20 +11,20 @@ interface SidebarProps {
 }
 
 const navMain = [
-  { href: "/dashboard", label: "Overview", icon: "dashboard" },
-  { href: "/dashboard/properties", label: "Properties", icon: "home_work" },
-  { href: "/dashboard/listings", label: "Listings", icon: "description" },
-  { href: "/dashboard/leads", label: "Leads", icon: "people" },
-  { href: "/dashboard/offers", label: "Offers", icon: "handshake" },
-  { href: "/dashboard/viewings", label: "Viewings", icon: "calendar_month" },
+  { href: "/dashboard", label: "Übersicht", icon: "dashboard" },
+  { href: "/dashboard/properties", label: "Immobilien", icon: "home_work" },
+  { href: "/dashboard/listings", label: "Inserate", icon: "description" },
+  { href: "/dashboard/leads", label: "Interessenten", icon: "people" },
+  { href: "/dashboard/offers", label: "Angebote", icon: "handshake" },
+  { href: "/dashboard/viewings", label: "Besichtigungen", icon: "calendar_month" },
 ];
 
 const navTools = [
-  { href: "/dashboard/syndication", label: "Portal Sync", icon: "sync_alt" },
+  { href: "/dashboard/syndication", label: "Portal-Sync", icon: "sync_alt" },
 ];
 
 const navBottom = [
-  { href: "/dashboard/settings", label: "Settings", icon: "settings" },
+  { href: "/dashboard/settings", label: "Einstellungen", icon: "settings" },
 ];
 
 export default function Sidebar({ userName, userEmail }: SidebarProps) {
@@ -53,7 +53,7 @@ export default function Sidebar({ userName, userEmail }: SidebarProps) {
       {/* Main nav */}
       <div className="px-3 flex-1">
         <div className="text-[9px] font-black uppercase tracking-[0.25em] text-white/30 px-3 mb-3">
-          Main
+          Hauptmenü
         </div>
         <nav className="space-y-1">
           {navMain.map((item) => (
@@ -71,7 +71,7 @@ export default function Sidebar({ userName, userEmail }: SidebarProps) {
                 {item.icon}
               </span>
               {item.label}
-              {item.label === "Leads" && (
+              {item.label === "Interessenten" && (
                 <span className="ml-auto text-[10px] font-black bg-primary/20 text-primary px-2 py-0.5 rounded-full">
                   3
                 </span>
@@ -81,7 +81,7 @@ export default function Sidebar({ userName, userEmail }: SidebarProps) {
         </nav>
 
         <div className="text-[9px] font-black uppercase tracking-[0.25em] text-white/30 px-3 mb-3 mt-8">
-          Tools
+          Werkzeuge
         </div>
         <nav className="space-y-1">
           {navTools.map((item) => (
@@ -128,7 +128,7 @@ export default function Sidebar({ userName, userEmail }: SidebarProps) {
           className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-white/60 hover:text-white hover:bg-white/[0.06] transition-all duration-200 w-full"
         >
           <span className="material-symbols-outlined text-xl">logout</span>
-          Sign out
+          Abmelden
         </button>
       </div>
 

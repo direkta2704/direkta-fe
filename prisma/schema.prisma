@@ -7,6 +7,8 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ─── Auth Models (NextAuth) ────────────────────────────────────
+
 enum UserRole {
   SELLER
   ADMIN
@@ -25,8 +27,12 @@ model User {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   deletedAt     DateTime?
-  accounts      Account[]
-  sessions      Session[]
+
+  accounts          Account[]
+  sessions          Session[]
+  properties        Property[]
+  conversations     Conversation[]
+  portalCredentials PortalCredential[]
 }
 
 model Account {
@@ -61,4 +67,508 @@ model VerificationToken {
   expires    DateTime
 
   @@unique([identifier, token])
+}
+
+// ─── Core Domain Models ────────────────────────────────────────
+
+enum PropertyType {
+  ETW
+  EFH
+  MFH
+  DHH
+  RH
+  GRUNDSTUECK
+}
+
+enum PropertyCondition {
+  ERSTBEZUG
+  GEPFLEGT
+  RENOVIERUNGS_BEDUERFTIG
+  SANIERUNGS_BEDUERFTIG
+  NEUBAU
+  ROHBAU
+}
+
+model Property {
+  id          String            @id @default(cuid())
+  userId      String
+  type        PropertyType
+  street      String
+  houseNumber String
+  postcode    String
+  city        String
+  country     String            @default("DE")
+  lat         Float?
+  lng         Float?
+  livingArea  Float
+  plotArea    Float?
+  yearBuilt   Int?
+  rooms       Float?
+  bathrooms   Int?
+  floor       Int?
+  condition   PropertyCondition
+  attributes  Json?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  user        User              @relation(fields: [userId], references: [id])
+  energyCert  EnergyCertificate?
+  listings    Listing[]
+  media       MediaAsset[]
+}
+
+enum EnergyCertType {
+  VERBRAUCH
+  BEDARF
+}
+
+model EnergyCertificate {
+  id            String         @id @default(cuid())
+  propertyId    String         @unique
+  type          EnergyCertType
+  validUntil    DateTime
+  energyClass   String
+  energyValue   Float
+  primarySource String
+  pdfAssetId    String?
+  createdAt     DateTime       @default(now())
+
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+}
+
+enum MediaKind {
+  PHOTO
+  FLOORPLAN
+  DOCUMENT
+  ENERGY_PDF
+  ID_PROOF
+  FINANCING_PROOF
+}
+
+model MediaAsset {
+  id         String    @id @default(cuid())
+  propertyId String?
+  listingId  String?
+  kind       MediaKind
+  storageKey String
+  fileName   String?
+  mimeType   String
+  sizeBytes  Int?
+  width      Int?
+  height     Int?
+  enhanced   Boolean   @default(false)
+  ordering   Int       @default(0)
+  createdAt  DateTime  @default(now())
+
+  property Property? @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  listing  Listing?  @relation(fields: [listingId], references: [id], onDelete: Cascade)
+}
+
+enum ListingStatus {
+  DRAFT
+  REVIEW
+  ACTIVE
+  PAUSED
+  RESERVED
+  CLOSED
+  WITHDRAWN
+}
+
+enum PricingModel {
+  FLAT_FEE
+  SUCCESS_FEE
+}
+
+model Listing {
+  id              String        @id @default(cuid())
+  propertyId      String
+  status          ListingStatus @default(DRAFT)
+  slug            String        @unique
+  titleShort      String?
+  descriptionLong String?
+  askingPrice     Decimal?
+  pricingModel    PricingModel  @default(FLAT_FEE)
+  publishedAt     DateTime?
+  pausedAt        DateTime?
+  closedAt        DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  property          Property           @relation(fields: [propertyId], references: [id])
+  priceRecommendation PriceRecommendation?
+  leads             Lead[]
+  offers            Offer[]
+  viewings          Viewing[]
+  events            ListingEvent[]
+  media             MediaAsset[]
+  syndicationTargets SyndicationTarget[]
+}
+
+enum PriceConfidence {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+model PriceRecommendation {
+  id            String          @id @default(cuid())
+  listingId     String          @unique
+  low           Decimal
+  median        Decimal
+  high          Decimal
+  strategyQuick Decimal
+  strategyReal  Decimal
+  strategyMax   Decimal
+  confidence    PriceConfidence
+  createdAt     DateTime        @default(now())
+
+  listing     Listing      @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  comparables Comparable[]
+}
+
+model Comparable {
+  id              String       @id @default(cuid())
+  priceRecId      String
+  source          String
+  externalId      String?
+  type            PropertyType
+  livingArea      Float
+  pricePerSqm     Float
+  distanceMeters  Int
+  ageDays         Int
+  similarityScore Float
+
+  priceRecommendation PriceRecommendation @relation(fields: [priceRecId], references: [id], onDelete: Cascade)
+}
+
+// ─── Lead & Buyer Models ───────────────────────────────────────
+
+enum FinancingState {
+  CASH
+  PRE_APPROVED
+  IN_PROCESS
+  NONE
+  UNKNOWN
+}
+
+enum BuyerTiming {
+  IMMEDIATELY
+  WITHIN_3M
+  WITHIN_6M
+  LATER
+  UNKNOWN
+}
+
+enum LeadStatus {
+  NEW
+  QUALIFYING
+  QUALIFIED
+  VIEWING_SCHEDULED
+  OFFER_MADE
+  DECLINED
+}
+
+model Lead {
+  id             String          @id @default(cuid())
+  listingId      String
+  emailRaw       String
+  name           String?
+  phone          String?
+  message        String?
+  budget         Decimal?
+  financingState FinancingState?
+  timing         BuyerTiming?
+  qualityScore   Int?
+  status         LeadStatus      @default(NEW)
+  source         String          @default("direkta")
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  listing  Listing   @relation(fields: [listingId], references: [id])
+  viewings Viewing[]
+}
+
+model BuyerProfile {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  name         String
+  phone        String?
+  idVerifiedAt DateTime?
+  idAssetId    String?
+  createdAt    DateTime  @default(now())
+
+  offers Offer[]
+}
+
+enum ViewingMode {
+  ONSITE
+  VIRTUAL
+}
+
+enum ViewingStatus {
+  PROPOSED
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+model Viewing {
+  id        String        @id @default(cuid())
+  listingId String
+  leadId    String?
+  buyerId   String?
+  startsAt  DateTime
+  endsAt    DateTime
+  mode      ViewingMode   @default(ONSITE)
+  status    ViewingStatus @default(PROPOSED)
+  notes     String?
+  createdAt DateTime      @default(now())
+
+  listing Listing @relation(fields: [listingId], references: [id])
+  lead    Lead?   @relation(fields: [leadId], references: [id])
+}
+
+enum OfferStatus {
+  SUBMITTED
+  UNDER_REVIEW
+  ACCEPTED
+  REJECTED
+  WITHDRAWN
+  COUNTERED
+}
+
+model Offer {
+  id               String      @id @default(cuid())
+  listingId        String
+  buyerId          String
+  amount           Decimal
+  financingProofId String?
+  conditions       String?
+  desiredClosingAt DateTime?
+  scoreAmount      Int?
+  scoreFinance     Int?
+  scoreTiming      Int?
+  scoreRisk        Int?
+  scoreComposite   Int?
+  status           OfferStatus @default(SUBMITTED)
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  listing Listing      @relation(fields: [listingId], references: [id])
+  buyer   BuyerProfile @relation(fields: [buyerId], references: [id])
+}
+
+model Transaction {
+  id                      String   @id @default(cuid())
+  listingId               String   @unique
+  acceptedOfferId         String   @unique
+  notaryName              String?
+  notaryAddress           String?
+  reservationPdfAssetId   String?
+  closedAt                DateTime?
+  finalPrice              Decimal?
+  feePricingModel         PricingModel?
+  feeAmountCents          Int?
+  createdAt               DateTime @default(now())
+}
+
+model ListingEvent {
+  id          String   @id @default(cuid())
+  listingId   String
+  type        String
+  payload     Json?
+  actorUserId String?
+  createdAt   DateTime @default(now())
+
+  listing Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+}
+
+// ─── Agent Models ──────────────────────────────────────────────
+
+enum AgentKind {
+  EXPOSE
+  LISTING
+}
+
+enum ConversationStatus {
+  ACTIVE
+  PAUSED
+  COMPLETED
+  ABANDONED
+}
+
+model Conversation {
+  id        String             @id @default(cuid())
+  userId    String
+  listingId String?
+  agentKind AgentKind
+  status    ConversationStatus @default(ACTIVE)
+  startedAt DateTime           @default(now())
+  closedAt  DateTime?
+
+  user  User               @relation(fields: [userId], references: [id])
+  turns ConversationTurn[]
+}
+
+enum TurnRole {
+  USER
+  AGENT
+  TOOL
+  SYSTEM
+}
+
+model ConversationTurn {
+  id             String   @id @default(cuid())
+  conversationId String
+  role           TurnRole
+  content        String
+  toolName       String?
+  toolInput      Json?
+  toolOutput     Json?
+  tokensIn       Int?
+  tokensOut      Int?
+  latencyMs      Int?
+  createdAt      DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+}
+
+enum AgentRunStatus {
+  RUNNING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+}
+
+model AgentRun {
+  id             String         @id @default(cuid())
+  agentKind      AgentKind
+  conversationId String?
+  listingId      String?
+  goal           String
+  status         AgentRunStatus @default(RUNNING)
+  costCents      Int?
+  startedAt      DateTime       @default(now())
+  finishedAt     DateTime?
+  error          String?
+
+  steps AgentStep[]
+}
+
+model AgentStep {
+  id         String   @id @default(cuid())
+  agentRunId String
+  ordinal    Int
+  toolName   String
+  input      Json
+  output     Json?
+  latencyMs  Int?
+  ok         Boolean
+  error      String?
+  createdAt  DateTime @default(now())
+
+  agentRun AgentRun @relation(fields: [agentRunId], references: [id], onDelete: Cascade)
+}
+
+// ─── Portal Syndication Models ─────────────────────────────────
+
+enum Portal {
+  IMMOSCOUT24
+  IMMOWELT
+  KLEINANZEIGEN
+}
+
+enum CredentialStatus {
+  ACTIVE
+  INVALID
+  REVOKED
+  EXPIRED
+}
+
+model PortalCredential {
+  id             String           @id @default(cuid())
+  userId         String
+  portal         Portal
+  username       String
+  passwordCipher Bytes
+  consentedAt    DateTime
+  reconfirmedAt  DateTime?
+  status         CredentialStatus @default(ACTIVE)
+  lastVerifiedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+enum SyndicationStatus {
+  NONE
+  QUEUED
+  LIVE
+  PAUSED
+  FAILED
+  WITHDRAWN
+}
+
+model SyndicationTarget {
+  id                String            @id @default(cuid())
+  listingId         String
+  portal            Portal
+  externalListingId String?
+  externalUrl       String?
+  status            SyndicationStatus @default(NONE)
+  lastSyncedAt      DateTime?
+
+  listing Listing          @relation(fields: [listingId], references: [id])
+  jobs    SyndicationJob[]
+  stats   PortalStat[]
+
+  @@unique([listingId, portal])
+}
+
+enum SyndicationJobKind {
+  PUBLISH
+  UPDATE
+  PAUSE
+  UNPAUSE
+  WITHDRAW
+  SYNC_STATS
+  SYNC_LEADS
+}
+
+enum JobStatus {
+  QUEUED
+  RUNNING
+  SUCCESS
+  FAILED
+  RETRYING
+  DEAD
+}
+
+model SyndicationJob {
+  id                  String             @id @default(cuid())
+  syndicationTargetId String
+  kind                SyndicationJobKind
+  status              JobStatus          @default(QUEUED)
+  attempts            Int                @default(0)
+  lastError           String?
+  agentRunId          String?
+  scheduledFor        DateTime           @default(now())
+  startedAt           DateTime?
+  finishedAt          DateTime?
+
+  syndicationTarget SyndicationTarget @relation(fields: [syndicationTargetId], references: [id], onDelete: Cascade)
+}
+
+model PortalStat {
+  id                  String   @id @default(cuid())
+  syndicationTargetId String
+  date                DateTime
+  impressions         Int      @default(0)
+  detailViews         Int      @default(0)
+  contactRequests     Int      @default(0)
+  bookmarks           Int      @default(0)
+
+  syndicationTarget SyndicationTarget @relation(fields: [syndicationTargetId], references: [id], onDelete: Cascade)
+
+  @@unique([syndicationTargetId, date])
 }

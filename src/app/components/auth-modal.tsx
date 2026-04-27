@@ -118,7 +118,7 @@ function SignInView({
     setLoading(false);
 
     if (result?.error) {
-      setError("Invalid email or password");
+      setError("Ungültige E-Mail oder Passwort");
       return;
     }
 
@@ -132,10 +132,10 @@ function SignInView({
         id="auth-heading"
         className="text-2xl font-black text-blueprint mb-2"
       >
-        Welcome back
+        Willkommen zurück
       </h2>
       <p className="text-sm text-slate-500 mb-8">
-        Sign in to your Direkta account to continue.
+        Melden Sie sich bei Ihrem Direkta-Konto an.
       </p>
 
       {error && (
@@ -147,13 +147,13 @@ function SignInView({
       <form onSubmit={handleSubmit} className="space-y-5">
         <div>
           <label className="block text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 mb-2">
-            Email
+            E-Mail
           </label>
           <input
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="you@example.com"
+            placeholder="ihre@email.de"
             autoComplete="email"
             required
             className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm text-blueprint placeholder:text-slate-400 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
@@ -162,13 +162,13 @@ function SignInView({
         <div>
           <div className="flex items-center justify-between mb-2">
             <label className="block text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">
-              Password
+              Passwort
             </label>
             <button
               type="button"
               className="text-[10px] font-bold text-primary hover:text-primary-dark transition-colors"
             >
-              Forgot password?
+              Passwort vergessen?
             </button>
           </div>
           <input
@@ -187,7 +187,7 @@ function SignInView({
           disabled={loading}
           className="w-full bg-primary hover:bg-primary-dark text-white py-3.5 rounded-xl font-black text-sm uppercase tracking-[0.18em] transition-all duration-300 hover:scale-[1.02] shadow-lg shadow-primary/25 disabled:opacity-60 disabled:hover:scale-100"
         >
-          {loading ? "Signing in..." : "Sign in"}
+          {loading ? "Wird angemeldet..." : "Login"}
         </button>
       </form>
 
@@ -195,12 +195,12 @@ function SignInView({
       <GoogleButton />
 
       <p className="text-center text-sm text-slate-500 mt-8">
-        Don&apos;t have an account?{" "}
+        Noch kein Konto?{" "}
         <button
           onClick={onSwitch}
           className="font-bold text-primary hover:text-primary-dark transition-colors"
         >
-          Create one free
+          Kostenlos registrieren
         </button>
       </p>
     </>
@@ -226,12 +226,12 @@ function SignUpView({
     setError("");
 
     if (!agreed) {
-      setError("Please agree to the AGB and Datenschutz");
+      setError("Bitte stimmen Sie den AGB und der Datenschutzerklärung zu");
       return;
     }
 
     if (password.length < 8) {
-      setError("Password must be at least 8 characters");
+      setError("Passwort muss mindestens 8 Zeichen lang sein");
       return;
     }
 
@@ -260,7 +260,7 @@ function SignUpView({
     setLoading(false);
 
     if (result?.error) {
-      setError("Account created but sign-in failed. Please sign in manually.");
+      setError("Konto erstellt, aber Anmeldung fehlgeschlagen. Bitte melden Sie sich manuell an.");
       onSwitch();
       return;
     }
@@ -275,10 +275,10 @@ function SignUpView({
         id="auth-heading"
         className="text-2xl font-black text-blueprint mb-2"
       >
-        Create your account
+        Konto erstellen
       </h2>
       <p className="text-sm text-slate-500 mb-8">
-        Start selling your property — no commission.
+        Verkaufen Sie Ihre Immobilie — ohne Maklerprovision.
       </p>
 
       {error && (
@@ -290,7 +290,7 @@ function SignUpView({
       <form onSubmit={handleSubmit} className="space-y-5">
         <div>
           <label className="block text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 mb-2">
-            Full name
+            Vollständiger Name
           </label>
           <input
             type="text"
@@ -303,13 +303,13 @@ function SignUpView({
         </div>
         <div>
           <label className="block text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 mb-2">
-            Email
+            E-Mail
           </label>
           <input
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="you@example.com"
+            placeholder="ihre@email.de"
             autoComplete="email"
             required
             className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm text-blueprint placeholder:text-slate-400 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
@@ -317,13 +317,13 @@ function SignUpView({
         </div>
         <div>
           <label className="block text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 mb-2">
-            Password
+            Passwort
           </label>
           <input
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            placeholder="Min. 8 characters"
+            placeholder="Mind. 8 Zeichen"
             autoComplete="new-password"
             required
             className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm text-blueprint placeholder:text-slate-400 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
@@ -338,20 +338,21 @@ function SignUpView({
             className="mt-0.5 w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary/20"
           />
           <span className="text-xs text-slate-500 leading-relaxed">
-            I agree to the{" "}
+            Ich stimme den{" "}
             <a
               href="#"
               className="font-bold text-blueprint hover:text-primary transition-colors"
             >
               AGB
             </a>{" "}
-            and{" "}
+            und der{" "}
             <a
               href="#"
               className="font-bold text-blueprint hover:text-primary transition-colors"
             >
-              Datenschutz
-            </a>
+              Datenschutzerklärung
+            </a>{" "}
+            zu
           </span>
         </label>
 
@@ -360,7 +361,7 @@ function SignUpView({
           disabled={loading}
           className="w-full bg-primary hover:bg-primary-dark text-white py-3.5 rounded-xl font-black text-sm uppercase tracking-[0.18em] transition-all duration-300 hover:scale-[1.02] shadow-lg shadow-primary/25 disabled:opacity-60 disabled:hover:scale-100"
         >
-          {loading ? "Creating account..." : "Create account"}
+          {loading ? "Konto wird erstellt..." : "Konto erstellen"}
         </button>
       </form>
 
@@ -368,12 +369,12 @@ function SignUpView({
       <GoogleButton />
 
       <p className="text-center text-sm text-slate-500 mt-8">
-        Already have an account?{" "}
+        Bereits ein Konto?{" "}
         <button
           onClick={onSwitch}
           className="font-bold text-primary hover:text-primary-dark transition-colors"
         >
-          Sign in
+          Login
         </button>
       </p>
     </>
@@ -385,7 +386,7 @@ function Divider() {
     <div className="flex items-center gap-4 my-6">
       <div className="flex-1 h-px bg-slate-200"></div>
       <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
-        Or continue with
+        Oder weiter mit
       </span>
       <div className="flex-1 h-px bg-slate-200"></div>
     </div>

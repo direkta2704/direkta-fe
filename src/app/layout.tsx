@@ -28,7 +28,7 @@ export default function RootLayout({
 }>) {
   return (
     <html
-      lang="en"
+      lang="de"
       className={`${bricolage.variable} ${manrope.variable} antialiased`}
     >
       <head>
