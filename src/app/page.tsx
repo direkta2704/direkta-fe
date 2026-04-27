@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useSession, signOut } from "next-auth/react";
+import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import AuthModal from "./components/auth-modal";
 
@@ -10,6 +10,7 @@ export default function Home() {
   const router = useRouter();
   const [modalView, setModalView] = useState<"signin" | "signup" | null>(null);
   const [mobileNav, setMobileNav] = useState(false);
+  const [listingsLoaded, setListingsLoaded] = useState(false);
   const [publicListings, setPublicListings] = useState<Array<{
     id: string; slug: string; titleShort: string | null; askingPrice: string | null;
     property: { type: string; street: string; houseNumber: string; postcode: string; city: string; livingArea: number; rooms: number | null; media: { storageKey: string }[]; energyCert: { energyClass: string } | null };
@@ -24,8 +25,8 @@ export default function Home() {
   useEffect(() => {
     fetch("/api/public/listings")
       .then((r) => r.json())
-      .then((data) => setPublicListings(Array.isArray(data) ? data.slice(0, 6) : []))
-      .catch(() => {});
+      .then((data) => { setPublicListings(Array.isArray(data) ? data.slice(0, 6) : []); setListingsLoaded(true); })
+      .catch(() => setListingsLoaded(true));
   }, []);
 
   useEffect(() => {
@@ -125,36 +126,19 @@ export default function Home() {
             </a>
           </nav>
           <div className="flex items-center gap-2 flex-shrink-0">
-            {session?.user ? (
-              <>
-                <span className="hidden md:inline-block text-[11px] font-black uppercase tracking-[0.18em] text-slate-700 px-3 py-2 truncate max-w-[140px]">
-                  {session.user.name || session.user.email}
-                </span>
-                <button
-                  onClick={() => signOut()}
-                  className="hidden sm:flex bg-blueprint hover:bg-primary text-white px-5 py-2.5 rounded-full text-[11px] font-black uppercase tracking-[0.18em] transition-all duration-300 hover:scale-[1.03] items-center gap-1.5"
-                >
-                  Abmelden
-                  <span className="material-symbols-outlined text-base">logout</span>
-                </button>
-              </>
-            ) : (
-              <>
-                <button
-                  onClick={() => setModalView("signin")}
-                  className="hidden md:inline-block text-[11px] font-black uppercase tracking-[0.18em] text-slate-700 hover:text-primary transition-colors px-3 py-2"
-                >
-                  Login
-                </button>
-                <button
-                  onClick={() => setModalView("signup")}
-                  className="hidden sm:flex bg-blueprint hover:bg-primary text-white px-5 py-2.5 rounded-full text-[11px] font-black uppercase tracking-[0.18em] transition-all duration-300 hover:scale-[1.03] items-center gap-1.5 whitespace-nowrap"
-                >
-                  Kostenlos starten
-                  <span className="material-symbols-outlined text-base">arrow_forward</span>
-                </button>
-              </>
-            )}
+            <button
+              onClick={() => setModalView("signin")}
+              className="hidden md:inline-block text-[11px] font-black uppercase tracking-[0.18em] text-slate-700 hover:text-primary transition-colors px-3 py-2"
+            >
+              Login
+            </button>
+            <button
+              onClick={() => setModalView("signup")}
+              className="hidden sm:flex bg-blueprint hover:bg-primary text-white px-5 py-2.5 rounded-full text-[11px] font-black uppercase tracking-[0.18em] transition-all duration-300 hover:scale-[1.03] items-center gap-1.5 whitespace-nowrap"
+            >
+              Kostenlos starten
+              <span className="material-symbols-outlined text-base">arrow_forward</span>
+            </button>
             {/* Mobile hamburger */}
             <button
               onClick={() => setMobileNav(!mobileNav)}
@@ -189,16 +173,6 @@ export default function Home() {
                 </a>
               ))}
               <div className="pt-4 mt-2 border-t border-slate-100 space-y-3">
-                {session?.user ? (
-                  <button
-                    onClick={() => { signOut(); setMobileNav(false); }}
-                    className="w-full bg-blueprint text-white py-3 rounded-xl text-sm font-black uppercase tracking-[0.15em] flex items-center justify-center gap-2"
-                  >
-                    Abmelden
-                    <span className="material-symbols-outlined text-base">logout</span>
-                  </button>
-                ) : (
-                  <>
                     <button
                       onClick={() => { setModalView("signin"); setMobileNav(false); }}
                       className="w-full bg-white border border-slate-200 text-blueprint py-3 rounded-xl text-sm font-black uppercase tracking-[0.15em]"
@@ -212,8 +186,6 @@ export default function Home() {
                       Kostenlos starten
                       <span className="material-symbols-outlined text-base">arrow_forward</span>
                     </button>
-                  </>
-                )}
               </div>
             </div>
           </div>
@@ -1060,7 +1032,7 @@ export default function Home() {
         </section>
 
         {/* ========== AKTUELLE INSERATE ========== */}
-        {publicListings.length > 0 && (
+        {listingsLoaded && publicListings.length > 0 && (
           <section className="py-28 px-6 bg-white">
             <div className="max-w-7xl mx-auto">
               <div className="text-center max-w-3xl mx-auto mb-16 reveal">
@@ -1542,34 +1514,22 @@ export default function Home() {
                 </p>
                 <ul className="space-y-4 text-sm text-white/60">
                   <li>
-                    <a
-                      className="hover:text-primary transition-colors"
-                      href="#"
-                    >
+                    <a className="hover:text-primary transition-colors" href="/impressum">
                       Impressum
                     </a>
                   </li>
                   <li>
-                    <a
-                      className="hover:text-primary transition-colors"
-                      href="#"
-                    >
+                    <a className="hover:text-primary transition-colors" href="/datenschutz">
                       Datenschutz
                     </a>
                   </li>
                   <li>
-                    <a
-                      className="hover:text-primary transition-colors"
-                      href="#"
-                    >
+                    <a className="hover:text-primary transition-colors" href="/agb">
                       AGB
                     </a>
                   </li>
                   <li>
-                    <a
-                      className="hover:text-primary transition-colors"
-                      href="#"
-                    >
+                    <a className="hover:text-primary transition-colors" href="/widerrufsrecht">
                       Widerrufsrecht
                     </a>
                   </li>

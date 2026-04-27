@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Bricolage_Grotesque, Manrope } from "next/font/google";
 import Providers from "./providers";
+import CookieBanner from "./components/cookie-banner";
 import "./globals.css";
 
 const bricolage = Bricolage_Grotesque({
@@ -16,9 +17,9 @@ const manrope = Manrope({
 });
 
 export const metadata: Metadata = {
-  title: "Direkta — Sell your property. Direct.",
+  title: "Direkta — Immobilie verkaufen. Direkt.",
   description:
-    "Direkta is a complete software-driven sales process for German homeowners. Listing, pricing, qualified leads, offers, and notary — all in one place. No 3.57% commission.",
+    "Direkta ist ein vollständiger, softwaregestützter Verkaufsprozess für deutsche Immobilienbesitzer. Inserat, Preisfindung, qualifizierte Interessenten, Angebote und Notar — alles an einem Ort. Keine 3,57% Provision.",
 };
 
 export default function RootLayout({
@@ -39,6 +40,7 @@ export default function RootLayout({
       </head>
       <body className="bg-background-light text-blueprint overflow-x-hidden">
         <Providers>{children}</Providers>
+        <CookieBanner />
       </body>
     </html>
   );
