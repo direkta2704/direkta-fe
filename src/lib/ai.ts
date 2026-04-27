@@ -99,7 +99,7 @@ export async function generateListingTexts(property: PropertyInput): Promise<{
       "X-Title": "Direkta",
     },
     body: JSON.stringify({
-      model: "anthropic/claude-sonnet-4-20250514",
+      model: "openai/gpt-4o",
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         {
@@ -122,8 +122,8 @@ Antworte im folgenden JSON-Format (nur JSON, kein Markdown):
 
   if (!response.ok) {
     const err = await response.text();
-    console.error("OpenRouter error:", err);
-    throw new Error("KI-Textgenerierung fehlgeschlagen");
+    console.error("OpenRouter error:", response.status, err);
+    throw new Error(`KI-Fehler (${response.status}): ${err.substring(0, 200)}`);
   }
 
   const data = await response.json();

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 
 interface PropertyItem {
   id: string;
@@ -15,7 +16,7 @@ interface PropertyItem {
   condition: string;
   createdAt: string;
   energyCert: { energyClass: string } | null;
-  media: { id: string }[];
+  media: { id: string; storageKey: string }[];
   listings: { id: string; status: string }[];
 }
 
@@ -85,10 +86,20 @@ export default function PropertiesPage() {
               href={`/dashboard/properties/${p.id}`}
               className="bg-white rounded-2xl border border-slate-200 p-6 hover:border-primary/30 hover:shadow-lg hover:shadow-primary/5 transition-all group"
             >
-              <div className="w-full h-36 rounded-xl bg-slate-100 flex items-center justify-center mb-4 overflow-hidden">
-                <span className="material-symbols-outlined text-3xl text-slate-300">
-                  {p.media.length > 0 ? "image" : "add_photo_alternate"}
-                </span>
+              <div className="w-full h-36 rounded-xl bg-slate-100 flex items-center justify-center mb-4 overflow-hidden relative">
+                {p.media.length > 0 ? (
+                  <Image
+                    src={p.media[0].storageKey}
+                    alt={`${p.street} ${p.houseNumber}`}
+                    fill
+                    className="object-cover"
+                    sizes="(max-width: 768px) 100vw, (max-width: 1024px) 50vw, 33vw"
+                  />
+                ) : (
+                  <span className="material-symbols-outlined text-3xl text-slate-300">
+                    add_photo_alternate
+                  </span>
+                )}
               </div>
               <div className="flex items-center gap-2 mb-2">
                 <span className="text-[10px] font-black uppercase tracking-widest text-primary bg-primary/10 px-2 py-0.5 rounded">{p.type}</span>

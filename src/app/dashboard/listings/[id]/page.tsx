@@ -63,6 +63,7 @@ export default function ListingDetailPage() {
   const [generating, setGenerating] = useState(false);
   const [pricing, setPricing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [publishing, setPublishing] = useState(false);
   const [error, setError] = useState("");
 
   const [titleShort, setTitleShort] = useState("");
@@ -131,6 +132,32 @@ export default function ListingDetailPage() {
       setError(err instanceof Error ? err.message : "Speichern fehlgeschlagen");
     }
     setSaving(false);
+  }
+
+  async function handlePublish() {
+    setPublishing(true);
+    setError("");
+    try {
+      // Save first
+      await fetch(`/api/listings/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ titleShort, descriptionLong, askingPrice: parseFloat(askingPrice) }),
+      });
+      // Then publish
+      const res = await fetch(`/api/listings/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "ACTIVE" }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setListing((prev) => (prev ? { ...prev, ...data } : prev));
+      router.push("/dashboard/listings");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Veröffentlichung fehlgeschlagen");
+    }
+    setPublishing(false);
   }
 
   function applyStrategy(price: string) {
@@ -410,11 +437,12 @@ export default function ListingDetailPage() {
               {saving ? "Wird gespeichert..." : "Speichern"}
             </button>
             <button
-              disabled={!canPublish}
+              onClick={handlePublish}
+              disabled={!canPublish || publishing}
               className="bg-primary hover:bg-primary-dark text-white px-6 py-3 rounded-xl text-sm font-black uppercase tracking-[0.18em] transition-all hover:scale-[1.02] shadow-lg shadow-primary/25 disabled:opacity-40 disabled:hover:scale-100 flex items-center gap-2"
             >
               <span className="material-symbols-outlined text-lg">publish</span>
-              Veröffentlichen
+              {publishing ? "Wird veröffentlicht..." : "Veröffentlichen"}
             </button>
           </div>
         </div>
