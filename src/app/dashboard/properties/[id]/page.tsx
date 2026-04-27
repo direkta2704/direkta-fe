@@ -56,6 +56,13 @@ export default function PropertyDetailPage() {
   const [creating, setCreating] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [listingData, setListingData] = useState<{
+    titleShort: string | null;
+    descriptionLong: string | null;
+    askingPrice: string | null;
+    status: string;
+  } | null>(null);
 
   const fetchProperty = useCallback(() => {
     fetch(`/api/properties/${id}`)
@@ -67,6 +74,17 @@ export default function PropertyDetailPage() {
   useEffect(() => {
     fetchProperty();
   }, [fetchProperty]);
+
+  async function openPreview() {
+    if (property?.listings[0]?.id) {
+      const res = await fetch(`/api/listings/${property.listings[0].id}`);
+      if (res.ok) {
+        const data = await res.json();
+        setListingData(data);
+      }
+    }
+    setPreviewOpen(true);
+  }
 
   async function uploadFiles(files: FileList | File[]) {
     setUploading(true);
@@ -159,13 +177,22 @@ export default function PropertyDetailPage() {
               {creating ? "Wird erstellt..." : "Inserat erstellen"}
             </button>
           ) : (
-            <button
-              onClick={() => router.push(`/dashboard/listings/${property.listings[0].id}`)}
-              className="bg-blueprint hover:bg-primary text-white px-5 py-3 rounded-xl text-sm font-black uppercase tracking-[0.18em] transition-colors flex items-center gap-2"
-            >
-              <span className="material-symbols-outlined text-lg">description</span>
-              Inserat anzeigen
-            </button>
+            <>
+              <button
+                onClick={openPreview}
+                className="bg-white border border-slate-200 hover:border-primary text-blueprint px-5 py-3 rounded-xl text-sm font-black uppercase tracking-[0.18em] transition-colors flex items-center gap-2"
+              >
+                <span className="material-symbols-outlined text-lg">visibility</span>
+                Vorschau
+              </button>
+              <button
+                onClick={() => router.push(`/dashboard/listings/${property.listings[0].id}`)}
+                className="bg-blueprint hover:bg-primary text-white px-5 py-3 rounded-xl text-sm font-black uppercase tracking-[0.18em] transition-colors flex items-center gap-2"
+              >
+                <span className="material-symbols-outlined text-lg">edit</span>
+                Bearbeiten
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -361,7 +388,163 @@ export default function PropertyDetailPage() {
           )}
         </div>
       </div>
+
+      {/* Preview Modal */}
+      {previewOpen && property && (
+        <div className="fixed inset-0 z-[200] overflow-y-auto">
+          <div className="fixed inset-0 bg-blueprint/60 backdrop-blur-sm modal-backdrop" onClick={() => setPreviewOpen(false)} />
+          <div className="relative flex justify-center p-4 min-h-full">
+            <div className="relative w-full max-w-3xl my-8 bg-white rounded-3xl shadow-2xl modal-panel overflow-hidden h-fit">
+            {/* Header */}
+            <div className="sticky top-0 z-10 bg-white/90 backdrop-blur-md border-b border-slate-200 px-7 py-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <span className="material-symbols-outlined text-primary">visibility</span>
+                <span className="text-sm font-black text-blueprint uppercase tracking-[0.15em]">Inserats-Vorschau</span>
+                {listingData?.status && (
+                  <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${
+                    listingData.status === "ACTIVE" ? "bg-emerald-50 text-emerald-600"
+                    : listingData.status === "DRAFT" ? "bg-amber-50 text-amber-600"
+                    : "bg-slate-100 text-slate-500"
+                  }`}>{listingData.status}</span>
+                )}
+              </div>
+              <button onClick={() => setPreviewOpen(false)} className="w-8 h-8 rounded-full hover:bg-slate-100 flex items-center justify-center text-slate-400 hover:text-slate-600 transition-colors">
+                <span className="material-symbols-outlined text-xl">close</span>
+              </button>
+            </div>
+
+            {/* Photo gallery */}
+            {photos.length > 0 ? (
+              <div className="grid grid-cols-2 gap-1">
+                <div className="col-span-2 aspect-[16/9] relative">
+                  <Image src={photos[0].storageKey} alt="" fill className="object-cover" sizes="768px" />
+                </div>
+                {photos.slice(1, 5).map((photo) => (
+                  <div key={photo.id} className="aspect-[4/3] relative">
+                    <Image src={photo.storageKey} alt="" fill className="object-cover" sizes="384px" />
+                  </div>
+                ))}
+                {photos.length > 5 && (
+                  <div className="aspect-[4/3] relative">
+                    <Image src={photos[5].storageKey} alt="" fill className="object-cover" sizes="384px" />
+                    {photos.length > 6 && (
+                      <div className="absolute inset-0 bg-blueprint/60 flex items-center justify-center">
+                        <span className="text-white font-black text-lg">+{photos.length - 6} Fotos</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="bg-slate-100 h-48 flex items-center justify-center">
+                <span className="material-symbols-outlined text-4xl text-slate-300">image</span>
+              </div>
+            )}
+
+            <div className="p-7 space-y-6">
+              {/* Price + Title */}
+              <div>
+                {listingData?.askingPrice && (
+                  <div className="text-3xl font-black text-primary mb-2">
+                    €{Number(listingData.askingPrice).toLocaleString("de-DE")}
+                  </div>
+                )}
+                <h2 className="text-2xl font-black text-blueprint">
+                  {listingData?.titleShort || `${property.street} ${property.houseNumber}, ${property.city}`}
+                </h2>
+                <p className="text-slate-500 mt-1">{property.street} {property.houseNumber}, {property.postcode} {property.city}</p>
+              </div>
+
+              {/* Key facts */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <FactChip icon="straighten" label="Wohnfläche" value={`${property.livingArea} m²`} />
+                {property.rooms && <FactChip icon="meeting_room" label="Zimmer" value={String(property.rooms)} />}
+                {property.bathrooms && <FactChip icon="bathtub" label="Badezimmer" value={String(property.bathrooms)} />}
+                {property.yearBuilt && <FactChip icon="calendar_month" label="Baujahr" value={String(property.yearBuilt)} />}
+                {property.plotArea && <FactChip icon="landscape" label="Grundstück" value={`${property.plotArea} m²`} />}
+                {property.floor != null && <FactChip icon="layers" label="Etage" value={String(property.floor)} />}
+              </div>
+
+              {/* Description */}
+              {listingData?.descriptionLong ? (
+                <div>
+                  <h3 className="text-sm font-black text-blueprint uppercase tracking-[0.15em] mb-3">Beschreibung</h3>
+                  <div className="text-sm text-slate-600 leading-relaxed whitespace-pre-line">
+                    {listingData.descriptionLong}
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-700">
+                  Noch keine Beschreibung generiert. Bearbeiten Sie das Inserat, um eine KI-Beschreibung zu erstellen.
+                </div>
+              )}
+
+              {/* Features */}
+              {property.attributes && (property.attributes as string[]).length > 0 && (
+                <div>
+                  <h3 className="text-sm font-black text-blueprint uppercase tracking-[0.15em] mb-3">Ausstattung</h3>
+                  <div className="flex flex-wrap gap-2">
+                    {(property.attributes as string[]).map((attr) => (
+                      <span key={attr} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-xs font-medium text-blueprint">
+                        <span className="material-symbols-outlined text-primary text-sm">check</span>
+                        {attr}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Energy */}
+              {property.energyCert && (
+                <div className="bg-slate-50 rounded-xl p-5">
+                  <h3 className="text-sm font-black text-blueprint uppercase tracking-[0.15em] mb-3">Energieausweis</h3>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
+                    <div>
+                      <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-0.5">Typ</div>
+                      <div className="font-medium text-blueprint">{property.energyCert.type === "VERBRAUCH" ? "Verbrauch" : "Bedarf"}</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-0.5">Klasse</div>
+                      <div className="font-black text-primary text-lg">{property.energyCert.energyClass}</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-0.5">Verbrauch</div>
+                      <div className="font-medium text-blueprint">{property.energyCert.energyValue} kWh/m²·a</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-0.5">Energieträger</div>
+                      <div className="font-medium text-blueprint">{property.energyCert.primarySource}</div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Enquiry button (disabled in preview) */}
+              <div className="pt-4 border-t border-slate-200">
+                <button disabled className="w-full bg-primary/40 text-white py-4 rounded-2xl font-black text-sm uppercase tracking-[0.18em] cursor-not-allowed flex items-center justify-center gap-2">
+                  <span className="material-symbols-outlined text-lg">mail</span>
+                  Anfrage senden (Vorschau)
+                </button>
+                <p className="text-[10px] text-slate-400 text-center mt-2">Kontaktformular wird nach Veröffentlichung aktiv</p>
+              </div>
+            </div>
+          </div>
+          </div>
+        </div>
+      )}
     </>
+  );
+}
+
+function FactChip({ icon, label, value }: { icon: string; label: string; value: string }) {
+  return (
+    <div className="bg-slate-50 rounded-xl p-3">
+      <div className="flex items-center gap-2 mb-1">
+        <span className="material-symbols-outlined text-primary text-base">{icon}</span>
+        <span className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-400">{label}</span>
+      </div>
+      <div className="text-sm font-black text-blueprint">{value}</div>
+    </div>
   );
 }
 
