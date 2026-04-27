@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import Image from "next/image";
 import EnquiryForm from "./enquiry-form";
+import OfferForm from "./offer-form";
 
 interface Props {
   params: Promise<{ slug: string[] }>;
@@ -187,6 +188,10 @@ export default async function PublicListingPage({ params }: Props) {
           <div>
             <div id="anfrage" className="sticky top-24">
               <EnquiryForm listingId={listing.id} />
+
+              <div className="mt-4">
+                <OfferForm listingId={listing.id} askingPrice={price} />
+              </div>
 
               <div className="mt-6 text-center">
                 <div className="flex items-center gap-2 justify-center mb-3">
