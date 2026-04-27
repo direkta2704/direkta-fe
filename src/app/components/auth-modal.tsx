@@ -123,7 +123,7 @@ function SignInView({
     }
 
     onSuccess();
-    window.location.reload();
+    window.location.href = "/dashboard";
   }
 
   return (
@@ -266,7 +266,7 @@ function SignUpView({
     }
 
     onSuccess();
-    window.location.reload();
+    window.location.href = "/dashboard";
   }
 
   return (
