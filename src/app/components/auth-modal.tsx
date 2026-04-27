@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { signIn } from "next-auth/react";
 
 type AuthView = "signin" | "signup";
 
@@ -65,7 +66,6 @@ export default function AuthModal({
         </button>
 
         <div className="p-8 sm:p-10">
-          {/* Logo */}
           <div className="flex items-center gap-2 mb-8">
             <span className="material-symbols-outlined text-2xl text-primary">
               home_work
@@ -76,9 +76,15 @@ export default function AuthModal({
           </div>
 
           {view === "signin" ? (
-            <SignInView onSwitch={() => setView("signup")} />
+            <SignInView
+              onSwitch={() => setView("signup")}
+              onSuccess={onClose}
+            />
           ) : (
-            <SignUpView onSwitch={() => setView("signin")} />
+            <SignUpView
+              onSwitch={() => setView("signin")}
+              onSuccess={onClose}
+            />
           )}
         </div>
       </div>
@@ -86,7 +92,40 @@ export default function AuthModal({
   );
 }
 
-function SignInView({ onSwitch }: { onSwitch: () => void }) {
+function SignInView({
+  onSwitch,
+  onSuccess,
+}: {
+  onSwitch: () => void;
+  onSuccess: () => void;
+}) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+
+    const result = await signIn("credentials", {
+      email,
+      password,
+      redirect: false,
+    });
+
+    setLoading(false);
+
+    if (result?.error) {
+      setError("Invalid email or password");
+      return;
+    }
+
+    onSuccess();
+    window.location.reload();
+  }
+
   return (
     <>
       <h2
@@ -99,15 +138,24 @@ function SignInView({ onSwitch }: { onSwitch: () => void }) {
         Sign in to your Direkta account to continue.
       </p>
 
-      <form onSubmit={(e) => e.preventDefault()} className="space-y-5">
+      {error && (
+        <div className="mb-5 px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-600 font-medium">
+          {error}
+        </div>
+      )}
+
+      <form onSubmit={handleSubmit} className="space-y-5">
         <div>
           <label className="block text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 mb-2">
             Email
           </label>
           <input
             type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
             placeholder="you@example.com"
             autoComplete="email"
+            required
             className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm text-blueprint placeholder:text-slate-400 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
           />
         </div>
@@ -125,17 +173,21 @@ function SignInView({ onSwitch }: { onSwitch: () => void }) {
           </div>
           <input
             type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
             placeholder="••••••••"
             autoComplete="current-password"
+            required
             className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm text-blueprint placeholder:text-slate-400 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
           />
         </div>
 
         <button
           type="submit"
-          className="w-full bg-primary hover:bg-primary-dark text-white py-3.5 rounded-xl font-black text-sm uppercase tracking-[0.18em] transition-all duration-300 hover:scale-[1.02] shadow-lg shadow-primary/25"
+          disabled={loading}
+          className="w-full bg-primary hover:bg-primary-dark text-white py-3.5 rounded-xl font-black text-sm uppercase tracking-[0.18em] transition-all duration-300 hover:scale-[1.02] shadow-lg shadow-primary/25 disabled:opacity-60 disabled:hover:scale-100"
         >
-          Sign in
+          {loading ? "Signing in..." : "Sign in"}
         </button>
       </form>
 
@@ -155,7 +207,68 @@ function SignInView({ onSwitch }: { onSwitch: () => void }) {
   );
 }
 
-function SignUpView({ onSwitch }: { onSwitch: () => void }) {
+function SignUpView({
+  onSwitch,
+  onSuccess,
+}: {
+  onSwitch: () => void;
+  onSuccess: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [agreed, setAgreed] = useState(false);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+
+    if (!agreed) {
+      setError("Please agree to the AGB and Datenschutz");
+      return;
+    }
+
+    if (password.length < 8) {
+      setError("Password must be at least 8 characters");
+      return;
+    }
+
+    setLoading(true);
+
+    const res = await fetch("/api/auth/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, email, password }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      setLoading(false);
+      setError(data.error || "Something went wrong");
+      return;
+    }
+
+    const result = await signIn("credentials", {
+      email,
+      password,
+      redirect: false,
+    });
+
+    setLoading(false);
+
+    if (result?.error) {
+      setError("Account created but sign-in failed. Please sign in manually.");
+      onSwitch();
+      return;
+    }
+
+    onSuccess();
+    window.location.reload();
+  }
+
   return (
     <>
       <h2
@@ -168,13 +281,21 @@ function SignUpView({ onSwitch }: { onSwitch: () => void }) {
         Start selling your property — no commission.
       </p>
 
-      <form onSubmit={(e) => e.preventDefault()} className="space-y-5">
+      {error && (
+        <div className="mb-5 px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-600 font-medium">
+          {error}
+        </div>
+      )}
+
+      <form onSubmit={handleSubmit} className="space-y-5">
         <div>
           <label className="block text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 mb-2">
             Full name
           </label>
           <input
             type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
             placeholder="Max Mustermann"
             autoComplete="name"
             className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm text-blueprint placeholder:text-slate-400 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
@@ -186,8 +307,11 @@ function SignUpView({ onSwitch }: { onSwitch: () => void }) {
           </label>
           <input
             type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
             placeholder="you@example.com"
             autoComplete="email"
+            required
             className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm text-blueprint placeholder:text-slate-400 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
           />
         </div>
@@ -197,8 +321,11 @@ function SignUpView({ onSwitch }: { onSwitch: () => void }) {
           </label>
           <input
             type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
             placeholder="Min. 8 characters"
             autoComplete="new-password"
+            required
             className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm text-blueprint placeholder:text-slate-400 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
           />
         </div>
@@ -206,6 +333,8 @@ function SignUpView({ onSwitch }: { onSwitch: () => void }) {
         <label className="flex items-start gap-3 cursor-pointer">
           <input
             type="checkbox"
+            checked={agreed}
+            onChange={(e) => setAgreed(e.target.checked)}
             className="mt-0.5 w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary/20"
           />
           <span className="text-xs text-slate-500 leading-relaxed">
@@ -228,9 +357,10 @@ function SignUpView({ onSwitch }: { onSwitch: () => void }) {
 
         <button
           type="submit"
-          className="w-full bg-primary hover:bg-primary-dark text-white py-3.5 rounded-xl font-black text-sm uppercase tracking-[0.18em] transition-all duration-300 hover:scale-[1.02] shadow-lg shadow-primary/25"
+          disabled={loading}
+          className="w-full bg-primary hover:bg-primary-dark text-white py-3.5 rounded-xl font-black text-sm uppercase tracking-[0.18em] transition-all duration-300 hover:scale-[1.02] shadow-lg shadow-primary/25 disabled:opacity-60 disabled:hover:scale-100"
         >
-          Create account
+          {loading ? "Creating account..." : "Create account"}
         </button>
       </form>
 

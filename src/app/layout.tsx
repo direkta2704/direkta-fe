@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Bricolage_Grotesque, Manrope } from "next/font/google";
+import Providers from "./providers";
 import "./globals.css";
 
 const bricolage = Bricolage_Grotesque({
@@ -37,7 +38,7 @@ export default function RootLayout({
         />
       </head>
       <body className="bg-background-light text-blueprint overflow-x-hidden">
-        {children}
+        <Providers>{children}</Providers>
       </body>
     </html>
   );

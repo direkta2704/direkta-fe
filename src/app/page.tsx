@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSession, signOut } from "next-auth/react";
 import AuthModal from "./components/auth-modal";
 
 export default function Home() {
+  const { data: session } = useSession();
   const [modalView, setModalView] = useState<"signin" | "signup" | null>(null);
 
   useEffect(() => {
@@ -101,21 +103,40 @@ export default function Home() {
             </a>
           </nav>
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => setModalView("signin")}
-              className="hidden sm:inline-block text-[11px] font-black uppercase tracking-[0.18em] text-slate-700 hover:text-primary transition-colors px-3 py-2"
-            >
-              Sign in
-            </button>
-            <button
-              onClick={() => setModalView("signup")}
-              className="bg-blueprint hover:bg-primary text-white px-5 py-2.5 rounded-full text-[11px] font-black uppercase tracking-[0.18em] transition-all duration-300 hover:scale-[1.03] flex items-center gap-1.5"
-            >
-              Start free
-              <span className="material-symbols-outlined text-base">
-                arrow_forward
-              </span>
-            </button>
+            {session?.user ? (
+              <>
+                <span className="hidden sm:inline-block text-[11px] font-black uppercase tracking-[0.18em] text-slate-700 px-3 py-2">
+                  {session.user.name || session.user.email}
+                </span>
+                <button
+                  onClick={() => signOut()}
+                  className="bg-blueprint hover:bg-primary text-white px-5 py-2.5 rounded-full text-[11px] font-black uppercase tracking-[0.18em] transition-all duration-300 hover:scale-[1.03] flex items-center gap-1.5"
+                >
+                  Sign out
+                  <span className="material-symbols-outlined text-base">
+                    logout
+                  </span>
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={() => setModalView("signin")}
+                  className="hidden sm:inline-block text-[11px] font-black uppercase tracking-[0.18em] text-slate-700 hover:text-primary transition-colors px-3 py-2"
+                >
+                  Sign in
+                </button>
+                <button
+                  onClick={() => setModalView("signup")}
+                  className="bg-blueprint hover:bg-primary text-white px-5 py-2.5 rounded-full text-[11px] font-black uppercase tracking-[0.18em] transition-all duration-300 hover:scale-[1.03] flex items-center gap-1.5"
+                >
+                  Start free
+                  <span className="material-symbols-outlined text-base">
+                    arrow_forward
+                  </span>
+                </button>
+              </>
+            )}
           </div>
         </div>
       </header>
