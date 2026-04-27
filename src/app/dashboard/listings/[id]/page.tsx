@@ -210,6 +210,38 @@ export default function ListingDetailPage() {
         </div>
       </div>
 
+      {listing.status === "ACTIVE" && (
+        <div className="mb-6 bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="material-symbols-outlined text-emerald-600">public</span>
+            <div>
+              <p className="text-sm font-bold text-emerald-800">Inserat ist live</p>
+              <p className="text-xs text-emerald-600 truncate max-w-md">{typeof window !== "undefined" ? window.location.origin : ""}/immobilien/{listing.slug}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <a
+              href={`/immobilien/${listing.slug}`}
+              target="_blank"
+              className="bg-white border border-emerald-200 text-emerald-700 px-3 py-2 rounded-lg text-xs font-black uppercase tracking-[0.15em] hover:bg-emerald-100 transition-colors flex items-center gap-1.5"
+            >
+              <span className="material-symbols-outlined text-sm">open_in_new</span>
+              Ansehen
+            </a>
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(`${window.location.origin}/immobilien/${listing.slug}`);
+                alert("Link kopiert!");
+              }}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-lg text-xs font-black uppercase tracking-[0.15em] transition-colors flex items-center gap-1.5"
+            >
+              <span className="material-symbols-outlined text-sm">link</span>
+              Link kopieren
+            </button>
+          </div>
+        </div>
+      )}
+
       {error && (
         <div className="mb-6 px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-600 font-medium">{error}</div>
       )}

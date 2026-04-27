@@ -138,7 +138,21 @@ export default function ListingsPage() {
                     {l.property.rooms ? ` · ${l.property.rooms} Zi.` : ""}
                   </p>
                 </div>
-                <div className="flex items-center gap-8 ml-6">
+                <div className="flex items-center gap-6 ml-6">
+                  {l.status === "ACTIVE" && (
+                    <button
+                      onClick={(e) => {
+                        e.preventDefault();
+                        navigator.clipboard.writeText(`${window.location.origin}/immobilien/${l.slug}`);
+                        alert("Link kopiert!");
+                      }}
+                      className="flex items-center gap-1.5 text-xs font-bold text-primary hover:text-primary-dark transition-colors"
+                      title="Öffentlichen Link kopieren"
+                    >
+                      <span className="material-symbols-outlined text-base">link</span>
+                      Link kopieren
+                    </button>
+                  )}
                   {l.askingPrice && (
                     <div className="text-right">
                       <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Preis</div>
