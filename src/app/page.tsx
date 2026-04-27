@@ -1,8 +1,11 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import AuthModal from "./components/auth-modal";
 
 export default function Home() {
+  const [modalView, setModalView] = useState<"signin" | "signup" | null>(null);
+
   useEffect(() => {
     const nav = document.getElementById("navShell");
     const onScroll = () => {
@@ -98,21 +101,21 @@ export default function Home() {
             </a>
           </nav>
           <div className="flex items-center gap-2">
-            <a
-              href="#"
+            <button
+              onClick={() => setModalView("signin")}
               className="hidden sm:inline-block text-[11px] font-black uppercase tracking-[0.18em] text-slate-700 hover:text-primary transition-colors px-3 py-2"
             >
               Sign in
-            </a>
-            <a
-              href="#cta"
+            </button>
+            <button
+              onClick={() => setModalView("signup")}
               className="bg-blueprint hover:bg-primary text-white px-5 py-2.5 rounded-full text-[11px] font-black uppercase tracking-[0.18em] transition-all duration-300 hover:scale-[1.03] flex items-center gap-1.5"
             >
               Start free
               <span className="material-symbols-outlined text-base">
                 arrow_forward
               </span>
-            </a>
+            </button>
           </div>
         </div>
       </header>
@@ -161,15 +164,15 @@ export default function Home() {
 
             {/* CTAs */}
             <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4 anim-rise delay-500">
-              <a
-                href="#cta"
+              <button
+                onClick={() => setModalView("signup")}
                 className="group bg-primary hover:bg-primary-dark text-white px-8 py-4 rounded-full text-sm font-black uppercase tracking-[0.18em] transition-all duration-300 hover:scale-[1.03] shadow-xl shadow-primary/30 flex items-center gap-2"
               >
                 Get my price estimate
                 <span className="material-symbols-outlined text-lg transition-transform group-hover:translate-x-1">
                   arrow_forward
                 </span>
-              </a>
+              </button>
               <a
                 href="#how"
                 className="group flex items-center gap-2 text-blueprint font-black text-sm uppercase tracking-[0.18em] underline-link"
@@ -1117,12 +1120,12 @@ export default function Home() {
                     Optional human-support escalation
                   </li>
                 </ul>
-                <a
-                  href="#cta"
-                  className="block text-center bg-blueprint hover:bg-primary text-white py-4 rounded-2xl font-black text-sm uppercase tracking-[0.18em] transition-colors"
+                <button
+                  onClick={() => setModalView("signup")}
+                  className="block w-full text-center bg-blueprint hover:bg-primary text-white py-4 rounded-2xl font-black text-sm uppercase tracking-[0.18em] transition-colors"
                 >
                   Choose flat
-                </a>
+                </button>
               </div>
 
               {/* Success */}
@@ -1177,12 +1180,12 @@ export default function Home() {
                     Priority support during negotiation
                   </li>
                 </ul>
-                <a
-                  href="#cta"
-                  className="block text-center bg-primary hover:bg-white hover:text-blueprint text-white py-4 rounded-2xl font-black text-sm uppercase tracking-[0.18em] transition-colors"
+                <button
+                  onClick={() => setModalView("signup")}
+                  className="block w-full text-center bg-primary hover:bg-white hover:text-blueprint text-white py-4 rounded-2xl font-black text-sm uppercase tracking-[0.18em] transition-colors"
                 >
                   Choose success
-                </a>
+                </button>
               </div>
             </div>
 
@@ -1217,15 +1220,15 @@ export default function Home() {
                   No account needed to start.
                 </p>
                 <div className="flex flex-col sm:flex-row justify-center gap-4">
-                  <a
-                    href="#"
+                  <button
+                    onClick={() => setModalView("signup")}
                     className="group bg-primary hover:bg-white hover:text-blueprint text-white px-8 py-5 rounded-full font-black uppercase tracking-[0.18em] text-sm transition-all duration-300 hover:scale-[1.03] flex items-center justify-center gap-2 shadow-2xl shadow-primary/30"
                   >
                     Get my price estimate
                     <span className="material-symbols-outlined text-lg transition-transform group-hover:translate-x-1">
                       arrow_forward
                     </span>
-                  </a>
+                  </button>
                   <a
                     href="#how"
                     className="bg-white/10 border border-white/20 hover:bg-white/20 text-white px-8 py-5 rounded-full font-black uppercase tracking-[0.18em] text-sm transition-all duration-300"
@@ -1392,6 +1395,12 @@ export default function Home() {
           </div>
         </footer>
       </main>
+
+      <AuthModal
+        isOpen={modalView !== null}
+        initialView={modalView ?? "signin"}
+        onClose={() => setModalView(null)}
+      />
     </>
   );
 }
