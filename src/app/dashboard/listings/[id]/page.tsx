@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import ExposeSection from "./expose-section";
 
 interface Comparable {
   id: string;
@@ -34,6 +35,11 @@ interface Listing {
   descriptionLong: string | null;
   askingPrice: string | null;
   createdAt: string;
+  exposeHeadline: string | null;
+  locationDescription: string | null;
+  buildingDescription: string | null;
+  highlights: string[] | null;
+  sellerContact: Record<string, string> | null;
   priceRecommendation: PriceRec | null;
   property: {
     id: string;
@@ -209,12 +215,12 @@ export default function ListingDetailPage() {
           </p>
         </div>
         <a
-          href={`/api/listings/${id}/pdf`}
+          href={`/expose/${id}`}
           target="_blank"
           className="bg-white border border-slate-200 hover:border-primary text-blueprint px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-[0.15em] transition-colors flex items-center gap-2 flex-shrink-0"
         >
           <span className="material-symbols-outlined text-base text-primary">picture_as_pdf</span>
-          Exposé PDF
+          Expose Vorschau
         </a>
       </div>
 
@@ -451,6 +457,18 @@ export default function ListingDetailPage() {
             </p>
           )}
         </div>
+
+        {/* Expose content */}
+        <ExposeSection
+          listingId={id}
+          initial={{
+            exposeHeadline: listing.exposeHeadline || null,
+            locationDescription: listing.locationDescription || null,
+            buildingDescription: listing.buildingDescription || null,
+            highlights: listing.highlights as string[] | null,
+            sellerContact: listing.sellerContact as { name?: string; phone?: string; email?: string; company?: string } | null,
+          }}
+        />
 
         {/* Compliance check */}
         <div className="bg-white rounded-2xl border border-slate-200 p-7">

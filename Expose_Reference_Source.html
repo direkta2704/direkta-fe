@@ -1,0 +1,1830 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>Exposé · Marxstraße 12 · Gaggenau</title>
+<style>
+/* ============================================================
+   PRINT FOUNDATION
+   A4 portrait, full bleed, edge-to-edge layout possible per page
+   ============================================================ */
+@page {
+  size: A4 portrait;
+  margin: 0;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --ink:        #0F1B2E;   /* deep navy — primary text */
+  --ink-soft:   #485468;   /* secondary text */
+  --ink-faint:  #8A92A0;   /* tertiary / captions */
+  --paper:      #F7F3EA;   /* warm cream page background */
+  --paper-pure: #FBF8F1;   /* slightly lighter for cards */
+  --accent:     #B85432;   /* terracotta — single decisive accent */
+  --accent-ink: #7A3920;   /* darker accent for text */
+  --line:       #D9D0BE;   /* hairline rules */
+  --line-soft:  #E7DFCD;   /* softer rules */
+  --muted:      #EAE2CE;   /* placeholder fills */
+  --muted-2:    #DDD3BC;   /* placeholder stripe */
+  --shadow:     0 1px 0 rgba(15,27,46,.04);
+}
+
+html, body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: 'Poppins', 'TeX Gyre Heros', Helvetica, Arial, sans-serif;
+  font-size: 9.5pt;
+  line-height: 1.55;
+  font-weight: 300;
+  -webkit-font-smoothing: antialiased;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+.serif { font-family: 'TeX Gyre Pagella', 'Palatino', 'Bitstream Charter', 'DejaVu Serif', Georgia, serif; }
+
+/* ============================================================
+   PAGE STRUCTURE
+   ============================================================ */
+.page {
+  width: 210mm;
+  height: 297mm;
+  position: relative;
+  page-break-after: always;
+  background: var(--paper);
+  overflow: hidden;
+}
+.page:last-child { page-break-after: auto; }
+
+.page-inner {
+  position: absolute;
+  inset: 18mm 18mm 24mm 18mm;
+}
+.page-inner.tight { inset: 14mm 16mm 22mm 16mm; }
+.page-inner.wide  { inset: 0; }
+
+/* ============================================================
+   COMMON ELEMENTS
+   ============================================================ */
+.brand {
+  font-family: 'Poppins', sans-serif;
+  font-weight: 700;
+  font-size: 10pt;
+  letter-spacing: .2em;
+  color: var(--ink);
+  text-transform: uppercase;
+}
+.brand .dot { color: var(--accent); }
+
+.eyebrow {
+  font-family: 'Poppins', sans-serif;
+  font-size: 7pt;
+  letter-spacing: .25em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  font-weight: 500;
+}
+.eyebrow.accent { color: var(--accent); }
+
+.section-num {
+  font-family: 'TeX Gyre Pagella', serif;
+  font-style: italic;
+  font-size: 11pt;
+  color: var(--accent);
+  letter-spacing: .04em;
+}
+
+.section-title {
+  font-family: 'TeX Gyre Pagella', serif;
+  font-weight: 400;
+  color: var(--ink);
+  letter-spacing: -.01em;
+  line-height: 1.05;
+}
+
+.rule { height: 1px; background: var(--line); width: 100%; }
+.rule-accent { height: 2px; background: var(--accent); }
+
+/* page footer */
+.page-footer {
+  position: absolute;
+  bottom: 8mm;
+  left: 18mm;
+  right: 18mm;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 7pt;
+  letter-spacing: .15em;
+  color: var(--ink-faint);
+  text-transform: uppercase;
+}
+.page-footer .pf-brand {
+  font-weight: 600;
+  color: var(--ink);
+}
+.page-footer .pf-brand .dot { color: var(--accent); }
+
+/* page header */
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding-bottom: 5mm;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 8mm;
+}
+.page-header .ph-brand {
+  font-weight: 700;
+  font-size: 9pt;
+  letter-spacing: .2em;
+  text-transform: uppercase;
+}
+.page-header .ph-brand .dot { color: var(--accent); }
+.page-header .ph-meta {
+  font-size: 7pt;
+  letter-spacing: .15em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  text-align: right;
+}
+
+/* ============================================================
+   IMAGE PLACEHOLDERS (designed, not amateurish)
+   ============================================================ */
+.placeholder {
+  position: relative;
+  background: var(--muted);
+  background-image: repeating-linear-gradient(
+    135deg,
+    var(--muted) 0,
+    var(--muted) 14px,
+    var(--muted-2) 14px,
+    var(--muted-2) 15px
+  );
+  overflow: hidden;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-start;
+}
+.placeholder::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(15,27,46,0) 50%, rgba(15,27,46,.18) 100%);
+  pointer-events: none;
+}
+.placeholder .ph-tag {
+  position: absolute;
+  top: 6mm;
+  left: 6mm;
+  font-size: 7pt;
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  color: rgba(15,27,46,.55);
+  background: rgba(247,243,234,.85);
+  padding: 1.5mm 3mm;
+  border-radius: 1px;
+  font-weight: 500;
+}
+.placeholder .ph-caption {
+  position: relative;
+  z-index: 2;
+  padding: 4mm 5mm;
+  color: var(--paper-pure);
+  font-size: 7.5pt;
+  letter-spacing: .04em;
+  font-style: italic;
+  font-family: 'TeX Gyre Pagella', serif;
+}
+.placeholder.dark {
+  background: var(--ink);
+  background-image: repeating-linear-gradient(
+    135deg,
+    var(--ink) 0,
+    var(--ink) 14px,
+    #18253A 14px,
+    #18253A 15px
+  );
+}
+.placeholder.dark .ph-tag {
+  color: rgba(247,243,234,.6);
+  background: rgba(15,27,46,.5);
+}
+
+/* ============================================================
+   PAGE 1 — COVER
+   ============================================================ */
+.cover { background: var(--paper); }
+.cover-top {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 60%;
+}
+.cover-top .placeholder {
+  width: 100%;
+  height: 100%;
+  background-image: repeating-linear-gradient(
+    135deg,
+    #C9BEA4 0,
+    #C9BEA4 14px,
+    #BCB096 14px,
+    #BCB096 15px
+  );
+  background-color: #C9BEA4;
+}
+.cover-top .placeholder::before {
+  background: linear-gradient(180deg, rgba(15,27,46,.25) 0%, rgba(15,27,46,0) 35%, rgba(15,27,46,0) 65%, rgba(15,27,46,.45) 100%);
+}
+.cover-brand-bar {
+  position: absolute;
+  top: 14mm;
+  left: 14mm;
+  right: 14mm;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  z-index: 3;
+  color: var(--paper-pure);
+}
+.cover-brand-bar .brand { color: var(--paper-pure); font-size: 11pt; }
+.cover-brand-bar .brand .dot { color: var(--accent); }
+.cover-brand-bar .badge {
+  border: 1px solid rgba(247,243,234,.6);
+  padding: 1.5mm 4mm;
+  font-size: 7pt;
+  letter-spacing: .25em;
+  text-transform: uppercase;
+}
+
+.cover-bottom {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 40%;
+  padding: 12mm 14mm 10mm 14mm;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+.cover-headline-block { display: flex; flex-direction: column; gap: 4mm; }
+.cover-eyebrow {
+  font-size: 8pt;
+  letter-spacing: .35em;
+  text-transform: uppercase;
+  color: var(--accent);
+  font-weight: 500;
+}
+.cover-headline {
+  font-family: 'TeX Gyre Pagella', serif;
+  font-size: 32pt;
+  line-height: 1.02;
+  font-weight: 400;
+  letter-spacing: -.015em;
+  color: var(--ink);
+  max-width: 145mm;
+}
+.cover-headline em {
+  font-style: italic;
+  color: var(--accent-ink);
+}
+.cover-sub {
+  font-size: 11pt;
+  color: var(--ink-soft);
+  font-weight: 300;
+  letter-spacing: .02em;
+}
+.cover-sub strong {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.cover-key-strip {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  border-top: 1px solid var(--line);
+  padding-top: 5mm;
+}
+.cover-key {
+  display: flex;
+  flex-direction: column;
+  gap: 1mm;
+  padding-right: 4mm;
+  border-right: 1px solid var(--line-soft);
+}
+.cover-key:last-child { border-right: none; }
+.cover-key .k-label {
+  font-size: 6.5pt;
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.cover-key .k-value {
+  font-family: 'TeX Gyre Pagella', serif;
+  font-size: 14pt;
+  font-weight: 500;
+  color: var(--ink);
+  line-height: 1;
+}
+.cover-key .k-unit {
+  font-size: 7pt;
+  color: var(--ink-soft);
+}
+
+.cover-footer {
+  position: absolute;
+  bottom: 6mm;
+  left: 14mm;
+  right: 14mm;
+  display: flex;
+  justify-content: space-between;
+  font-size: 7pt;
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+/* ============================================================
+   PAGE 2 — INHALT (TOC)
+   ============================================================ */
+.toc-hero {
+  margin-bottom: 10mm;
+}
+.toc-hero .section-num { font-size: 11pt; }
+.toc-hero h1 {
+  font-family: 'TeX Gyre Pagella', serif;
+  font-size: 30pt;
+  font-weight: 400;
+  letter-spacing: -.01em;
+  margin-top: 2mm;
+  line-height: 1.05;
+}
+.toc-hero .toc-lede {
+  margin-top: 4mm;
+  max-width: 130mm;
+  font-size: 9.5pt;
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+.toc-list { display: flex; flex-direction: column; gap: 0; }
+.toc-row {
+  display: grid;
+  grid-template-columns: 14mm 1fr 18mm;
+  align-items: baseline;
+  padding: 3mm 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+.toc-row:first-child { border-top: 1px solid var(--line-soft); }
+.toc-row .toc-num {
+  font-family: 'TeX Gyre Pagella', serif;
+  font-style: italic;
+  font-size: 11pt;
+  color: var(--accent);
+}
+.toc-row .toc-name {
+  font-size: 11pt;
+  letter-spacing: .01em;
+  color: var(--ink);
+  font-weight: 400;
+}
+.toc-row .toc-name .toc-sub {
+  display: block;
+  font-size: 8pt;
+  color: var(--ink-faint);
+  margin-top: 1mm;
+  letter-spacing: 0;
+}
+.toc-row .toc-page {
+  text-align: right;
+  font-family: 'TeX Gyre Pagella', serif;
+  font-size: 11pt;
+  color: var(--ink-soft);
+}
+
+/* ============================================================
+   STANDARD CONTENT PAGES (sections 1+)
+   ============================================================ */
+.section-head {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 3mm;
+  margin-bottom: 8mm;
+}
+.section-head .meta-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.section-head .section-num { font-size: 10pt; }
+.section-head h1 {
+  font-family: 'TeX Gyre Pagella', serif;
+  font-size: 26pt;
+  font-weight: 400;
+  line-height: 1.05;
+  letter-spacing: -.01em;
+  color: var(--ink);
+}
+.section-head h1 em {
+  font-style: italic;
+  color: var(--accent-ink);
+}
+.section-head .section-rule {
+  width: 40mm;
+  height: 2px;
+  background: var(--accent);
+  margin-top: 2mm;
+}
+
+.lede {
+  font-family: 'TeX Gyre Pagella', serif;
+  font-size: 12pt;
+  line-height: 1.55;
+  color: var(--ink);
+  font-weight: 400;
+  letter-spacing: .005em;
+}
+.lede em { color: var(--accent-ink); font-style: italic; }
+
+p { font-size: 9.5pt; line-height: 1.65; color: var(--ink); margin-bottom: 4mm; }
+p.muted { color: var(--ink-soft); }
+p.small { font-size: 8.5pt; line-height: 1.55; }
+
+.two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8mm;
+}
+.three-col {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6mm;
+}
+
+/* tables */
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 9pt;
+}
+.data-table th, .data-table td {
+  text-align: left;
+  padding: 2.8mm 3mm;
+  border-bottom: 1px solid var(--line-soft);
+  vertical-align: top;
+}
+.data-table th {
+  font-size: 7pt;
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  font-weight: 500;
+  border-bottom: 1px solid var(--line);
+}
+.data-table tr:last-child td { border-bottom: none; }
+.data-table .label {
+  color: var(--ink-soft);
+  font-weight: 300;
+  width: 50%;
+}
+.data-table .value {
+  color: var(--ink);
+  font-weight: 500;
+}
+.data-table.compact th, .data-table.compact td {
+  padding: 2mm 2.5mm;
+  font-size: 8.5pt;
+}
+
+/* highlight pull quote / box */
+.pull {
+  margin: 6mm 0;
+  padding: 6mm 8mm;
+  background: var(--paper-pure);
+  border-left: 3px solid var(--accent);
+  position: relative;
+}
+.pull .pull-eyebrow {
+  font-size: 7pt;
+  letter-spacing: .25em;
+  text-transform: uppercase;
+  color: var(--accent);
+  font-weight: 600;
+  margin-bottom: 2mm;
+}
+.pull .pull-text {
+  font-family: 'TeX Gyre Pagella', serif;
+  font-size: 11pt;
+  line-height: 1.5;
+  font-style: italic;
+  color: var(--ink);
+}
+
+/* feature list */
+.f-list { list-style: none; padding: 0; margin: 0; }
+.f-list li {
+  font-size: 9pt;
+  padding: 2mm 0 2mm 6mm;
+  position: relative;
+  border-bottom: 1px solid var(--line-soft);
+  line-height: 1.5;
+}
+.f-list li:last-child { border-bottom: none; }
+.f-list li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 4.2mm;
+  width: 3mm;
+  height: 1px;
+  background: var(--accent);
+}
+
+/* small inline meta items */
+.meta-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1px;
+  background: var(--line-soft);
+  border: 1px solid var(--line-soft);
+}
+.meta-cell {
+  background: var(--paper-pure);
+  padding: 4mm;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5mm;
+}
+.meta-cell .m-label {
+  font-size: 6.5pt;
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  font-weight: 500;
+}
+.meta-cell .m-value {
+  font-family: 'TeX Gyre Pagella', serif;
+  font-size: 13pt;
+  font-weight: 500;
+  color: var(--ink);
+  line-height: 1.1;
+}
+
+/* "bestand vs neu" comparison */
+.compare {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5mm;
+  margin-top: 4mm;
+}
+.compare-col {
+  background: var(--paper-pure);
+  padding: 6mm;
+  border-top: 2px solid var(--ink);
+}
+.compare-col.neu { border-top-color: var(--accent); }
+.compare-col h3 {
+  font-family: 'TeX Gyre Pagella', serif;
+  font-size: 13pt;
+  font-weight: 500;
+  margin-bottom: 1.5mm;
+}
+.compare-col .c-eyebrow {
+  font-size: 7pt;
+  letter-spacing: .25em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin-bottom: 1.5mm;
+}
+.compare-col.neu .c-eyebrow { color: var(--accent); }
+.compare-col ul { list-style: none; padding: 0; margin-top: 4mm; }
+.compare-col ul li {
+  font-size: 8.5pt;
+  padding: 2mm 0;
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--ink);
+}
+.compare-col ul li:last-child { border-bottom: none; }
+
+/* unit page elements */
+.unit-hero {
+  width: 100%;
+  height: 78mm;
+  margin-bottom: 6mm;
+}
+.unit-hero.small {
+  height: 65mm;
+}
+.unit-meta-strip {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  padding: 3.5mm 0;
+  margin: 6mm 0 8mm;
+}
+.unit-meta-strip .ums-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 1mm;
+}
+.unit-meta-strip .ums-label {
+  font-size: 6.5pt;
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.unit-meta-strip .ums-value {
+  font-family: 'TeX Gyre Pagella', serif;
+  font-size: 12pt;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+/* room program list (key/value rows) */
+.rooms {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 8mm;
+}
+.rooms .room-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 2mm 0;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 9pt;
+}
+.rooms .room-row.total {
+  border-bottom: none;
+  border-top: 1px solid var(--ink);
+  padding-top: 2.5mm;
+  margin-top: 1mm;
+  font-weight: 600;
+}
+.rooms .r-name { color: var(--ink-soft); font-weight: 300; }
+.rooms .r-area { color: var(--ink); font-weight: 500; font-family: 'TeX Gyre Pagella', serif; }
+.rooms .room-row.total .r-name,
+.rooms .room-row.total .r-area { color: var(--ink); }
+
+/* contact card */
+.contact-card {
+  background: var(--ink);
+  color: var(--paper-pure);
+  padding: 12mm 14mm;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8mm;
+}
+.contact-card .cc-eyebrow {
+  font-size: 7pt;
+  letter-spacing: .3em;
+  text-transform: uppercase;
+  color: rgba(247,243,234,.55);
+  margin-bottom: 3mm;
+}
+.contact-card h3 {
+  font-family: 'TeX Gyre Pagella', serif;
+  font-weight: 400;
+  font-size: 16pt;
+  line-height: 1.2;
+  margin-bottom: 4mm;
+}
+.contact-card .c-line {
+  font-size: 9pt;
+  margin-bottom: 1.5mm;
+  color: rgba(247,243,234,.85);
+  display: flex;
+  gap: 4mm;
+}
+.contact-card .c-line .c-key {
+  display: inline-block;
+  min-width: 32mm;
+  color: rgba(247,243,234,.5);
+  font-size: 7.5pt;
+  letter-spacing: .15em;
+  text-transform: uppercase;
+  padding-top: 1mm;
+}
+
+/* legal */
+.legal {
+  font-size: 7.5pt;
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+.legal h4 {
+  font-size: 7pt;
+  letter-spacing: .25em;
+  text-transform: uppercase;
+  color: var(--ink);
+  margin: 3mm 0 1.5mm;
+  font-weight: 600;
+}
+.legal p { font-size: 7.5pt; margin-bottom: 2.5mm; line-height: 1.55; }
+
+/* back cover */
+.back-cover {
+  background: var(--ink);
+  color: var(--paper-pure);
+  position: relative;
+}
+.back-cover .bc-mark {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+}
+.back-cover .bc-mark .brand {
+  color: var(--paper-pure);
+  font-size: 22pt;
+  letter-spacing: .25em;
+  font-weight: 700;
+}
+.back-cover .bc-mark .brand .dot { color: var(--accent); }
+.back-cover .bc-rule {
+  width: 16mm;
+  height: 2px;
+  background: var(--accent);
+  margin: 4mm auto;
+}
+.back-cover .bc-tag {
+  font-family: 'TeX Gyre Pagella', serif;
+  font-style: italic;
+  font-size: 11pt;
+  color: rgba(247,243,234,.7);
+  letter-spacing: .03em;
+}
+.back-cover .bc-bottom {
+  position: absolute;
+  bottom: 12mm;
+  left: 0; right: 0;
+  text-align: center;
+  font-size: 7pt;
+  letter-spacing: .25em;
+  text-transform: uppercase;
+  color: rgba(247,243,234,.4);
+}
+
+/* lage page specific */
+.lage-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8mm;
+}
+.lage-list h3 {
+  font-family: 'TeX Gyre Pagella', serif;
+  font-size: 12pt;
+  margin-bottom: 3mm;
+  font-weight: 500;
+}
+.lage-list .eyebrow { display: block; margin-bottom: 1mm; }
+
+/* ausstattung sub-block */
+.spec-block { margin-bottom: 4mm; }
+.spec-block h3 {
+  font-family: 'TeX Gyre Pagella', serif;
+  font-size: 10.5pt;
+  font-weight: 500;
+  letter-spacing: .01em;
+  margin-bottom: 1.5mm;
+  color: var(--ink);
+  display: flex;
+  align-items: baseline;
+  gap: 4mm;
+}
+.spec-block h3::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line-soft);
+}
+.spec-block .spec-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 8pt;
+}
+.spec-block .spec-table td {
+  padding: 1.4mm 3mm 1.4mm 0;
+  vertical-align: top;
+  line-height: 1.4;
+}
+.spec-block .spec-table td:first-child {
+  color: var(--ink-soft);
+  font-weight: 400;
+  width: 40%;
+}
+.spec-block .spec-table td:last-child {
+  color: var(--ink);
+  font-weight: 400;
+}
+
+/* energy badge box */
+.energy-box {
+  background: var(--paper-pure);
+  border: 1px solid var(--line);
+  padding: 6mm 7mm;
+  margin-top: 4mm;
+}
+.energy-box h3 {
+  font-family: 'TeX Gyre Pagella', serif;
+  font-size: 11pt;
+  font-weight: 500;
+  margin-bottom: 4mm;
+}
+.energy-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  background: var(--line-soft);
+}
+.energy-grid .eg-cell {
+  background: var(--paper-pure);
+  padding: 2.5mm 0;
+  display: flex;
+  justify-content: space-between;
+  font-size: 8.5pt;
+}
+.energy-grid .eg-key { color: var(--ink-soft); }
+.energy-grid .eg-val { color: var(--ink); font-weight: 500; }
+
+.energy-class-badge {
+  display: inline-block;
+  background: #4FA84F;
+  color: white;
+  font-family: 'TeX Gyre Pagella', serif;
+  font-weight: 600;
+  font-size: 22pt;
+  padding: 4mm 8mm;
+  margin-top: 3mm;
+  letter-spacing: .05em;
+}
+
+/* price table */
+.price-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 4mm;
+}
+.price-table th, .price-table td {
+  padding: 3mm 4mm;
+  text-align: left;
+  border-bottom: 1px solid var(--line-soft);
+}
+.price-table th {
+  font-size: 7pt;
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  font-weight: 500;
+  border-bottom: 1px solid var(--line);
+}
+.price-table tr.package td {
+  background: var(--paper-pure);
+  font-weight: 600;
+  border-top: 1px solid var(--ink);
+  border-bottom: none;
+}
+.price-table .pt-unit {
+  font-family: 'TeX Gyre Pagella', serif;
+  font-size: 11pt;
+  font-weight: 500;
+  color: var(--ink);
+}
+.price-table .pt-area { color: var(--ink-soft); }
+.price-table .pt-price {
+  font-family: 'TeX Gyre Pagella', serif;
+  font-style: italic;
+  color: var(--accent-ink);
+  text-align: right;
+}
+
+</style>
+</head>
+<body>
+
+<!-- ============================================================
+     PAGE 1 — COVER
+     ============================================================ -->
+<section class="page cover">
+  <div class="cover-top">
+    <div class="placeholder">
+      <span class="ph-tag">Hero · Gebäudeansicht</span>
+    </div>
+  </div>
+
+  <div class="cover-brand-bar">
+    <span class="brand">Direkta<span class="dot">.</span></span>
+    <span class="badge">Exposé · Verkauf</span>
+  </div>
+
+  <div class="cover-bottom">
+    <div class="cover-headline-block">
+      <span class="cover-eyebrow">Mehrfamilienhaus · Erdgeschoss</span>
+      <h1 class="cover-headline">Drei kernsanierte<br>Wohnungen <em>in Gaggenau.</em></h1>
+      <div class="cover-sub"><strong>Marxstraße 12</strong> · 76571 Gaggenau · Baden-Württemberg</div>
+    </div>
+
+    <div class="cover-key-strip">
+      <div class="cover-key">
+        <span class="k-label">Wohnfläche gesamt</span>
+        <span class="k-value">237,85<span class="k-unit"> m²</span></span>
+      </div>
+      <div class="cover-key">
+        <span class="k-label">Einheiten</span>
+        <span class="k-value">3<span class="k-unit"> WE</span></span>
+      </div>
+      <div class="cover-key">
+        <span class="k-label">Baujahr</span>
+        <span class="k-value">1999<span class="k-unit"> / 2000</span></span>
+      </div>
+      <div class="cover-key">
+        <span class="k-label">Energieklasse</span>
+        <span class="k-value">B</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="cover-footer">
+    <span>Exposé v2.0 · Stand 28.04.2026</span>
+    <span>www.direkta.de</span>
+  </div>
+</section>
+
+<!-- ============================================================
+     PAGE 2 — INHALT
+     ============================================================ -->
+<section class="page">
+  <div class="page-inner">
+    <div class="page-header">
+      <span class="ph-brand">Direkta<span class="dot">.</span></span>
+      <span class="ph-meta">Marxstraße 12 · Gaggenau</span>
+    </div>
+
+    <div class="toc-hero">
+      <span class="section-num">— Inhalt</span>
+      <h1>Was Sie auf den<br>folgenden Seiten finden.</h1>
+      <p class="toc-lede">
+        Dieses Exposé führt Sie zunächst durch das Gesamtobjekt — Lage, Gebäude, Sanierungslogik —
+        und stellt anschließend die drei Wohneinheiten einzeln vor. Die rechtlich verpflichtenden
+        Energiedaten und Verkaufskonditionen finden Sie im hinteren Teil.
+      </p>
+    </div>
+
+    <div class="toc-list">
+      <div class="toc-row">
+        <span class="toc-num">01</span>
+        <span class="toc-name">Auf einen Blick<span class="toc-sub">Zusammenfassung & drei Einheiten im Vergleich</span></span>
+        <span class="toc-page">3</span>
+      </div>
+      <div class="toc-row">
+        <span class="toc-num">02</span>
+        <span class="toc-name">Die Lage<span class="toc-sub">Gaggenau, Marxstraße — Mikrolage und Erreichbarkeit</span></span>
+        <span class="toc-page">4</span>
+      </div>
+      <div class="toc-row">
+        <span class="toc-num">03</span>
+        <span class="toc-name">Das Gebäude<span class="toc-sub">Bestand und Eckdaten</span></span>
+        <span class="toc-page">5</span>
+      </div>
+      <div class="toc-row">
+        <span class="toc-num">04</span>
+        <span class="toc-name">Sanierungsumfang<span class="toc-sub">Bestand bleibt — Innenausbau wird neu</span></span>
+        <span class="toc-page">6</span>
+      </div>
+      <div class="toc-row">
+        <span class="toc-num">05</span>
+        <span class="toc-name">Ausstattung<span class="toc-sub">Materialien, Sanitär, Elektro, Küche</span></span>
+        <span class="toc-page">7</span>
+      </div>
+      <div class="toc-row">
+        <span class="toc-num">06</span>
+        <span class="toc-name">Wohneinheit 01bb · 94 m²<span class="toc-sub">3 Zimmer mit Ankleide</span></span>
+        <span class="toc-page">8</span>
+      </div>
+      <div class="toc-row">
+        <span class="toc-num">07</span>
+        <span class="toc-name">Wohneinheit 02bb · 95 m²<span class="toc-sub">3-Zimmer-Familienwohnung</span></span>
+        <span class="toc-page">9</span>
+      </div>
+      <div class="toc-row">
+        <span class="toc-num">08</span>
+        <span class="toc-name">Wohneinheit 03bb · 49 m²<span class="toc-sub">1,5-Zimmer-Apartment mit eigenem Eingang</span></span>
+        <span class="toc-page">10</span>
+      </div>
+      <div class="toc-row">
+        <span class="toc-num">09</span>
+        <span class="toc-name">Energie & Verkaufsoptionen<span class="toc-sub">Pflichtangaben GEG · Konditionen</span></span>
+        <span class="toc-page">11</span>
+      </div>
+      <div class="toc-row">
+        <span class="toc-num">10</span>
+        <span class="toc-name">Kontakt & rechtliche Hinweise<span class="toc-sub">Ansprechpartner und Disclaimer</span></span>
+        <span class="toc-page">12</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="page-footer">
+    <span class="pf-brand">Direkta<span class="dot">.</span></span>
+    <span>Inhalt</span>
+    <span>02 / 13</span>
+  </div>
+</section>
+
+<!-- ============================================================
+     PAGE 3 — AUF EINEN BLICK
+     ============================================================ -->
+<section class="page">
+  <div class="page-inner">
+    <div class="page-header">
+      <span class="ph-brand">Direkta<span class="dot">.</span></span>
+      <span class="ph-meta">Marxstraße 12 · Gaggenau</span>
+    </div>
+
+    <div class="section-head">
+      <div class="meta-row">
+        <span class="section-num">01 — Auf einen Blick</span>
+        <span class="eyebrow">Zusammenfassung</span>
+      </div>
+      <h1>Bestand außen,<br><em>Neubau innen.</em></h1>
+      <div class="section-rule"></div>
+    </div>
+
+    <p class="lede">
+      Drei vollständig kernsanierte Wohnungen im Erdgeschoss eines Mehrfamilienhauses in Gaggenau.
+      Das Gebäude (Bj. 1999/2000) bleibt in seiner Hülle erhalten — innen wird das Erdgeschoss
+      auf den Rohbau zurückgeführt und mit modernster Haustechnik, Fußbodenheizung in allen Räumen,
+      Eichenparkett, neuen Bädern und solider Marken-Ausstattung neu aufgebaut.
+    </p>
+
+    <p style="margin-top: 5mm;">
+      Die Neukonfiguration des Grundrisses schafft drei klar zugeschnittene Einheiten für drei
+      Lebenssituationen: das anspruchsvolle Paar (94 m² mit Ankleide), die junge Familie
+      (95 m² mit Kinderzimmer), den urbanen Single oder Kapitalanleger (49 m² Komplett-Apartment).
+    </p>
+
+    <div class="pull">
+      <div class="pull-eyebrow">Was Sie bekommen</div>
+      <div class="pull-text">
+        Die Substanzqualität eines Hauses, das seit 25 Jahren steht und sich bewährt hat —
+        kombiniert mit dem Innenausbau-Standard eines Neubaus 2026. Ohne Neubaupreis,
+        ohne Neubau-Wartezeit, ohne ungetestete Substanz.
+      </div>
+    </div>
+
+    <div style="margin-top: 8mm;">
+      <span class="eyebrow">Die drei Einheiten</span>
+      <div style="height: 4mm;"></div>
+      <table class="data-table compact">
+        <thead>
+          <tr>
+            <th style="width: 20%;">Einheit</th>
+            <th style="width: 18%;">Größe</th>
+            <th style="width: 30%;">Aufteilung</th>
+            <th>Zielgruppe</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="value">WE 01bb</span></td>
+            <td><span class="value">93,99 m²</span></td>
+            <td>3 Zimmer + Ankleide</td>
+            <td>Paare, Best Ager, Zweitwohnsitz</td>
+          </tr>
+          <tr>
+            <td><span class="value">WE 02bb</span></td>
+            <td><span class="value">95,36 m²</span></td>
+            <td>3 Zimmer (Familie)</td>
+            <td>Junge Familien</td>
+          </tr>
+          <tr>
+            <td><span class="value">WE 03bb</span></td>
+            <td><span class="value">48,50 m²</span></td>
+            <td>1,5 Zimmer</td>
+            <td>Singles, Pendler, Kapitalanlage</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="small muted" style="margin-top: 4mm;">
+      Erwerb einzeln je Einheit oder als Gesamtpaket möglich. Konditionen auf Anfrage.
+    </p>
+  </div>
+
+  <div class="page-footer">
+    <span class="pf-brand">Direkta<span class="dot">.</span></span>
+    <span>Auf einen Blick</span>
+    <span>03 / 13</span>
+  </div>
+</section>
+
+<!-- ============================================================
+     PAGE 4 — DIE LAGE
+     ============================================================ -->
+<section class="page">
+  <div class="page-inner">
+    <div class="page-header">
+      <span class="ph-brand">Direkta<span class="dot">.</span></span>
+      <span class="ph-meta">Marxstraße 12 · Gaggenau</span>
+    </div>
+
+    <div class="section-head">
+      <div class="meta-row">
+        <span class="section-num">02 — Die Lage</span>
+        <span class="eyebrow">Gaggenau · Marxstraße</span>
+      </div>
+      <h1>Murgtal,<br><em>Wirtschaftsregion Karlsruhe.</em></h1>
+      <div class="section-rule"></div>
+    </div>
+
+    <p class="lede">
+      Gaggenau liegt im Murgtal am Rande des Schwarzwalds, eingebunden in die Wirtschaftsregion
+      Karlsruhe–Baden-Baden–Rastatt. Standort namhafter Industrie und Wohnort einer wirtschaftlich
+      stabilen Bevölkerung mit überdurchschnittlicher Eigentumsquote.
+    </p>
+
+    <div style="margin-top: 6mm;" class="placeholder" >
+      <span class="ph-tag">Lageplan · Mikrolage Marxstraße 12</span>
+      <div style="height: 70mm; width: 100%;"></div>
+    </div>
+
+    <div class="lage-grid" style="margin-top: 8mm;">
+      <div class="lage-list">
+        <span class="eyebrow accent">Mikrolage</span>
+        <ul class="f-list">
+          <li>Marxstraße — gewachsene Wohnlage mit ruhigem Charakter</li>
+          <li>Fußläufige Versorgung mit Lebensmitteln, Apotheke, Café</li>
+          <li>Anbindung an die Innenstadt Gaggenau in wenigen Minuten</li>
+          <li>Kindergärten und Schulen im Umfeld</li>
+        </ul>
+      </div>
+      <div class="lage-list">
+        <span class="eyebrow accent">Erreichbarkeit</span>
+        <ul class="f-list">
+          <li>Bahnanschluss Gaggenau: Karlsruhe — Baden-Baden — Freudenstadt</li>
+          <li>B462 als zentrale Verkehrsachse, Anschluss A5 über Rastatt</li>
+          <li>Flughafen Karlsruhe/Baden-Baden ca. 30 Min.</li>
+          <li>Flughafen Stuttgart ca. 90 Min.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="page-footer">
+    <span class="pf-brand">Direkta<span class="dot">.</span></span>
+    <span>Die Lage</span>
+    <span>04 / 13</span>
+  </div>
+</section>
+
+<!-- ============================================================
+     PAGE 5 — DAS GEBÄUDE
+     ============================================================ -->
+<section class="page">
+  <div class="page-inner">
+    <div class="page-header">
+      <span class="ph-brand">Direkta<span class="dot">.</span></span>
+      <span class="ph-meta">Marxstraße 12 · Gaggenau</span>
+    </div>
+
+    <div class="section-head">
+      <div class="meta-row">
+        <span class="section-num">03 — Das Gebäude</span>
+        <span class="eyebrow">Bestand</span>
+      </div>
+      <h1>25 Jahre erprobte<br><em>Substanz.</em></h1>
+      <div class="section-rule"></div>
+    </div>
+
+    <div class="placeholder">
+      <span class="ph-tag">Außenansicht · Marxstraße 12</span>
+      <div style="height: 60mm; width: 100%;"></div>
+      <span class="ph-caption">Abb. — Bestandsgebäude, Hülle bleibt im Zuge der Sanierung erhalten</span>
+    </div>
+
+    <p style="margin-top: 6mm;">
+      Mehrfamilienhaus, Baujahr 1999/2000 — eine Generation Gebäudesubstanz, die handwerklich
+      solide gebaut wurde und mit Energieklasse B bereits oberhalb des Bestandsdurchschnitts
+      liegt. Die Hülle (Tragwerk, Fassade, Dach) wird im Zuge der Sanierung erhalten —
+      das ist der Punkt, an dem das Gebäude seit 25 Jahren bewiesen hat, dass es funktioniert.
+    </p>
+
+    <div style="margin-top: 5mm;">
+      <span class="eyebrow">Eckdaten Gebäude</span>
+      <div style="height: 2mm;"></div>
+      <table class="data-table compact">
+        <tr><td class="label">Gebäudetyp</td><td class="value">Mehrfamilienhaus</td></tr>
+        <tr><td class="label">Adresse</td><td class="value">Marxstraße 12, 76571 Gaggenau</td></tr>
+        <tr><td class="label">Baujahr Gebäude / Wärmeerzeuger</td><td class="value">1999 / 2000  ·  Wärmeerzeuger 2000</td></tr>
+        <tr><td class="label">Anzahl Wohneinheiten gesamt (Haus)</td><td class="value">5</td></tr>
+        <tr><td class="label">Gebäudenutzfläche A<sub>N</sub></td><td class="value">885,6 m²</td></tr>
+        <tr><td class="label">Wesentlicher Energieträger</td><td class="value">Erdgas H</td></tr>
+        <tr><td class="label">Lüftung</td><td class="value">Fensterlüftung</td></tr>
+        <tr><td class="label">Energieausweis-Typ</td><td class="value">Verbrauchsausweis · 70,7 kWh/(m²·a)</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="page-footer">
+    <span class="pf-brand">Direkta<span class="dot">.</span></span>
+    <span>Das Gebäude</span>
+    <span>05 / 13</span>
+  </div>
+</section>
+
+<!-- ============================================================
+     PAGE 6 — SANIERUNGSUMFANG
+     ============================================================ -->
+<section class="page">
+  <div class="page-inner">
+    <div class="page-header">
+      <span class="ph-brand">Direkta<span class="dot">.</span></span>
+      <span class="ph-meta">Marxstraße 12 · Gaggenau</span>
+    </div>
+
+    <div class="section-head">
+      <div class="meta-row">
+        <span class="section-num">04 — Sanierungsumfang</span>
+        <span class="eyebrow">Die Logik</span>
+      </div>
+      <h1>Was bleibt —<br>und was <em>komplett neu</em> wird.</h1>
+      <div class="section-rule"></div>
+    </div>
+
+    <p class="lede">
+      Die Außenhülle des Gebäudes (Tragwerk, Fassade, Dach) bleibt unverändert — sie funktioniert
+      seit 25 Jahren und ist energetisch in Klasse B. Die drei Erdgeschoss-Einheiten dagegen
+      werden vollständig auf den Rohbau zurückgeführt und neu aufgebaut. Käufer erhalten
+      Innenausbau-Standard 2026 in einer bewährten Bestandshülle.
+    </p>
+
+    <div class="compare">
+      <div class="compare-col">
+        <div class="c-eyebrow">— Bestand bleibt</div>
+        <h3>Bewährt erhalten</h3>
+        <ul>
+          <li>Tragwerk (Wände, Decken, Fundamente)</li>
+          <li>Außenwände und Fassade</li>
+          <li>Dach</li>
+          <li>Zentrale Heizungsanlage (Bj. 2000, Klasse B)</li>
+          <li>Gemeinschaftsflächen Treppenhaus / Eingang</li>
+          <li>Energetische Hülle (Klasse B)</li>
+        </ul>
+      </div>
+      <div class="compare-col neu">
+        <div class="c-eyebrow">— Wird komplett neu</div>
+        <h3>Innenausbau 2026</h3>
+        <ul>
+          <li>Grundriss EG: drei eigenständige Einheiten</li>
+          <li>Estrich + Fußbodenaufbau, Trittschalldämmung</li>
+          <li>Fußbodenheizung in allen Räumen</li>
+          <li>Komplette Elektroinstallation nach VDE</li>
+          <li>Komplette Sanitärinstallation und Bäder</li>
+          <li>Innentüren, Beschläge, Drücker</li>
+          <li>Bodenbelag, Wand- und Deckenoberflächen</li>
+          <li>Wohnungseingangstüren (RC2)</li>
+        </ul>
+      </div>
+    </div>
+
+    <div style="margin-top: 8mm;">
+      <span class="eyebrow">Wichtige Maßnahmen im Detail</span>
+      <div style="height: 3mm;"></div>
+      <table class="data-table compact">
+        <tr><td class="label">Schallschutz</td><td class="value">Erhöhte Anforderungen DIN 4109 Beiblatt 2</td></tr>
+        <tr><td class="label">Fußbodenheizung</td><td class="value">In allen Räumen, raumweise regelbar</td></tr>
+        <tr><td class="label">Wohnungseingang</td><td class="value">Sicherheitstüren Klasse RC2</td></tr>
+        <tr><td class="label">Smart-Home</td><td class="value">CAT-7-Verkabelung, vorbereitete Anschlüsse</td></tr>
+        <tr><td class="label">Barrierearmut</td><td class="value">Ebenerdig, bodengleiche Duschen</td></tr>
+      </table>
+    </div>
+
+    <p class="small muted" style="margin-top: 5mm;">
+      Konkrete Marken, Modelle und Bauteile werden in der Bemusterungs- bzw. Baubeschreibung
+      zum Kaufvertrag verbindlich festgelegt.
+    </p>
+  </div>
+
+  <div class="page-footer">
+    <span class="pf-brand">Direkta<span class="dot">.</span></span>
+    <span>Sanierungsumfang</span>
+    <span>06 / 13</span>
+  </div>
+</section>
+
+<!-- ============================================================
+     PAGE 7 — AUSSTATTUNG
+     ============================================================ -->
+<section class="page">
+  <div class="page-inner">
+    <div class="page-header">
+      <span class="ph-brand">Direkta<span class="dot">.</span></span>
+      <span class="ph-meta">Marxstraße 12 · Gaggenau</span>
+    </div>
+
+    <div class="section-head">
+      <div class="meta-row">
+        <span class="section-num">05 — Ausstattung</span>
+        <span class="eyebrow">Materialien & Technik</span>
+      </div>
+      <h1>Solide gut.<br><em>Nicht überteuert.</em></h1>
+      <div class="section-rule"></div>
+    </div>
+
+    <p class="muted" style="margin-bottom: 6mm;">
+      Die folgende Ausstattung ist Bestandteil der Sanierung und im Kaufpreis enthalten.
+      Niveau: gehobener Standard mit etablierten Marken.
+    </p>
+
+    <div class="two-col">
+      <div>
+        <div class="spec-block">
+          <h3>Boden</h3>
+          <table class="spec-table">
+            <tr><td>Wohnen, Schlafen, Flur, Ankleide</td><td>Eichen-Mehrschichtparkett, gebürstet, matt geölt</td></tr>
+            <tr><td>Küche</td><td>Eichenparkett, durchgehende Verlegung</td></tr>
+            <tr><td>Bäder</td><td>Großformat-Feinsteinzeug 60×120 cm, Sandton, R10</td></tr>
+            <tr><td>Abstellräume</td><td>Pflegeleichter Belag</td></tr>
+          </table>
+        </div>
+
+        <div class="spec-block">
+          <h3>Wand & Decke</h3>
+          <table class="spec-table">
+            <tr><td>Wände allgemein</td><td>Q3-Putz, Anstrich Reinweiß / warmes Weiß</td></tr>
+            <tr><td>Bäder Wandfliesen</td><td>Großformat, raumhoch in der Duschnische</td></tr>
+            <tr><td>Decken</td><td>Glatte Putzdecke Q3, weiß</td></tr>
+            <tr><td>Fensterbänke</td><td>Naturstein hell (Jura o. ä.)</td></tr>
+            <tr><td>Sockelleisten</td><td>Flach / bündig, weiß lackiert</td></tr>
+          </table>
+        </div>
+
+        <div class="spec-block">
+          <h3>Sanitär</h3>
+          <table class="spec-table">
+            <tr><td>WC</td><td>Wandhängend, Geberit-Vorwand</td></tr>
+            <tr><td>Dusche</td><td>Bodengleich, Walk-in, Echtglas</td></tr>
+            <tr><td>Waschtisch</td><td>Marken-Keramik (Villeroy & Boch, Duravit o. ä.)</td></tr>
+            <tr><td>Armaturen</td><td>Hansgrohe / Grohe, verchromt</td></tr>
+            <tr><td>Badewanne (WE 02)</td><td>Stahl, Wandeinbau, ca. 170×75 cm</td></tr>
+            <tr><td>Spiegel</td><td>Mit LED-Beleuchtung</td></tr>
+          </table>
+        </div>
+      </div>
+
+      <div>
+        <div class="spec-block">
+          <h3>Elektro & Beleuchtung</h3>
+          <table class="spec-table">
+            <tr><td>Schalter / Steckdosen</td><td>Gira, Jung oder Busch-Jaeger</td></tr>
+            <tr><td>Steckdosendichte</td><td>Über DIN 18015 Mindestanforderung</td></tr>
+            <tr><td>LED-Spots</td><td>Deckenbündig in Bädern und Küchen</td></tr>
+            <tr><td>Smart-Home</td><td>CAT-7-Verkabelung, vorbereitet</td></tr>
+            <tr><td>Türsprechanlage</td><td>Mit Video, am Wohnungseingang</td></tr>
+            <tr><td>Internet / TV</td><td>Anschluss Wohn- und Schlafzimmer</td></tr>
+          </table>
+        </div>
+
+        <div class="spec-block">
+          <h3>Küche · Vorbereitung</h3>
+          <p class="small" style="margin-bottom: 3mm;">
+            <strong>Küchenmöbel und Geräte sind nicht Bestandteil der Sanierung.</strong>
+            Die Wand wird vollständig vorbereitet übergeben:
+          </p>
+          <table class="spec-table">
+            <tr><td>Wasser & Abwasser</td><td>Anschluss vorhanden</td></tr>
+            <tr><td>Starkstrom</td><td>Für Backofen / Herd</td></tr>
+            <tr><td>Steckdosen</td><td>Geschirrspüler, Mikrowelle, weitere</td></tr>
+            <tr><td>Dunstabzug</td><td>Abluft- oder Umluftanschluss</td></tr>
+            <tr><td>Boden</td><td>Eichenparkett bis zur Küchenwand</td></tr>
+          </table>
+        </div>
+
+        <div class="spec-block">
+          <h3>Innentüren & Schlosswerk</h3>
+          <table class="spec-table">
+            <tr><td>Innentüren</td><td>Glatt, weiß, stumpf einschlagend, 2,11 m</td></tr>
+            <tr><td>Beschläge</td><td>Hochwertig, gebürstetes Edelstahl</td></tr>
+            <tr><td>Wohnungseingang</td><td>Sicherheitstür RC2, Markenschloss</td></tr>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="page-footer">
+    <span class="pf-brand">Direkta<span class="dot">.</span></span>
+    <span>Ausstattung</span>
+    <span>07 / 13</span>
+  </div>
+</section>
+
+<!-- ============================================================
+     PAGE 8 — WE 01bb
+     ============================================================ -->
+<section class="page">
+  <div class="page-inner tight">
+    <div class="page-header">
+      <span class="ph-brand">Direkta<span class="dot">.</span></span>
+      <span class="ph-meta">WE 01bb · 93,99 m²</span>
+    </div>
+
+    <div class="section-head">
+      <div class="meta-row">
+        <span class="section-num">06 — Wohneinheit 01bb</span>
+        <span class="eyebrow accent">Einheit 1 von 3</span>
+      </div>
+      <h1>3 Zimmer mit<br><em>Ankleide.</em></h1>
+      <div class="section-rule"></div>
+    </div>
+
+    <div class="placeholder unit-hero">
+      <span class="ph-tag">Abb. 01 · Küche & Essbereich</span>
+      <span class="ph-caption">Küche-Ess-Landschaft, 32,54 m² · Architektur-Visualisierung sanierter Endzustand</span>
+    </div>
+
+    <p>
+      Klare Hierarchie der Räume: Die offene Küche-Wohn-Landschaft empfängt, das Schlafzimmer
+      mit Ankleide bildet einen privaten Rückzug. 94 m² ebenerdig, ohne Treppen, im
+      Erdgeschoss eines vollständig kernsanierten Hauses.
+    </p>
+
+    <div class="two-col" style="margin-top: 6mm;">
+      <div>
+        <span class="eyebrow accent">Auf einen Blick</span>
+        <div style="height: 2mm;"></div>
+        <ul class="f-list">
+          <li>32,5 m² Kochen / Essen — die Bühne der Wohnung</li>
+          <li>19,2 m² Wohnzimmer mit großzügiger Belichtung</li>
+          <li>Schlafzimmer mit angeschlossener 6,7 m² Ankleide</li>
+          <li>Tageslicht-Bad (7,6 m²) mit bodengleicher Dusche</li>
+          <li>Eichenparkett durchgehend, Fußbodenheizung in allen Räumen</li>
+        </ul>
+        <p class="small muted" style="margin-top: 4mm;">
+          <strong style="color: var(--ink);">Zielgruppe:</strong> Anspruchsvolle Paare ohne Kinder,
+          Best Ager, urbanes Zweitdomizil.
+        </p>
+      </div>
+      <div>
+        <span class="eyebrow">Raumprogramm</span>
+        <div style="height: 2mm;"></div>
+        <div class="rooms" style="grid-template-columns: 1fr;">
+          <div class="room-row"><span class="r-name">Kochen / Essen</span><span class="r-area">32,54 m²</span></div>
+          <div class="room-row"><span class="r-name">Wohnen</span><span class="r-area">19,24 m²</span></div>
+          <div class="room-row"><span class="r-name">Schlafen</span><span class="r-area">12,03 m²</span></div>
+          <div class="room-row"><span class="r-name">Ankleide</span><span class="r-area">6,72 m²</span></div>
+          <div class="room-row"><span class="r-name">Bad</span><span class="r-area">7,59 m²</span></div>
+          <div class="room-row"><span class="r-name">WF / Flur</span><span class="r-area">13,24 m²</span></div>
+          <div class="room-row"><span class="r-name">Abstell</span><span class="r-area">2,63 m²</span></div>
+          <div class="room-row total"><span class="r-name">Wohnfläche gesamt</span><span class="r-area">93,99 m²</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="page-footer">
+    <span class="pf-brand">Direkta<span class="dot">.</span></span>
+    <span>Wohneinheit 01bb</span>
+    <span>08 / 13</span>
+  </div>
+</section>
+
+<!-- ============================================================
+     PAGE 9 — WE 02bb
+     ============================================================ -->
+<section class="page">
+  <div class="page-inner tight">
+    <div class="page-header">
+      <span class="ph-brand">Direkta<span class="dot">.</span></span>
+      <span class="ph-meta">WE 02bb · 95,36 m²</span>
+    </div>
+
+    <div class="section-head">
+      <div class="meta-row">
+        <span class="section-num">07 — Wohneinheit 02bb</span>
+        <span class="eyebrow accent">Einheit 2 von 3</span>
+      </div>
+      <h1>Familienwohnung<br><em>mit getrennten Schlafbereichen.</em></h1>
+      <div class="section-rule"></div>
+    </div>
+
+    <div class="placeholder unit-hero">
+      <span class="ph-tag">Abb. 01 · Wohn-Essbereich</span>
+      <span class="ph-caption">Wohn-Essbereich, 30,89 m² · sanierter Endzustand, unmöbliert</span>
+    </div>
+
+    <p>
+      Die Wohnung für die Lebensphase, in der Stadtwohnen und Familiengründung sich nicht
+      ausschließen. Klare räumliche Trennung zwischen Eltern- und Kindbereich, vollwertiges
+      Familienbad, Wohnzimmer mit echter Großzügigkeit.
+    </p>
+
+    <div class="two-col" style="margin-top: 6mm;">
+      <div>
+        <span class="eyebrow accent">Auf einen Blick</span>
+        <div style="height: 2mm;"></div>
+        <ul class="f-list">
+          <li>30,9 m² Wohn-Essbereich — der Familientreffpunkt</li>
+          <li>13,1 m² separate Küche</li>
+          <li>Kinderzimmer 11,9 m² — vollwertig</li>
+          <li>Elternschlafzimmer 13,6 m², räumlich getrennt</li>
+          <li>Familienbad 7,6 m² mit Dusche und Wanne</li>
+          <li>Eichenparkett, Fußbodenheizung in allen Räumen</li>
+        </ul>
+        <p class="small muted" style="margin-top: 4mm;">
+          <strong style="color: var(--ink);">Zielgruppe:</strong> Junge Familien,
+          Paare mit Kinderwunsch.
+        </p>
+      </div>
+      <div>
+        <span class="eyebrow">Raumprogramm</span>
+        <div style="height: 2mm;"></div>
+        <div class="rooms" style="grid-template-columns: 1fr;">
+          <div class="room-row"><span class="r-name">Wohnen / Essen</span><span class="r-area">30,89 m²</span></div>
+          <div class="room-row"><span class="r-name">Kochen</span><span class="r-area">13,09 m²</span></div>
+          <div class="room-row"><span class="r-name">Schlafen</span><span class="r-area">13,61 m²</span></div>
+          <div class="room-row"><span class="r-name">Kind 1</span><span class="r-area">11,88 m²</span></div>
+          <div class="room-row"><span class="r-name">Bad</span><span class="r-area">7,59 m²</span></div>
+          <div class="room-row"><span class="r-name">WF / Flur</span><span class="r-area">15,60 m²</span></div>
+          <div class="room-row"><span class="r-name">Abstell</span><span class="r-area">2,70 m²</span></div>
+          <div class="room-row total"><span class="r-name">Wohnfläche gesamt</span><span class="r-area">95,36 m²</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="page-footer">
+    <span class="pf-brand">Direkta<span class="dot">.</span></span>
+    <span>Wohneinheit 02bb</span>
+    <span>09 / 13</span>
+  </div>
+</section>
+
+<!-- ============================================================
+     PAGE 10 — WE 03bb
+     ============================================================ -->
+<section class="page">
+  <div class="page-inner tight">
+    <div class="page-header">
+      <span class="ph-brand">Direkta<span class="dot">.</span></span>
+      <span class="ph-meta">WE 03bb · 48,50 m²</span>
+    </div>
+
+    <div class="section-head">
+      <div class="meta-row">
+        <span class="section-num">08 — Wohneinheit 03bb</span>
+        <span class="eyebrow accent">Einheit 3 von 3</span>
+      </div>
+      <h1>Kompaktes Apartment<br><em>mit eigenem Eingang.</em></h1>
+      <div class="section-rule"></div>
+    </div>
+
+    <div class="placeholder unit-hero">
+      <span class="ph-tag">Abb. 01 · Wohn-Essbereich</span>
+      <span class="ph-caption">Wohn-Essbereich, 19,16 m² · sanierter Endzustand, unmöbliert</span>
+    </div>
+
+    <p>
+      Auf 48,5 m² ein vollwertiges Zuhause — kein Studio, kein Provisorium. Mit eigenem
+      Eingang besonders interessant als Pied-à-terre für Wochenpendler oder als
+      renditestarke Kapitalanlage.
+    </p>
+
+    <div class="two-col" style="margin-top: 6mm;">
+      <div>
+        <span class="eyebrow accent">Auf einen Blick</span>
+        <div style="height: 2mm;"></div>
+        <ul class="f-list">
+          <li>Eigener Wohnungseingang</li>
+          <li>19,2 m² Wohn-Essbereich — überdurchschnittlich</li>
+          <li>Vollwertiges Schlafzimmer 13,6 m²</li>
+          <li>Effiziente Küche (6,1 m²)</li>
+          <li>Tageslicht-Bad mit bodengleicher Dusche</li>
+          <li>Eichenparkett, Fußbodenheizung in allen Räumen</li>
+        </ul>
+        <p class="small muted" style="margin-top: 4mm;">
+          <strong style="color: var(--ink);">Zielgruppe:</strong> Singles, Wochenpendler,
+          Pied-à-terre, Kapitalanleger.
+        </p>
+      </div>
+      <div>
+        <span class="eyebrow">Raumprogramm</span>
+        <div style="height: 2mm;"></div>
+        <div class="rooms" style="grid-template-columns: 1fr;">
+          <div class="room-row"><span class="r-name">Wohnen / Essen</span><span class="r-area">19,16 m²</span></div>
+          <div class="room-row"><span class="r-name">Schlafen</span><span class="r-area">13,60 m²</span></div>
+          <div class="room-row"><span class="r-name">Kochen</span><span class="r-area">6,10 m²</span></div>
+          <div class="room-row"><span class="r-name">Bad</span><span class="r-area">4,70 m²</span></div>
+          <div class="room-row"><span class="r-name">WF</span><span class="r-area">2,73 m²</span></div>
+          <div class="room-row"><span class="r-name">Abstell</span><span class="r-area">2,21 m²</span></div>
+          <div class="room-row total"><span class="r-name">Wohnfläche gesamt</span><span class="r-area">48,50 m²</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="page-footer">
+    <span class="pf-brand">Direkta<span class="dot">.</span></span>
+    <span>Wohneinheit 03bb</span>
+    <span>10 / 13</span>
+  </div>
+</section>
+
+<!-- ============================================================
+     PAGE 11 — ENERGIE & VERKAUFSOPTIONEN
+     ============================================================ -->
+<section class="page">
+  <div class="page-inner">
+    <div class="page-header">
+      <span class="ph-brand">Direkta<span class="dot">.</span></span>
+      <span class="ph-meta">Marxstraße 12 · Gaggenau</span>
+    </div>
+
+    <div class="section-head">
+      <div class="meta-row">
+        <span class="section-num">09 — Energie & Verkauf</span>
+        <span class="eyebrow">Pflichtangaben & Konditionen</span>
+      </div>
+      <h1>Pflichtangaben<br><em>nach GEG.</em></h1>
+      <div class="section-rule"></div>
+    </div>
+
+    <div class="two-col">
+      <div>
+        <span class="eyebrow">Energieausweis (Gesamtgebäude)</span>
+        <div style="height: 3mm;"></div>
+        <table class="data-table compact">
+          <tr><td class="label">Art des Energieausweises</td><td class="value">Verbrauchsausweis</td></tr>
+          <tr><td class="label">Endenergieverbrauch</td><td class="value">70,7 kWh/(m²·a)</td></tr>
+          <tr><td class="label">Wesentlicher Energieträger</td><td class="value">Erdgas H</td></tr>
+          <tr><td class="label">Baujahr Gebäude</td><td class="value">1999 / 2000</td></tr>
+          <tr><td class="label">Effizienzklasse</td><td class="value">B</td></tr>
+          <tr><td class="label">Registriernummer</td><td class="value">BW-2019-002816288</td></tr>
+          <tr><td class="label">Gültig bis</td><td class="value">31.07.2029</td></tr>
+          <tr><td class="label">Aussteller</td><td class="value">Stadtwerke Baden-Baden</td></tr>
+        </table>
+
+        <div class="energy-class-badge">B</div>
+
+        <p class="small muted" style="margin-top: 4mm;">
+          Die spezifischen Verbrauchswerte der EG-Einheiten verbessern sich mit der Sanierung
+          (Fußbodenheizung mit niedriger Vorlauftemperatur, neuer Estrichaufbau). Eine
+          Aktualisierung des Energieausweises nach Sanierungsabschluss ist möglich.
+        </p>
+      </div>
+
+      <div>
+        <span class="eyebrow">Verkaufsoptionen</span>
+        <div style="height: 3mm;"></div>
+
+        <p class="small">
+          <strong style="color: var(--ink);">Option A — Einzelerwerb.</strong>
+          Geeignet für Selbstnutzer. Jeder Einzelerwerber profitiert vom gleichen
+          Sanierungsstandard wie ein Paket-Erwerber.
+        </p>
+        <p class="small">
+          <strong style="color: var(--ink);">Option B — Paket-Erwerb.</strong>
+          Drei Einheiten mit unterschiedlichen Mietsegmenten — Diversifizierung im
+          selben Objekt, Skalenvorteile bei Verwaltung und Vermietung.
+        </p>
+
+        <div style="height: 4mm;"></div>
+
+        <table class="price-table">
+          <thead>
+            <tr>
+              <th>Einheit</th>
+              <th>Wohnfläche</th>
+              <th style="text-align: right;">Kaufpreis</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="pt-unit">WE 01bb</span></td>
+              <td><span class="pt-area">93,99 m²</span></td>
+              <td><span class="pt-price">auf Anfrage</span></td>
+            </tr>
+            <tr>
+              <td><span class="pt-unit">WE 02bb</span></td>
+              <td><span class="pt-area">95,36 m²</span></td>
+              <td><span class="pt-price">auf Anfrage</span></td>
+            </tr>
+            <tr>
+              <td><span class="pt-unit">WE 03bb</span></td>
+              <td><span class="pt-area">48,50 m²</span></td>
+              <td><span class="pt-price">auf Anfrage</span></td>
+            </tr>
+            <tr class="package">
+              <td><span class="pt-unit">Paket · alle 3 WE</span></td>
+              <td><span class="pt-area">237,85 m²</span></td>
+              <td><span class="pt-price">Paketpreis auf Anfrage</span></td>
+            </tr>
+          </tbody>
+        </table>
+
+        <p class="small muted" style="margin-top: 4mm;">
+          Käuferprovision, Notar- und Grundbuchkosten, Grunderwerbsteuer
+          (Baden-Württemberg: 5,0 %) sind separat zu tragen. Die Kaufpreise verstehen
+          sich für den vollständig sanierten Endzustand.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div class="page-footer">
+    <span class="pf-brand">Direkta<span class="dot">.</span></span>
+    <span>Energie & Verkauf</span>
+    <span>11 / 13</span>
+  </div>
+</section>
+
+<!-- ============================================================
+     PAGE 12 — KONTAKT & RECHTLICHES
+     ============================================================ -->
+<section class="page">
+  <div class="page-inner">
+    <div class="page-header">
+      <span class="ph-brand">Direkta<span class="dot">.</span></span>
+      <span class="ph-meta">Marxstraße 12 · Gaggenau</span>
+    </div>
+
+    <div class="section-head">
+      <div class="meta-row">
+        <span class="section-num">10 — Kontakt</span>
+        <span class="eyebrow">Ansprechpartner</span>
+      </div>
+      <h1>Wir freuen uns<br><em>auf Ihre Anfrage.</em></h1>
+      <div class="section-rule"></div>
+    </div>
+
+    <div class="contact-card">
+      <div>
+        <div class="cc-eyebrow">— Eigentümer / Verkauf</div>
+        <h3>Direkta GmbH</h3>
+        <div class="c-line"><span class="c-key">Ansprechpartner</span> [Name]</div>
+        <div class="c-line"><span class="c-key">Telefon</span> [Telefonnummer]</div>
+        <div class="c-line"><span class="c-key">E-Mail</span> [E-Mail]</div>
+        <div class="c-line"><span class="c-key">Adresse</span> [Anschrift]</div>
+      </div>
+      <div>
+        <div class="cc-eyebrow">— Termin vereinbaren</div>
+        <h3>Besichtigung &<br>Konditionen.</h3>
+        <p style="font-size: 8.5pt; color: rgba(247,243,234,.75); line-height: 1.55; margin-top: 3mm;">
+          Für einen Besichtigungstermin oder konkrete Konditions-Anfragen wenden Sie sich
+          bitte an den oben genannten Ansprechpartner. Konditionen für Einzel- und
+          Paket-Erwerb auf Anfrage.
+        </p>
+      </div>
+    </div>
+
+    <div class="legal" style="margin-top: 10mm;">
+      <h4>Rechtliche Hinweise</h4>
+      <p>
+        Dieses Exposé dient ausschließlich der Information möglicher Kaufinteressenten.
+        Es stellt kein bindendes Angebot dar. Alle Angaben beruhen auf vom Eigentümer bzw.
+        dessen Bevollmächtigten zur Verfügung gestellten Unterlagen. Eine Haftung für
+        Vollständigkeit und Richtigkeit kann nicht übernommen werden. Maßgeblich für einen
+        Erwerb sind ausschließlich die im notariell beurkundeten Kaufvertrag und in der
+        Baubeschreibung getroffenen Regelungen.
+      </p>
+      <p>
+        Zwischenverkauf, Irrtum und Änderungen vorbehalten. Die in diesem Exposé verwendeten
+        Visualisierungen sind Architektur-Darstellungen des geplanten sanierten Endzustands.
+        Sie zeigen den Übergabezustand bewusst unmöbliert. Tatsächliche Bauausführung kann
+        in Details (Materialien, Farbtöne, Beschläge) abweichen — maßgeblich ist die zum
+        Kaufvertrag gehörende Baubeschreibung.
+      </p>
+      <p>
+        Die in diesem Exposé beschriebene Sanierung ist Bestandteil des Kaufgegenstands;
+        konkrete Marken, Modelle und Bauteile werden in der verbindlichen Baubeschreibung
+        zum Kaufvertrag festgelegt. Energieausweis liegt vor und wird auf Wunsch eingesehen.
+        Gemäß Geldwäschegesetz (GwG) ist der Verkäufer verpflichtet, die Identität des
+        Erwerbers vor Abschluss des Kaufvertrags festzustellen.
+      </p>
+    </div>
+  </div>
+
+  <div class="page-footer">
+    <span class="pf-brand">Direkta<span class="dot">.</span></span>
+    <span>Kontakt & Rechtliches</span>
+    <span>12 / 13</span>
+  </div>
+</section>
+
+<!-- ============================================================
+     PAGE 13 — BACK COVER
+     ============================================================ -->
+<section class="page back-cover">
+  <div class="bc-mark">
+    <span class="brand">Direkta<span class="dot">.</span></span>
+    <div class="bc-rule"></div>
+    <div class="bc-tag">Immobilie verkaufen. Direkt.</div>
+  </div>
+  <div class="bc-bottom">
+    Marxstraße 12 · 76571 Gaggenau · Exposé v2.0 · Stand 28.04.2026 · www.direkta.de
+  </div>
+</section>
+
+</body>
+</html>

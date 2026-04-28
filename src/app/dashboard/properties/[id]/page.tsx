@@ -3,6 +3,8 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Image from "next/image";
+import ExposeFields from "./expose-fields";
+import TextImport from "./text-import";
 
 interface MediaItem {
   id: string;
@@ -27,6 +29,9 @@ interface Property {
   floor: number | null;
   condition: string;
   attributes: string[] | null;
+  roomProgram: unknown;
+  specifications: unknown;
+  buildingInfo: unknown;
   createdAt: string;
   energyCert: {
     type: string;
@@ -318,8 +323,8 @@ export default function PropertyDetailPage() {
           <div className="bg-white rounded-2xl border border-slate-200 p-7">
             <div className="flex items-center justify-between mb-5">
               <div>
-                <h2 className="text-lg font-black text-blueprint">Grundriss</h2>
-                <p className="text-xs text-slate-500 mt-0.5">PDF, JPG oder PNG — wird im Exposé-PDF angezeigt</p>
+                <h2 className="text-lg font-black text-blueprint">Grundrisse</h2>
+                <p className="text-xs text-slate-500 mt-0.5">PDF, JPG oder PNG — mehrere Dateien möglich</p>
               </div>
               <label className="bg-blueprint hover:bg-primary text-white px-4 py-2 rounded-xl text-xs font-black uppercase tracking-[0.15em] transition-colors cursor-pointer flex items-center gap-2">
                 <span className="material-symbols-outlined text-base">upload_file</span>
@@ -327,14 +332,17 @@ export default function PropertyDetailPage() {
                 <input
                   type="file"
                   accept="image/*,.pdf"
+                  multiple
                   className="hidden"
-                  onChange={(e) => {
-                    if (e.target.files?.[0]) {
-                      const form = new FormData();
-                      form.append("file", e.target.files[0]);
-                      form.append("kind", "FLOORPLAN");
-                      fetch(`/api/properties/${id}/media`, { method: "POST", body: form })
-                        .then(() => fetchProperty());
+                  onChange={async (e) => {
+                    if (e.target.files && e.target.files.length > 0) {
+                      for (const file of Array.from(e.target.files)) {
+                        const form = new FormData();
+                        form.append("file", file);
+                        form.append("kind", "FLOORPLAN");
+                        await fetch(`/api/properties/${id}/media`, { method: "POST", body: form });
+                      }
+                      fetchProperty();
                     }
                   }}
                 />
@@ -426,6 +434,17 @@ export default function PropertyDetailPage() {
               </div>
             )}
           </div>
+        </div>
+
+        {/* Expose details — full width below the grid */}
+        <div className="lg:col-span-3 mt-6 space-y-6">
+          <TextImport propertyId={property.id} onImported={fetchProperty} />
+          <ExposeFields
+            propertyId={property.id}
+            initialRooms={(property.roomProgram as { name: string; area: string }[] | null) || []}
+            initialSpecs={(property.specifications as Record<string, Record<string, string>> | null) || {}}
+            initialBuilding={(property.buildingInfo as Record<string, string> | null) || {}}
+          />
         </div>
 
         {/* Right column */}
