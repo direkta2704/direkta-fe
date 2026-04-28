@@ -208,6 +208,14 @@ export default function ListingDetailPage() {
             {listing.property.street} {listing.property.houseNumber}, {listing.property.postcode} {listing.property.city}
           </p>
         </div>
+        <a
+          href={`/api/listings/${id}/pdf`}
+          target="_blank"
+          className="bg-white border border-slate-200 hover:border-primary text-blueprint px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-[0.15em] transition-colors flex items-center gap-2 flex-shrink-0"
+        >
+          <span className="material-symbols-outlined text-base text-primary">picture_as_pdf</span>
+          Exposé PDF
+        </a>
       </div>
 
       {listing.status === "ACTIVE" && (

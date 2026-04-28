@@ -178,6 +178,14 @@ export default function PropertyDetailPage() {
             </button>
           ) : (
             <>
+              <a
+                href={`/api/listings/${property.listings[0].id}/pdf`}
+                target="_blank"
+                className="bg-white border border-slate-200 hover:border-primary text-blueprint px-5 py-3 rounded-xl text-sm font-black uppercase tracking-[0.18em] transition-colors flex items-center gap-2"
+              >
+                <span className="material-symbols-outlined text-lg text-primary">picture_as_pdf</span>
+                PDF
+              </a>
               <button
                 onClick={openPreview}
                 className="bg-white border border-slate-200 hover:border-primary text-blueprint px-5 py-3 rounded-xl text-sm font-black uppercase tracking-[0.18em] transition-colors flex items-center gap-2"
