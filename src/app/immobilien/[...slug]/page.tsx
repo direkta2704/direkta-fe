@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import EnquiryForm from "./enquiry-form";
 import OfferForm from "./offer-form";
+import BookingWidget from "./booking-widget";
 
 interface Props {
   params: Promise<{ slug: string[] }>;
@@ -188,6 +189,10 @@ export default async function PublicListingPage({ params }: Props) {
           <div>
             <div id="anfrage" className="sticky top-24">
               <EnquiryForm listingId={listing.id} />
+
+              <div className="mt-4">
+                <BookingWidget listingId={listing.id} />
+              </div>
 
               <div className="mt-4">
                 <OfferForm listingId={listing.id} askingPrice={price} />

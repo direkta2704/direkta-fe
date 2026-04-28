@@ -212,7 +212,7 @@ export default function LeadsPage() {
                 )}
 
                 <div className="space-y-2">
-                  {selectedLead.status !== "QUALIFIED" && selectedLead.status !== "DECLINED" && (
+                  {selectedLead.status !== "QUALIFIED" && selectedLead.status !== "DECLINED" && selectedLead.status !== "VIEWING_SCHEDULED" && (
                     <button
                       onClick={() => updateLeadStatus(selectedLead.id, "QUALIFIED")}
                       className="w-full bg-emerald-500 hover:bg-emerald-600 text-white py-2.5 rounded-xl text-xs font-black uppercase tracking-[0.15em] transition-colors flex items-center justify-center gap-2"
@@ -220,6 +220,15 @@ export default function LeadsPage() {
                       <span className="material-symbols-outlined text-base">check</span>
                       Qualifizieren
                     </button>
+                  )}
+                  {(selectedLead.status === "QUALIFIED" || selectedLead.status === "NEW") && (
+                    <a
+                      href="/dashboard/viewings"
+                      className="w-full bg-blue-500 hover:bg-blue-600 text-white py-2.5 rounded-xl text-xs font-black uppercase tracking-[0.15em] transition-colors flex items-center justify-center gap-2"
+                    >
+                      <span className="material-symbols-outlined text-base">calendar_month</span>
+                      Besichtigung planen
+                    </a>
                   )}
                   {selectedLead.status !== "DECLINED" && (
                     <button
