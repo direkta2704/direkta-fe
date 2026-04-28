@@ -19,6 +19,10 @@ const navMain = [
   { href: "/dashboard/viewings", label: "Besichtigungen", icon: "calendar_month" },
 ];
 
+const navAgents = [
+  { href: "/dashboard/expose-agent", label: "Exposé-Assistent", icon: "forum" },
+];
+
 const navTools = [
   { href: "/dashboard/syndication", label: "Portal-Sync", icon: "sync_alt" },
 ];
@@ -81,6 +85,27 @@ export default function Sidebar({ userName, userEmail }: SidebarProps) {
         </nav>
 
         <div className="text-[9px] font-black uppercase tracking-[0.25em] text-white/30 px-3 mb-3 mt-8">
+          KI-Assistenten
+        </div>
+        <nav className="space-y-1 mb-6">
+          {navAgents.map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              onClick={() => setMobileOpen(false)}
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 ${
+                isActive(item.href)
+                  ? "bg-primary text-white shadow-lg shadow-primary/25"
+                  : "text-white/60 hover:text-white hover:bg-white/[0.06]"
+              }`}
+            >
+              <span className="material-symbols-outlined text-xl">{item.icon}</span>
+              {item.label}
+            </Link>
+          ))}
+        </nav>
+
+        <div className="text-[9px] font-black uppercase tracking-[0.25em] text-white/30 px-3 mb-3">
           Werkzeuge
         </div>
         <nav className="space-y-1">
