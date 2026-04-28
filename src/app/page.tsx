@@ -30,6 +30,23 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    if (!listingsLoaded) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add("in");
+            io.unobserve(entry.target);
+          }
+        });
+      },
+      { threshold: 0.12, rootMargin: "0px 0px -60px 0px" }
+    );
+    document.querySelectorAll(".reveal:not(.in)").forEach((el) => io.observe(el));
+    return () => io.disconnect();
+  }, [listingsLoaded]);
+
+  useEffect(() => {
     const nav = document.getElementById("navShell");
     const onScroll = () => {
       if (!nav) return;
@@ -95,11 +112,12 @@ export default function Home() {
   return (
     <>
       {/* ========== NAVBAR ========== */}
-      <header className="fixed top-0 left-0 right-0 z-100 flex justify-center px-4">
+      <header className="fixed top-0 left-0 right-0 z-100 flex justify-center">
         <div
           id="navShell"
-          className="nav-shell w-full max-w-[1400px] mt-0 rounded-none bg-white/70 backdrop-blur-md border-b border-slate-100 flex items-center justify-between px-4 sm:px-6 py-3.5"
+          className="nav-shell w-full mt-0 rounded-none bg-white/70 backdrop-blur-md border-b border-slate-100 py-3.5"
         >
+          <div className="max-w-[1400px] mx-auto flex items-center justify-between px-4 sm:px-6">
           <a href="#" className="flex items-center gap-2 group flex-shrink-0">
             <span className="material-symbols-outlined text-3xl text-primary transition-transform duration-500 group-hover:rotate-12">
               home_work
@@ -149,6 +167,7 @@ export default function Home() {
                 {mobileNav ? "close" : "menu"}
               </span>
             </button>
+          </div>
           </div>
         </div>
 
@@ -499,36 +518,55 @@ export default function Home() {
           </div>
         </section>
 
-        {/* ========== PROPERTY GALLERY ========== */}
-        <section className="py-20 px-6 bg-background-light overflow-hidden">
+        {/* ========== RESIDENTIAL SHOWCASE ========== */}
+        <section className="py-28 px-6 bg-white">
           <div className="max-w-7xl mx-auto">
-            <div className="text-center mb-12 reveal">
-              <span className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">
-                Von Altbau bis Neubau · Alle Immobilientypen willkommen
-              </span>
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 reveal">
-              {[
-                { src: "/images/building-1.jpg", label: "Einfamilienhaus", alt: "Berliner Wohngebäude mit rotem Ziegeldach" },
-                { src: "/images/building-2.jpg", label: "Mehrfamilienhaus", alt: "Urbane Architektur in Frankfurt" },
-                { src: "/images/building-3.jpg", label: "Altbau-Wohnung", alt: "Historisches Haus mit rotem Dach" },
-                { src: "/images/building-4.jpg", label: "Reihenhaus", alt: "Traditionelle Stadthäuser in Deutschland" },
-                { src: "/images/building-5.jpg", label: "Stadthaus", alt: "Historisches Backsteingebäude in Mainz" },
-                { src: "/images/building-6.jpg", label: "Eigentumswohnung", alt: "Backsteingebäude mit charmanter Fassade" },
-              ].map((img) => (
-                <div key={img.label} className="group relative aspect-[4/3] rounded-2xl overflow-hidden">
-                  <img
-                    src={img.src}
-                    alt={img.alt}
-                    className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
-                    loading="lazy"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-blueprint/80 via-blueprint/20 to-transparent"></div>
-                  <div className="absolute bottom-4 left-4">
-                    <span className="text-white text-sm font-black uppercase tracking-widest">{img.label}</span>
-                  </div>
+            <div className="grid lg:grid-cols-12 gap-5 items-end mb-10 reveal">
+              <div className="lg:col-span-7">
+                <div className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-4 py-1.5 text-primary mb-6">
+                  <span className="material-symbols-outlined text-sm">home_work</span>
+                  <span className="text-[10px] font-black uppercase tracking-[0.2em]">Immobilien in Deutschland</span>
                 </div>
-              ))}
+                <h2 className="text-5xl lg:text-6xl font-black tracking-[-0.04em] leading-[0.9] text-blueprint">
+                  Jede Immobilie
+                  <br />
+                  <span className="text-primary">verdient den besten Verkauf.</span>
+                </h2>
+              </div>
+              <div className="lg:col-span-5">
+                <p className="text-slate-600 leading-relaxed">
+                  Ob moderner Neubau, klassischer Altbau oder Einfamilienhaus im
+                  Gr&uuml;nen — Direkta begleitet jeden Immobilientyp durch den
+                  gesamten Verkaufsprozess.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid md:grid-cols-3 gap-4 reveal">
+              <div className="md:col-span-2 md:row-span-2 rounded-3xl overflow-hidden group">
+                <img
+                  src="/images/res-hero.jpg"
+                  alt="Wohnviertel mit Einfamilienhäusern und Gärten"
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                  loading="lazy"
+                />
+              </div>
+              <div className="rounded-3xl overflow-hidden group aspect-[4/3] md:aspect-auto">
+                <img
+                  src="/images/res-modern.jpg"
+                  alt="Modernes Wohnhaus mit Glasfassade"
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                  loading="lazy"
+                />
+              </div>
+              <div className="rounded-3xl overflow-hidden group aspect-[4/3] md:aspect-auto">
+                <img
+                  src="/images/res-village.jpg"
+                  alt="Deutsche Häuser im Grünen"
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                  loading="lazy"
+                />
+              </div>
             </div>
           </div>
         </section>
@@ -1398,7 +1436,7 @@ export default function Home() {
           <div className="max-w-7xl mx-auto reveal">
             <div className="bg-blueprint rounded-[3rem] p-12 lg:p-20 relative overflow-hidden">
               <div className="absolute inset-0">
-                <img src="/images/building-2.jpg" alt="" className="w-full h-full object-cover opacity-[0.08]" aria-hidden="true" />
+                <img src="/images/res-hero.jpg" alt="" className="w-full h-full object-cover opacity-[0.08]" aria-hidden="true" />
               </div>
               <div className="absolute inset-0 blueprint-grid opacity-30"></div>
               <div className="absolute -top-40 -right-40 w-[500px] h-[500px] bg-primary/30 rounded-full blur-[140px]"></div>
