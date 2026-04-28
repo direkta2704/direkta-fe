@@ -82,6 +82,8 @@ export async function POST(req: Request) {
       portal: credential.portal,
       username: credential.username,
       status: credential.status,
+      consentedAt: credential.consentedAt,
+      lastVerifiedAt: credential.lastVerifiedAt,
     }, { status: 201 });
   } catch (err) {
     console.error("Credential error:", err);

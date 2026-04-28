@@ -31,6 +31,7 @@ export default function RootLayout({
     <html
       lang="de"
       className={`${bricolage.variable} ${manrope.variable} antialiased`}
+      suppressHydrationWarning
     >
       <head>
         <link
@@ -38,7 +39,7 @@ export default function RootLayout({
           rel="stylesheet"
         />
       </head>
-      <body className="bg-background-light text-blueprint overflow-x-hidden">
+      <body className="bg-background-light text-blueprint overflow-x-hidden" suppressHydrationWarning>
         <Providers>{children}</Providers>
         <CookieBanner />
       </body>
