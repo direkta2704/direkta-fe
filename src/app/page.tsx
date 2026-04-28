@@ -195,6 +195,10 @@ export default function Home() {
       <main>
         {/* ========== HERO ========== */}
         <section className="relative pt-36 lg:pt-44 pb-24 px-6 overflow-hidden">
+          <div className="absolute inset-0 -z-20 overflow-hidden">
+            <img src="/images/hero-building.jpg" alt="" className="w-full h-full object-cover opacity-[0.12]" aria-hidden="true" />
+            <div className="absolute inset-0 bg-gradient-to-b from-transparent via-background-light/60 to-background-light"></div>
+          </div>
           <div className="absolute inset-0 grid-pattern -z-10"></div>
           <div className="absolute top-32 -right-32 w-[480px] h-[480px] rounded-full bg-primary/10 blur-[120px] -z-10"></div>
           <div className="absolute -bottom-32 -left-32 w-[420px] h-[420px] rounded-full bg-blueprint/5 blur-[120px] -z-10"></div>
@@ -491,6 +495,40 @@ export default function Home() {
                   Maklerprovision
                 </p>
               </div>
+            </div>
+          </div>
+        </section>
+
+        {/* ========== PROPERTY GALLERY ========== */}
+        <section className="py-20 px-6 bg-background-light overflow-hidden">
+          <div className="max-w-7xl mx-auto">
+            <div className="text-center mb-12 reveal">
+              <span className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">
+                Von Altbau bis Neubau · Alle Immobilientypen willkommen
+              </span>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 reveal">
+              {[
+                { src: "/images/building-1.jpg", label: "Einfamilienhaus", alt: "Berliner Wohngebäude mit rotem Ziegeldach" },
+                { src: "/images/building-2.jpg", label: "Mehrfamilienhaus", alt: "Urbane Architektur in Frankfurt" },
+                { src: "/images/building-3.jpg", label: "Altbau-Wohnung", alt: "Historisches Haus mit rotem Dach" },
+                { src: "/images/building-4.jpg", label: "Reihenhaus", alt: "Traditionelle Stadthäuser in Deutschland" },
+                { src: "/images/building-5.jpg", label: "Stadthaus", alt: "Historisches Backsteingebäude in Mainz" },
+                { src: "/images/building-6.jpg", label: "Eigentumswohnung", alt: "Backsteingebäude mit charmanter Fassade" },
+              ].map((img) => (
+                <div key={img.label} className="group relative aspect-[4/3] rounded-2xl overflow-hidden">
+                  <img
+                    src={img.src}
+                    alt={img.alt}
+                    className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
+                    loading="lazy"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-blueprint/80 via-blueprint/20 to-transparent"></div>
+                  <div className="absolute bottom-4 left-4">
+                    <span className="text-white text-sm font-black uppercase tracking-widest">{img.label}</span>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         </section>
@@ -1359,6 +1397,9 @@ export default function Home() {
         <section id="cta" className="py-28 px-6 bg-white">
           <div className="max-w-7xl mx-auto reveal">
             <div className="bg-blueprint rounded-[3rem] p-12 lg:p-20 relative overflow-hidden">
+              <div className="absolute inset-0">
+                <img src="/images/building-2.jpg" alt="" className="w-full h-full object-cover opacity-[0.08]" aria-hidden="true" />
+              </div>
               <div className="absolute inset-0 blueprint-grid opacity-30"></div>
               <div className="absolute -top-40 -right-40 w-[500px] h-[500px] bg-primary/30 rounded-full blur-[140px]"></div>
               <div className="absolute -bottom-40 -left-40 w-[400px] h-[400px] bg-primary/20 rounded-full blur-[120px]"></div>

@@ -314,6 +314,74 @@ export default function PropertyDetailPage() {
             )}
           </div>
 
+          {/* Floor plan */}
+          <div className="bg-white rounded-2xl border border-slate-200 p-7">
+            <div className="flex items-center justify-between mb-5">
+              <div>
+                <h2 className="text-lg font-black text-blueprint">Grundriss</h2>
+                <p className="text-xs text-slate-500 mt-0.5">PDF, JPG oder PNG — wird im Exposé-PDF angezeigt</p>
+              </div>
+              <label className="bg-blueprint hover:bg-primary text-white px-4 py-2 rounded-xl text-xs font-black uppercase tracking-[0.15em] transition-colors cursor-pointer flex items-center gap-2">
+                <span className="material-symbols-outlined text-base">upload_file</span>
+                Grundriss hochladen
+                <input
+                  type="file"
+                  accept="image/*,.pdf"
+                  className="hidden"
+                  onChange={(e) => {
+                    if (e.target.files?.[0]) {
+                      const form = new FormData();
+                      form.append("file", e.target.files[0]);
+                      form.append("kind", "FLOORPLAN");
+                      fetch(`/api/properties/${id}/media`, { method: "POST", body: form })
+                        .then(() => fetchProperty());
+                    }
+                  }}
+                />
+              </label>
+            </div>
+            {(() => {
+              const floorplans = property.media.filter((m) => m.kind === "FLOORPLAN");
+              if (floorplans.length === 0) {
+                return (
+                  <div className="border-2 border-dashed border-slate-200 rounded-xl p-8 text-center">
+                    <span className="material-symbols-outlined text-3xl text-slate-300 mb-2 block">floor_lamp</span>
+                    <p className="text-sm text-slate-400">Noch kein Grundriss hochgeladen</p>
+                  </div>
+                );
+              }
+              return (
+                <div className="space-y-3">
+                  {floorplans.map((fp) => (
+                    <div key={fp.id} className="relative group">
+                      {fp.storageKey.endsWith(".pdf") ? (
+                        <div className="bg-slate-50 rounded-xl p-5 flex items-center gap-4">
+                          <span className="material-symbols-outlined text-3xl text-primary">picture_as_pdf</span>
+                          <div className="flex-1">
+                            <p className="text-sm font-bold text-blueprint">{fp.fileName || "Grundriss.pdf"}</p>
+                            <p className="text-xs text-slate-400">PDF-Datei</p>
+                          </div>
+                          <a href={fp.storageKey} target="_blank" className="text-xs font-bold text-primary hover:text-primary-dark">Anzeigen</a>
+                          <button onClick={() => deleteMedia(fp.id)} className="text-xs font-bold text-red-500 hover:text-red-600">Entfernen</button>
+                        </div>
+                      ) : (
+                        <div className="relative rounded-xl overflow-hidden bg-slate-100">
+                          <Image src={fp.storageKey} alt="Grundriss" width={800} height={600} className="w-full h-auto" />
+                          <button
+                            onClick={() => deleteMedia(fp.id)}
+                            className="absolute top-2 right-2 w-7 h-7 bg-red-500 hover:bg-red-600 text-white rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            <span className="material-symbols-outlined text-sm">close</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+          </div>
+
           {/* Property details */}
           <div className="bg-white rounded-2xl border border-slate-200 p-7">
             <h2 className="text-lg font-black text-blueprint mb-5">Immobiliendetails</h2>

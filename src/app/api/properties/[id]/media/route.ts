@@ -50,6 +50,7 @@ export async function POST(
 
     const formData = await req.formData();
     const file = formData.get("file") as File | null;
+    const kind = (formData.get("kind") as string) || "PHOTO";
 
     if (!file) {
       return NextResponse.json(
@@ -58,9 +59,13 @@ export async function POST(
       );
     }
 
-    if (!file.type.startsWith("image/")) {
+    const allowedTypes = kind === "FLOORPLAN"
+      ? ["image/jpeg", "image/png", "image/webp", "application/pdf"]
+      : ["image/jpeg", "image/png", "image/webp"];
+
+    if (!allowedTypes.includes(file.type)) {
       return NextResponse.json(
-        { error: "Nur Bilddateien erlaubt" },
+        { error: kind === "FLOORPLAN" ? "Erlaubt: JPG, PNG, PDF" : "Nur Bilddateien erlaubt" },
         { status: 400 }
       );
     }
@@ -72,14 +77,16 @@ export async function POST(
       );
     }
 
-    const existing = await prisma.mediaAsset.count({
-      where: { propertyId: id, kind: "PHOTO" },
-    });
-    if (existing >= 30) {
-      return NextResponse.json(
-        { error: "Maximal 30 Fotos erlaubt" },
-        { status: 400 }
-      );
+    if (kind === "PHOTO") {
+      const existing = await prisma.mediaAsset.count({
+        where: { propertyId: id, kind: "PHOTO" },
+      });
+      if (existing >= 30) {
+        return NextResponse.json(
+          { error: "Maximal 30 Fotos erlaubt" },
+          { status: 400 }
+        );
+      }
     }
 
     const ext = file.name.split(".").pop() || "jpg";
@@ -92,10 +99,12 @@ export async function POST(
 
     const storageKey = `/uploads/${id}/${fileName}`;
 
+    const existing = kind === "PHOTO" ? await prisma.mediaAsset.count({ where: { propertyId: id, kind: "PHOTO" } }) : 0;
+
     const asset = await prisma.mediaAsset.create({
       data: {
         propertyId: id,
-        kind: "PHOTO",
+        kind: kind as "PHOTO" | "FLOORPLAN" | "DOCUMENT",
         storageKey,
         fileName: file.name,
         mimeType: file.type,
