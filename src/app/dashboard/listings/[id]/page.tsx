@@ -263,6 +263,67 @@ export default function ListingDetailPage() {
         </div>
       )}
 
+      {listing.status === "RESERVED" && (
+        <div className="mb-6 bg-amber-50 border border-amber-200 rounded-xl p-5">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-3">
+              <span className="material-symbols-outlined text-amber-600 text-xl">bookmark</span>
+              <div>
+                <p className="text-sm font-bold text-amber-800">Inserat reserviert — Angebot angenommen</p>
+                <p className="text-xs text-amber-600">Das Inserat ist nicht mehr oeffentlich sichtbar. Schliessen Sie den Verkauf nach dem Notartermin ab.</p>
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={async () => {
+                if (!confirm("Verkauf wirklich abschliessen? Das Inserat wird endgueltig geschlossen.")) return;
+                const res = await fetch(`/api/listings/${id}`, {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ status: "CLOSED" }),
+                });
+                if (res.ok) {
+                  const data = await res.json();
+                  setListing((prev) => (prev ? { ...prev, ...data } : prev));
+                }
+              }}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-[0.15em] transition-colors flex items-center gap-2"
+            >
+              <span className="material-symbols-outlined text-base">check_circle</span>
+              Verkauf abschliessen
+            </button>
+            <button
+              onClick={async () => {
+                if (!confirm("Reservierung aufheben und Inserat wieder aktivieren?")) return;
+                const res = await fetch(`/api/listings/${id}`, {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ status: "ACTIVE" }),
+                });
+                if (res.ok) {
+                  const data = await res.json();
+                  setListing((prev) => (prev ? { ...prev, ...data } : prev));
+                }
+              }}
+              className="text-xs font-bold text-amber-700 hover:text-amber-900 transition-colors"
+            >
+              Reservierung aufheben
+            </button>
+          </div>
+        </div>
+      )}
+
+      {listing.status === "CLOSED" && (
+        <div className="mb-6 bg-slate-100 border border-slate-200 rounded-xl p-4 flex items-center gap-3">
+          <span className="material-symbols-outlined text-slate-500">verified</span>
+          <div>
+            <p className="text-sm font-bold text-slate-700">Verkauf abgeschlossen</p>
+            <p className="text-xs text-slate-500">Dieses Inserat ist geschlossen. Die Immobilie wurde erfolgreich verkauft.</p>
+          </div>
+        </div>
+      )}
+
       {paymentStatus === "success" && (
         <div className="mb-6 px-4 py-3 rounded-xl bg-emerald-50 border border-emerald-200 text-sm text-emerald-700 font-medium flex items-center gap-2">
           <span className="material-symbols-outlined text-emerald-600">check_circle</span>
