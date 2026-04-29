@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 interface SidebarProps {
   userName: string | null | undefined;
@@ -34,6 +34,14 @@ const navBottom = [
 export default function Sidebar({ userName, userEmail }: SidebarProps) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [newLeadCount, setNewLeadCount] = useState(0);
+
+  useEffect(() => {
+    fetch("/api/leads?countOnly=new")
+      .then((r) => r.json())
+      .then((data) => { if (typeof data.count === "number") setNewLeadCount(data.count); })
+      .catch(() => {});
+  }, [pathname]);
 
   function isActive(href: string) {
     if (href === "/dashboard") return pathname === "/dashboard";
@@ -75,9 +83,9 @@ export default function Sidebar({ userName, userEmail }: SidebarProps) {
                 {item.icon}
               </span>
               {item.label}
-              {item.label === "Interessenten" && (
+              {item.label === "Interessenten" && newLeadCount > 0 && (
                 <span className="ml-auto text-[10px] font-black bg-primary/20 text-primary px-2 py-0.5 rounded-full">
-                  3
+                  {newLeadCount}
                 </span>
               )}
             </Link>

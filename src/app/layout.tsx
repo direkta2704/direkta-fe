@@ -30,10 +30,12 @@ export default function RootLayout({
   return (
     <html
       lang="de"
-      className={`${bricolage.variable} ${manrope.variable} antialiased`}
+      translate="no"
+      className={`${bricolage.variable} ${manrope.variable} antialiased notranslate`}
       suppressHydrationWarning
     >
       <head>
+        <meta name="google" content="notranslate" />
         <link
           href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
           rel="stylesheet"

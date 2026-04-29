@@ -21,6 +21,7 @@ interface Offer {
     phone: string | null;
     idVerifiedAt: string | null;
   };
+  transactionId: string | null;
   listing: {
     id: string;
     askingPrice: string;
@@ -253,9 +254,32 @@ export default function OffersPage() {
             </div>
           )}
 
-          {/* Notary checklist for accepted offers */}
+          {/* Reservation agreement + Notary checklist for accepted offers */}
           {offers.some((o) => o.status === "ACCEPTED") && (
             <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-7">
+              {/* Reservierungsvereinbarung download */}
+              {offers.find((o) => o.status === "ACCEPTED")?.transactionId && (
+                <div className="bg-white rounded-xl p-5 mb-6 flex items-center justify-between">
+                  <div>
+                    <h3 className="font-black text-emerald-800 flex items-center gap-2">
+                      <span className="material-symbols-outlined">description</span>
+                      Reservierungsvereinbarung
+                    </h3>
+                    <p className="text-xs text-emerald-700 mt-1">
+                      PDF mit Kaufpreis, Parteien, Bedingungen und Notar-Checkliste
+                    </p>
+                  </div>
+                  <a
+                    href={`/api/transactions/${offers.find((o) => o.status === "ACCEPTED")!.transactionId}/reservation-pdf`}
+                    target="_blank"
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-[0.15em] transition-colors flex items-center gap-2"
+                  >
+                    <span className="material-symbols-outlined text-base">download</span>
+                    PDF herunterladen
+                  </a>
+                </div>
+              )}
+
               <h2 className="text-lg font-black text-emerald-800 mb-2 flex items-center gap-2">
                 <span className="material-symbols-outlined">gavel</span>
                 Notar-Übergabe

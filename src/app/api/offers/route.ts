@@ -24,7 +24,19 @@ export async function GET() {
       orderBy: { scoreComposite: "desc" },
     });
 
-    return NextResponse.json(offers);
+    const listingIds = [...new Set(offers.map((o) => o.listingId))];
+    const transactions = await prisma.transaction.findMany({
+      where: { listingId: { in: listingIds } },
+      select: { id: true, acceptedOfferId: true, listingId: true },
+    });
+    const txMap = Object.fromEntries(transactions.map((t) => [t.acceptedOfferId, t.id]));
+
+    const result = offers.map((o) => ({
+      ...o,
+      transactionId: txMap[o.id] || null,
+    }));
+
+    return NextResponse.json(result);
   } catch {
     return NextResponse.json({ error: "Nicht autorisiert" }, { status: 401 });
   }
