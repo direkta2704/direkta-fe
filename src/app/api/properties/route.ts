@@ -8,11 +8,18 @@ export async function GET() {
   try {
     const user = await getRequiredUser();
     const properties = await prisma.property.findMany({
-      where: { userId: user.id },
+      where: { userId: user.id, parentId: null },
       include: {
         energyCert: true,
         media: { where: { kind: "PHOTO" }, orderBy: { ordering: "asc" }, take: 1 },
         listings: { select: { id: true, status: true, slug: true } },
+        units: {
+          select: {
+            id: true,
+            listings: { select: { id: true, status: true }, take: 1 },
+          },
+        },
+        _count: { select: { units: true } },
       },
       orderBy: { createdAt: "desc" },
     });
@@ -45,6 +52,7 @@ export async function POST(req: Request) {
         floor: body.floor || null,
         condition: body.condition,
         attributes: body.attributes || null,
+        buildingInfo: body.buildingInfo || undefined,
       },
     });
 

@@ -59,13 +59,14 @@ export async function POST(
       );
     }
 
-    const allowedTypes = kind === "FLOORPLAN"
+    const pdfKinds = ["FLOORPLAN", "ENERGY_PDF", "DOCUMENT"];
+    const allowedTypes = pdfKinds.includes(kind)
       ? ["image/jpeg", "image/png", "image/webp", "application/pdf"]
       : ["image/jpeg", "image/png", "image/webp"];
 
     if (!allowedTypes.includes(file.type)) {
       return NextResponse.json(
-        { error: kind === "FLOORPLAN" ? "Erlaubt: JPG, PNG, PDF" : "Nur Bilddateien erlaubt" },
+        { error: pdfKinds.includes(kind) ? "Erlaubt: JPG, PNG, PDF" : "Nur Bilddateien erlaubt" },
         { status: 400 }
       );
     }
@@ -104,7 +105,7 @@ export async function POST(
     const asset = await prisma.mediaAsset.create({
       data: {
         propertyId: id,
-        kind: kind as "PHOTO" | "FLOORPLAN" | "DOCUMENT",
+        kind: kind as "PHOTO" | "FLOORPLAN" | "DOCUMENT" | "ENERGY_PDF",
         storageKey,
         fileName: file.name,
         mimeType: file.type,

@@ -23,6 +23,12 @@ const CONDITIONS = [
 
 const ENERGY_CLASSES = ["A+", "A", "B", "C", "D", "E", "F", "G", "H"];
 
+const ATTRIBUTES = [
+  "Balkon", "Terrasse", "Garten", "Garage", "Stellplatz",
+  "Keller", "Aufzug", "Kamin", "Fußbodenheizung", "Einbauküche",
+  "Smart Home", "Elektr. Rollläden", "Wärmepumpe",
+];
+
 const STEPS = ["Typ & Adresse", "Details", "Energieausweis", "Überprüfung"];
 
 type FormData = {
@@ -39,6 +45,9 @@ type FormData = {
   floor: string;
   condition: string;
   attributes: string[];
+  numberOfUnits: string;
+  outdoorParking: string;
+  undergroundParking: string;
   hasEnergyCert: boolean;
   energyCertType: string;
   energyValidUntil: string;
@@ -61,6 +70,9 @@ const initialForm: FormData = {
   floor: "",
   condition: "",
   attributes: [],
+  numberOfUnits: "",
+  outdoorParking: "",
+  undergroundParking: "",
   hasEnergyCert: true,
   energyCertType: "VERBRAUCH",
   energyValidUntil: "",
@@ -75,6 +87,8 @@ export default function NewPropertyPage() {
   const [form, setForm] = useState<FormData>(initialForm);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  const isMFH = form.type === "MFH";
 
   function update(fields: Partial<FormData>) {
     setForm((prev) => ({ ...prev, ...fields }));
@@ -116,6 +130,16 @@ export default function NewPropertyPage() {
         condition: form.condition,
         attributes: form.attributes.length > 0 ? form.attributes : null,
       };
+
+      if (isMFH) {
+        const buildingInfo: Record<string, string> = {};
+        if (form.numberOfUnits) buildingInfo["Wohneinheiten"] = form.numberOfUnits;
+        if (form.outdoorParking) buildingInfo["Außenstellplätze"] = form.outdoorParking;
+        if (form.undergroundParking) buildingInfo["Tiefgaragenstellplätze"] = form.undergroundParking;
+        if (Object.keys(buildingInfo).length > 0) {
+          payload.buildingInfo = buildingInfo;
+        }
+      }
 
       if (form.hasEnergyCert && form.energyClass) {
         payload.energyCert = {
@@ -278,13 +302,13 @@ export default function NewPropertyPage() {
             <div className="grid sm:grid-cols-2 gap-5">
               <div>
                 <label className="block text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 mb-2">
-                  Wohnfläche (m²) *
+                  {isMFH ? "Gesamtwohnfläche (m²) *" : "Wohnfläche (m²) *"}
                 </label>
                 <input
                   type="number"
                   value={form.livingArea}
                   onChange={(e) => update({ livingArea: e.target.value })}
-                  placeholder="e.g. 85"
+                  placeholder={isMFH ? "z.B. 245" : "z.B. 85"}
                   className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm text-blueprint placeholder:text-slate-400 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
                 />
               </div>
@@ -302,26 +326,26 @@ export default function NewPropertyPage() {
               </div>
               <div>
                 <label className="block text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 mb-2">
-                  Zimmer
+                  {isMFH ? "Zimmer (gesamt)" : "Zimmer"}
                 </label>
                 <input
                   type="number"
                   step="0.5"
                   value={form.rooms}
                   onChange={(e) => update({ rooms: e.target.value })}
-                  placeholder="e.g. 3"
+                  placeholder={isMFH ? "z.B. 8" : "z.B. 3"}
                   className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm text-blueprint placeholder:text-slate-400 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
                 />
               </div>
               <div>
                 <label className="block text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 mb-2">
-                  Badezimmer
+                  {isMFH ? "Badezimmer (gesamt)" : "Badezimmer"}
                 </label>
                 <input
                   type="number"
                   value={form.bathrooms}
                   onChange={(e) => update({ bathrooms: e.target.value })}
-                  placeholder="e.g. 1"
+                  placeholder={isMFH ? "z.B. 3" : "z.B. 1"}
                   className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm text-blueprint placeholder:text-slate-400 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
                 />
               </div>
@@ -333,7 +357,7 @@ export default function NewPropertyPage() {
                   type="number"
                   value={form.yearBuilt}
                   onChange={(e) => update({ yearBuilt: e.target.value })}
-                  placeholder="e.g. 1995"
+                  placeholder="z.B. 2000"
                   className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm text-blueprint placeholder:text-slate-400 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
                 />
               </div>
@@ -346,12 +370,59 @@ export default function NewPropertyPage() {
                     type="number"
                     value={form.floor}
                     onChange={(e) => update({ floor: e.target.value })}
-                    placeholder="e.g. 2"
+                    placeholder="z.B. 2"
                     className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm text-blueprint placeholder:text-slate-400 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
                   />
                 </div>
               )}
             </div>
+
+            {/* MFH-specific fields */}
+            {isMFH && (
+              <div>
+                <label className="block text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 mb-4">
+                  Mehrfamilienhaus-Details
+                </label>
+                <div className="grid sm:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 mb-1.5">
+                      Wohneinheiten
+                    </label>
+                    <input
+                      type="number"
+                      value={form.numberOfUnits}
+                      onChange={(e) => update({ numberOfUnits: e.target.value })}
+                      placeholder="z.B. 3"
+                      className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm text-blueprint placeholder:text-slate-400 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 mb-1.5">
+                      Außenstellplätze
+                    </label>
+                    <input
+                      type="number"
+                      value={form.outdoorParking}
+                      onChange={(e) => update({ outdoorParking: e.target.value })}
+                      placeholder="z.B. 10"
+                      className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm text-blueprint placeholder:text-slate-400 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 mb-1.5">
+                      Tiefgaragenplätze
+                    </label>
+                    <input
+                      type="number"
+                      value={form.undergroundParking}
+                      onChange={(e) => update({ undergroundParking: e.target.value })}
+                      placeholder="z.B. 6"
+                      className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm text-blueprint placeholder:text-slate-400 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div>
               <label className="block text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 mb-4">
@@ -381,7 +452,7 @@ export default function NewPropertyPage() {
                 Ausstattung
               </label>
               <div className="flex flex-wrap gap-2">
-                {["Balkon", "Terrasse", "Garten", "Garage", "Stellplatz", "Keller", "Aufzug", "Kamin", "Fußbodenheizung", "Einbauküche"].map(
+                {ATTRIBUTES.map(
                   (attr) => (
                     <button
                       key={attr}
@@ -538,12 +609,24 @@ export default function NewPropertyPage() {
             <div className="grid sm:grid-cols-2 gap-6">
               <ReviewBlock label="Immobilientyp" value={`${PROPERTY_TYPES.find((t) => t.value === form.type)?.label || form.type} (${PROPERTY_TYPES.find((t) => t.value === form.type)?.sub || ""})`} />
               <ReviewBlock label="Adresse" value={`${form.street} ${form.houseNumber}, ${form.postcode} ${form.city}`} />
-              <ReviewBlock label="Wohnfläche" value={`${form.livingArea} m²`} />
+              <ReviewBlock label={isMFH ? "Gesamtwohnfläche" : "Wohnfläche"} value={`${form.livingArea} m²`} />
               {form.plotArea && <ReviewBlock label="Grundstücksfläche" value={`${form.plotArea} m²`} />}
-              {form.rooms && <ReviewBlock label="Zimmer" value={form.rooms} />}
-              {form.bathrooms && <ReviewBlock label="Badezimmer" value={form.bathrooms} />}
+              {form.rooms && <ReviewBlock label={isMFH ? "Zimmer (gesamt)" : "Zimmer"} value={form.rooms} />}
+              {form.bathrooms && <ReviewBlock label={isMFH ? "Badezimmer (gesamt)" : "Badezimmer"} value={form.bathrooms} />}
               {form.yearBuilt && <ReviewBlock label="Baujahr" value={form.yearBuilt} />}
               <ReviewBlock label="Zustand" value={`${CONDITIONS.find((c) => c.value === form.condition)?.label || form.condition} (${CONDITIONS.find((c) => c.value === form.condition)?.sub || ""})`} />
+              {isMFH && form.numberOfUnits && (
+                <ReviewBlock label="Wohneinheiten" value={form.numberOfUnits} />
+              )}
+              {isMFH && (form.outdoorParking || form.undergroundParking) && (
+                <ReviewBlock
+                  label="Stellplätze"
+                  value={[
+                    form.outdoorParking ? `${form.outdoorParking} Außen` : "",
+                    form.undergroundParking ? `${form.undergroundParking} Tiefgarage` : "",
+                  ].filter(Boolean).join(", ")}
+                />
+              )}
               {form.hasEnergyCert && form.energyClass && (
                 <ReviewBlock label="Energieklasse" value={`${form.energyClass} · ${form.energyValue} kWh/m²·a`} />
               )}
@@ -562,7 +645,9 @@ export default function NewPropertyPage() {
                     Nächste Schritte nach dem Speichern
                   </p>
                   <p className="text-xs text-slate-500 mt-1">
-                    Laden Sie Fotos hoch (mind. 6), dann erstellen Sie ein Inserat mit KI-generierter Beschreibung und Preisstrategien.
+                    {isMFH
+                      ? "Laden Sie Fotos hoch, legen Sie einzelne Wohnungen an und erstellen Sie Inserate — einzeln oder als Paket."
+                      : "Laden Sie Fotos hoch (mind. 6), dann erstellen Sie ein Inserat mit KI-generierter Beschreibung und Preisstrategien."}
                   </p>
                 </div>
               </div>

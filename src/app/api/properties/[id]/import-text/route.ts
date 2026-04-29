@@ -153,10 +153,27 @@ WICHTIG:
       await prisma.property.update({ where: { id }, data: updateData });
     }
 
+    // Save highlights to the listing if one exists
+    let highlightsSaved = 0;
+    if (extracted.highlights && Array.isArray(extracted.highlights)) {
+      const listing = await prisma.listing.findFirst({
+        where: { propertyId: id },
+        orderBy: { createdAt: "desc" },
+      });
+      if (listing) {
+        await prisma.listing.update({
+          where: { id: listing.id },
+          data: { highlights: extracted.highlights },
+        });
+        highlightsSaved = extracted.highlights.length;
+      }
+    }
+
+    const fieldCount = Object.keys(updateData).length + (highlightsSaved > 0 ? 1 : 0);
     return NextResponse.json({
       ok: true,
       extracted,
-      message: `${Object.keys(updateData).length} Felder aktualisiert`,
+      message: `${fieldCount} Felder aktualisiert${highlightsSaved > 0 ? ` (inkl. ${highlightsSaved} Highlights)` : ""}`,
     });
   } catch (err) {
     console.error("Import error:", err);

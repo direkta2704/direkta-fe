@@ -104,13 +104,30 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
     const listing = await prisma.listing.findFirst({
       where: { id, property: { userId: user.id } },
-      include: { property: { include: { energyCert: true, media: { orderBy: { ordering: "asc" } } } }, priceRecommendation: true },
+      include: {
+        property: {
+          include: {
+            energyCert: true,
+            media: { orderBy: { ordering: "asc" } },
+            units: {
+              orderBy: { unitLabel: "asc" },
+              include: {
+                media: { orderBy: { ordering: "asc" } },
+                energyCert: true,
+              },
+            },
+          },
+        },
+        priceRecommendation: true,
+      },
     });
     if (!listing) return new Response("Not found", { status: 404 });
 
     const p = listing.property;
     const photos = p.media.filter(m => m.kind === "PHOTO");
     const floors = p.media.filter(m => m.kind === "FLOORPLAN");
+    const units = p.units || [];
+    const isBundle = units.length > 0;
     const doc = await PDFDocument.create();
     const R = await doc.embedFont(StandardFonts.Helvetica);
     const B = await doc.embedFont(StandardFonts.HelveticaBold);
@@ -166,13 +183,19 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     cy -= 42;
 
     // Bottom facts
-    const cf: [string, string][] = [
-      [p.livingArea + " m²", "Wohnflaeche"],
-      [p.rooms ? String(p.rooms) : "-", "Zimmer"],
-      [p.yearBuilt ? String(p.yearBuilt) : "-", "Baujahr"],
-      [CONDITIONS[p.condition] || p.condition, "Zustand"],
-      [p.energyCert?.energyClass || "-", "Energie"],
-    ];
+    const cf: [string, string][] = isBundle
+      ? [
+          [String(units.length), "Wohnungen"],
+          [p.livingArea + " m²", "Gesamtflaeche"],
+          [p.yearBuilt ? String(p.yearBuilt) : "-", "Baujahr"],
+          [CONDITIONS[p.condition] || p.condition, "Zustand"],
+        ]
+      : [
+          [p.livingArea + " m²", "Wohnflaeche"],
+          [p.rooms ? String(p.rooms) : "-", "Zimmer"],
+          [p.yearBuilt ? String(p.yearBuilt) : "-", "Baujahr"],
+          [CONDITIONS[p.condition] || p.condition, "Zustand"],
+        ];
     const fw = CONTENT_W / cf.length;
     cf.forEach(([v, l], i) => {
       c1.drawText(v, { x: PX + i * fw, y: cy, size: 14, font: B, color: C.white });
@@ -198,6 +221,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       ["Baujahr", p.yearBuilt ? String(p.yearBuilt) : "-"],
       ["Zustand", CONDITIONS[p.condition] || p.condition],
     ];
+    if (isBundle) grid.push(["Wohneinheiten", String(units.length)]);
     if (p.plotArea) grid.push(["Grundstueck", p.plotArea + " m²"]);
     if (p.floor != null) grid.push(["Etage", String(p.floor)]);
 
@@ -211,19 +235,51 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     });
     y -= Math.ceil(grid.length / gCols) * 60 + 30;
 
-    // Section: Energieausweis
+    // Section: Energieausweis (visual scale)
     if (p.energyCert) {
       y = section(c2, y, "Energieausweis", B);
-      const ePairs: [string, string][] = [
-        ["Typ", p.energyCert.type === "VERBRAUCH" ? "Verbrauch" : "Bedarf"],
-        ["Klasse", p.energyCert.energyClass],
-        ["Kennwert", p.energyCert.energyValue + " kWh/(m²a)"],
-        ["Quelle", p.energyCert.primarySource],
+
+      const eClasses = ["A+", "A", "B", "C", "D", "E", "F", "G", "H"];
+      const eColors: [number, number, number][] = [
+        [0, 130, 59], [26, 150, 65], [85, 178, 71], [166, 217, 106],
+        [217, 239, 139], [254, 224, 139], [253, 174, 97], [244, 109, 67], [215, 48, 39],
       ];
-      const eCols = ePairs.length;
-      const eW = (CONTENT_W - (eCols - 1) * gGap) / eCols;
-      ePairs.forEach(([l, v], i) => factCard(c2, PX + i * (eW + gGap), y, eW, l, v, R, B));
-      y -= 80;
+      const barW = (CONTENT_W - (eClasses.length - 1) * 2) / eClasses.length;
+      const barH = 22;
+
+      eClasses.forEach((cls, i) => {
+        const bx = PX + i * (barW + 2);
+        const isActive = cls === p.energyCert!.energyClass;
+        const [r, g, b] = eColors[i];
+        const h = isActive ? barH + 6 : barH;
+        const by = isActive ? y - 3 : y;
+
+        c2.drawRectangle({ x: bx, y: by, width: barW, height: h, color: rgb(r / 255, g / 255, b / 255) });
+        const labelW = B.widthOfTextAtSize(cls, isActive ? 9 : 7);
+        c2.drawText(cls, {
+          x: bx + (barW - labelW) / 2,
+          y: by + (h - (isActive ? 9 : 7)) / 2,
+          size: isActive ? 9 : 7,
+          font: B,
+          color: C.white,
+        });
+
+        if (isActive) {
+          const ax = bx + barW / 2;
+          c2.drawRectangle({ x: ax - 3, y: by - 7, width: 6, height: 6, color: C.heading });
+        }
+      });
+      y -= barH + 22;
+
+      // Energy data row
+      const eInfo = [
+        p.energyCert.type === "VERBRAUCH" ? "Verbrauchsausweis" : "Bedarfsausweis",
+        `${p.energyCert.energyValue} kWh/(m²·a)`,
+        p.energyCert.primarySource,
+        `Bj. ${p.yearBuilt || "k.A."}`,
+      ].join("  ·  ");
+      c2.drawText(eInfo, { x: PX + 4, y: y, size: 8, font: R, color: C.body });
+      y -= 30;
     }
 
     // Section: Ausstattung
@@ -241,6 +297,52 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
         c2.drawRectangle({ x: ax, y: ay + 2, width: 5, height: 5, color: C.accent });
         c2.drawText(a, { x: ax + 14, y: ay, size: 9.5, font: R, color: C.body });
       });
+    }
+
+    // ====================================================
+    //  HIGHLIGHTS PAGE
+    // ====================================================
+    const highlights = listing.highlights as string[] | null;
+    if (highlights && highlights.length > 0) {
+      const hp = doc.addPage([W, H]);
+      pageHeader(hp, B);
+      let hy = H - 55;
+
+      hy = section(hp, hy, "Highlights", B);
+
+      for (const hl of highlights) {
+        if (hy < 80) break;
+        hp.drawRectangle({ x: PX + 4, y: hy + 2, width: 6, height: 6, color: C.accent });
+        for (const ln of wrap(hl, R, 10, CONTENT_W - 30)) {
+          hp.drawText(ln, { x: PX + 20, y: hy, size: 10, font: R, color: C.body });
+          hy -= 17;
+        }
+        hy -= 8;
+      }
+
+      // Location description below highlights if space
+      if (listing.locationDescription && hy > 200) {
+        hy -= 10;
+        hy = section(hp, hy, "Lage", B);
+        for (const ln of wrap(listing.locationDescription, R, 10, CONTENT_W - 8)) {
+          if (hy < 80) break;
+          if (ln === "") { hy -= 12; continue; }
+          hp.drawText(ln, { x: PX + 4, y: hy, size: 10, font: R, color: C.body });
+          hy -= 17;
+        }
+      }
+
+      // Building description if space
+      if (listing.buildingDescription && hy > 200) {
+        hy -= 10;
+        hy = section(hp, hy, "Gebaeude", B);
+        for (const ln of wrap(listing.buildingDescription, R, 10, CONTENT_W - 8)) {
+          if (hy < 80) break;
+          if (ln === "") { hy -= 12; continue; }
+          hp.drawText(ln, { x: PX + 4, y: hy, size: 10, font: R, color: C.body });
+          hy -= 17;
+        }
+      }
     }
 
     // ====================================================
@@ -262,7 +364,286 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     }
 
     // ====================================================
-    //  FLOOR PLAN PAGE(S) — image only, no raw data
+    //  ROOM PROGRAM PAGE
+    // ====================================================
+    const rooms = p.roomProgram as { name: string; area: number }[] | null;
+    if (rooms && rooms.length > 0) {
+      const rp = doc.addPage([W, H]);
+      pageHeader(rp, B);
+      let ry = H - 55;
+
+      ry = section(rp, ry, "Raumprogramm", B);
+
+      // Table header
+      rp.drawRectangle({ x: PX, y: ry - 2, width: CONTENT_W, height: 20, color: C.card });
+      rp.drawText("RAUM", { x: PX + 10, y: ry + 2, size: 7, font: B, color: C.label });
+      const flLabel = "FLAECHE";
+      rp.drawText(flLabel, { x: W - PX - B.widthOfTextAtSize(flLabel, 7) - 10, y: ry + 2, size: 7, font: B, color: C.label });
+      ry -= 26;
+
+      let totalArea = 0;
+      for (const room of rooms) {
+        if (ry < 90) break;
+        rp.drawText(room.name, { x: PX + 10, y: ry, size: 9.5, font: R, color: C.body });
+        const aStr = room.area.toFixed(2) + " m²";
+        rp.drawText(aStr, { x: W - PX - R.widthOfTextAtSize(aStr, 9.5) - 10, y: ry, size: 9.5, font: R, color: C.body });
+        totalArea += room.area;
+        ry -= 6;
+        rp.drawRectangle({ x: PX + 10, y: ry + 2, width: CONTENT_W - 20, height: 0.3, color: C.rule });
+        ry -= 18;
+      }
+
+      // Total row
+      rp.drawRectangle({ x: PX, y: ry + 14, width: CONTENT_W, height: 0.8, color: C.heading });
+      ry -= 4;
+      rp.drawText("GESAMT", { x: PX + 10, y: ry, size: 9.5, font: B, color: C.heading });
+      const tStr = totalArea.toFixed(2) + " m²";
+      rp.drawText(tStr, { x: W - PX - B.widthOfTextAtSize(tStr, 9.5) - 10, y: ry, size: 9.5, font: B, color: C.accent });
+    }
+
+    // ====================================================
+    //  SPECIFICATIONS PAGE(S)
+    // ====================================================
+    const specs = p.specifications as Record<string, Record<string, string>> | null;
+    if (specs && Object.keys(specs).length > 0) {
+      let sp = doc.addPage([W, H]);
+      pageHeader(sp, B);
+      let sy = H - 55;
+      sy = section(sp, sy, "Ausstattung im Detail", B);
+
+      for (const [cat, entries] of Object.entries(specs)) {
+        if (!entries || Object.keys(entries).length === 0) continue;
+
+        const rowCount = Object.keys(entries).length;
+        if (sy - (30 + rowCount * 22) < 80) {
+          sp = doc.addPage([W, H]);
+          pageHeader(sp, B);
+          sy = H - 55;
+        }
+
+        // Category header bar
+        sp.drawRectangle({ x: PX, y: sy - 4, width: CONTENT_W, height: 22, color: C.card });
+        sp.drawRectangle({ x: PX, y: sy - 4, width: 3, height: 22, color: C.accent });
+        sp.drawText(cat.toUpperCase(), { x: PX + 14, y: sy, size: 8, font: B, color: C.heading });
+        sy -= 30;
+
+        for (const [key, value] of Object.entries(entries)) {
+          if (sy < 80) {
+            sp = doc.addPage([W, H]);
+            pageHeader(sp, B);
+            sy = H - 55;
+          }
+          sp.drawText(key, { x: PX + 14, y: sy, size: 8.5, font: B, color: C.label });
+          const valLines = wrap(value, R, 8.5, CONTENT_W * 0.48);
+          for (let vi = 0; vi < valLines.length; vi++) {
+            sp.drawText(valLines[vi], { x: PX + CONTENT_W * 0.44, y: sy - vi * 14, size: 8.5, font: R, color: C.body });
+          }
+          sy -= Math.max(valLines.length, 1) * 14 + 8;
+        }
+        sy -= 12;
+      }
+    }
+
+    // ====================================================
+    //  BUILDING INFO PAGE
+    // ====================================================
+    const bInfo = p.buildingInfo as Record<string, string> | null;
+    if (bInfo && Object.keys(bInfo).length > 0) {
+      const bp = doc.addPage([W, H]);
+      pageHeader(bp, B);
+      let by = H - 55;
+
+      by = section(bp, by, "Gebaeude-Informationen", B);
+
+      const biEntries = Object.entries(bInfo);
+      const biCols = 2;
+      const biColW = (CONTENT_W - 20) / biCols;
+
+      biEntries.forEach(([k, v], i) => {
+        const col = i % biCols;
+        const row = Math.floor(i / biCols);
+        const bx = PX + col * (biColW + 20);
+        const bey = by - row * 46;
+
+        bp.drawText(k.toUpperCase(), { x: bx, y: bey + 12, size: 7, font: B, color: C.label });
+        const vLines = wrap(String(v), R, 9.5, biColW - 4);
+        vLines.forEach((ln, li) => {
+          bp.drawText(ln, { x: bx, y: bey - li * 14, size: 9.5, font: R, color: C.body });
+        });
+      });
+    }
+
+    // ====================================================
+    //  UNIT OVERVIEW PAGE (bundle only)
+    // ====================================================
+    if (isBundle) {
+      const up = doc.addPage([W, H]);
+      pageHeader(up, B);
+      let uy = H - 55;
+
+      uy = section(up, uy, "Wohnungsuebersicht", B);
+
+      // Summary text
+      const sumText = `${units.length} Wohneinheiten · ${p.livingArea} m² Gesamtwohnflaeche`;
+      up.drawText(sumText, { x: PX + 4, y: uy, size: 10, font: R, color: C.body });
+      uy -= 30;
+
+      // Table header
+      up.drawRectangle({ x: PX, y: uy - 2, width: CONTENT_W, height: 22, color: C.card });
+      const cols = [
+        { label: "WOHNUNG", x: PX + 10, w: 100 },
+        { label: "FLAECHE", x: PX + 130, w: 70 },
+        { label: "ZIMMER", x: PX + 220, w: 60 },
+        { label: "BAD", x: PX + 290, w: 60 },
+        { label: "ETAGE", x: PX + 360, w: 60 },
+      ];
+      for (const col of cols) {
+        up.drawText(col.label, { x: col.x, y: uy + 2, size: 7, font: B, color: C.label });
+      }
+      uy -= 28;
+
+      for (const unit of units) {
+        if (uy < 100) break;
+        up.drawText(unit.unitLabel || "Wohnung", { x: cols[0].x, y: uy, size: 9.5, font: B, color: C.heading });
+        up.drawText(`${unit.livingArea} m²`, { x: cols[1].x, y: uy, size: 9.5, font: R, color: C.body });
+        up.drawText(unit.rooms ? String(unit.rooms) : "-", { x: cols[2].x, y: uy, size: 9.5, font: R, color: C.body });
+        up.drawText(unit.bathrooms ? String(unit.bathrooms) : "-", { x: cols[3].x, y: uy, size: 9.5, font: R, color: C.body });
+        up.drawText(unit.floor != null ? `${unit.floor}. OG` : "EG", { x: cols[4].x, y: uy, size: 9.5, font: R, color: C.body });
+        uy -= 6;
+        up.drawRectangle({ x: PX + 10, y: uy + 2, width: CONTENT_W - 20, height: 0.3, color: C.rule });
+        uy -= 22;
+      }
+
+      // Attributes
+      const unitAttrs = p.attributes as string[] | null;
+      if (unitAttrs && unitAttrs.length > 0 && uy > 150) {
+        uy -= 10;
+        up.drawText("GEMEINSAME AUSSTATTUNG", { x: PX + 4, y: uy, size: 7, font: B, color: C.label });
+        uy -= 18;
+        const attrCols = 3;
+        const attrW = CONTENT_W / attrCols;
+        unitAttrs.forEach((a, i) => {
+          const col = i % attrCols;
+          const row = Math.floor(i / attrCols);
+          const ax = PX + col * attrW;
+          const ay = uy - row * 18;
+          up.drawRectangle({ x: ax + 4, y: ay + 2, width: 4, height: 4, color: C.accent });
+          up.drawText(a, { x: ax + 14, y: ay, size: 8.5, font: R, color: C.body });
+        });
+      }
+    }
+
+    // ====================================================
+    //  PER-UNIT DETAIL PAGES (bundle only)
+    //  Each unit: key facts + room program + floor plan on same page
+    // ====================================================
+    if (isBundle) {
+      for (const unit of units) {
+        const unitFloors = unit.media.filter((m: { kind: string }) => m.kind === "FLOORPLAN");
+        const unitPhotos = unit.media.filter((m: { kind: string }) => m.kind === "PHOTO");
+        const unitRooms = unit.roomProgram as { name: string; area: number }[] | null;
+        const imageFloor = unitFloors.find((m: { storageKey: string }) => !m.storageKey.toLowerCase().endsWith(".pdf"));
+        const pdfFloors = unitFloors.filter((m: { storageKey: string }) => m.storageKey.toLowerCase().endsWith(".pdf"));
+
+        // ── Page 1: Key Facts + Floor Plan ──
+        const unitPage = doc.addPage([W, H]);
+        pageHeader(unitPage, B);
+        let uy = H - 55;
+
+        uy = section(unitPage, uy, unit.unitLabel || "Wohnung", B);
+
+        // Key facts row
+        const ufacts: [string, string][] = [
+          ["Wohnflaeche", `${unit.livingArea} m²`],
+          ["Zimmer", unit.rooms ? String(unit.rooms) : "-"],
+          ["Badezimmer", unit.bathrooms ? String(unit.bathrooms) : "-"],
+          ["Etage", unit.floor != null ? `${unit.floor}. OG` : "EG"],
+          ["Zustand", CONDITIONS[unit.condition] || unit.condition],
+        ];
+        const ufCols = ufacts.length;
+        const ufW = (CONTENT_W - (ufCols - 1) * gGap) / ufCols;
+        ufacts.forEach(([l, v], i) => factCard(unitPage, PX + i * (ufW + gGap), uy, ufW, l, v, R, B));
+        uy -= 80;
+
+        // Floor plan image embedded on the same page
+        if (imageFloor) {
+          unitPage.drawText("GRUNDRISS", { x: PX + 4, y: uy, size: 7, font: B, color: C.label });
+          uy -= 14;
+
+          const fpImg = await img(doc, imageFloor.storageKey);
+          if (fpImg) {
+            const mw = CONTENT_W - 20;
+            const mh = uy - 70;
+            const sc = Math.min(mw / fpImg.width, mh / fpImg.height, 1);
+            const iw = fpImg.width * sc;
+            const ih = fpImg.height * sc;
+            unitPage.drawImage(fpImg, { x: PX + (CONTENT_W - iw) / 2, y: uy - ih, width: iw, height: ih });
+            uy -= ih + 20;
+          }
+        }
+
+        // Room program — fits below floor plan if space, otherwise new page
+        if (unitRooms && unitRooms.length > 0) {
+          const roomsHeight = unitRooms.length * 21 + 50;
+          let rPage = unitPage;
+          let ry = uy;
+
+          if (ry - roomsHeight < 70) {
+            rPage = doc.addPage([W, H]);
+            pageHeader(rPage, B);
+            ry = H - 55;
+            ry = section(rPage, ry, `${unit.unitLabel || "Wohnung"} — Raumprogramm`, B);
+          } else {
+            rPage.drawText("RAUMPROGRAMM", { x: PX + 4, y: ry, size: 7, font: B, color: C.label });
+            ry -= 18;
+          }
+
+          let totalA = 0;
+          for (const room of unitRooms) {
+            if (ry < 90) break;
+            rPage.drawText(room.name, { x: PX + 10, y: ry, size: 9, font: R, color: C.body });
+            const aStr = room.area.toFixed(2) + " m²";
+            rPage.drawText(aStr, { x: W - PX - R.widthOfTextAtSize(aStr, 9) - 10, y: ry, size: 9, font: R, color: C.body });
+            totalA += room.area;
+            ry -= 5;
+            rPage.drawRectangle({ x: PX + 10, y: ry + 2, width: CONTENT_W - 20, height: 0.3, color: C.rule });
+            ry -= 16;
+          }
+          rPage.drawRectangle({ x: PX + 10, y: ry + 12, width: CONTENT_W - 20, height: 0.6, color: C.heading });
+          ry -= 2;
+          rPage.drawText("GESAMT", { x: PX + 10, y: ry, size: 9, font: B, color: C.heading });
+          const tStr = totalA.toFixed(2) + " m²";
+          rPage.drawText(tStr, { x: W - PX - B.widthOfTextAtSize(tStr, 9) - 10, y: ry, size: 9, font: B, color: C.accent });
+        }
+
+        // PDF floor plans as embedded pages
+        for (const pf of pdfFloors) {
+          for (const cp of await pdfPages(doc, pf.storageKey)) doc.addPage(cp);
+        }
+
+        // Unit photos (max 4, 2x2 grid)
+        if (unitPhotos.length > 0) {
+          const pp = doc.addPage([W, H]);
+          pageHeader(pp, B);
+          let py = H - 55;
+          py = section(pp, py, `Impressionen — ${unit.unitLabel || "Wohnung"}`, B);
+
+          const half = (CONTENT_W - 10) / 2;
+          for (let j = 0; j < Math.min(unitPhotos.length, 4); j++) {
+            const pi = await img(doc, unitPhotos[j].storageKey);
+            if (pi) {
+              const col = j % 2;
+              const row = Math.floor(j / 2);
+              const ih = Math.min(half * (pi.height / pi.width), 200);
+              pp.drawImage(pi, { x: PX + col * (half + 10), y: py - row * (ih + 12) - ih, width: half, height: ih });
+            }
+          }
+        }
+      }
+    }
+
+    // ====================================================
+    //  FLOOR PLAN PAGE(S) — building level
     // ====================================================
     for (const fp of floors) {
       if (fp.storageKey.toLowerCase().endsWith(".pdf")) {
@@ -271,7 +652,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
         const pg = doc.addPage([W, H]);
         pageHeader(pg, B);
         let fy = H - 55;
-        fy = section(pg, fy, "Grundriss", B);
+        fy = section(pg, fy, isBundle ? "Grundriss — Gebaeude" : "Grundriss", B);
 
         const image = await img(doc, fp.storageKey);
         if (image) {

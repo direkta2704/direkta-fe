@@ -27,7 +27,19 @@ export default async function ExposePage({ params }: { params: Promise<{ id: str
   const listing = await prisma.listing.findFirst({
     where: { id },
     include: {
-      property: { include: { energyCert: true, media: { orderBy: { ordering: "asc" } } } },
+      property: {
+        include: {
+          energyCert: true,
+          media: { orderBy: { ordering: "asc" } },
+          units: {
+            orderBy: { unitLabel: "asc" },
+            include: {
+              media: { orderBy: { ordering: "asc" } },
+              energyCert: true,
+            },
+          },
+        },
+      },
       priceRecommendation: true,
     },
   });
@@ -35,7 +47,9 @@ export default async function ExposePage({ params }: { params: Promise<{ id: str
 
   const p = listing.property;
   const photos = p.media.filter((m) => m.kind === "PHOTO");
-  const floorplans = p.media.filter((m) => m.kind === "FLOORPLAN" && !m.storageKey.endsWith(".pdf"));
+  const floorplans = p.media.filter((m) => m.kind === "FLOORPLAN");
+  const units = p.units || [];
+  const isBundle = units.length > 0;
   const price = listing.askingPrice ? Number(listing.askingPrice) : null;
   const rooms = p.roomProgram as { name: string; area: number }[] | null;
   const specs = p.specifications as Record<string, Record<string, string>> | null;
@@ -73,22 +87,45 @@ export default async function ExposePage({ params }: { params: Promise<{ id: str
               </div>
             </div>
             <div className="cover-key-strip">
-              <div className="cover-key">
-                <span className="k-label">Wohnflaeche</span>
-                <span className="k-value">{p.livingArea}<span className="k-unit"> m²</span></span>
-              </div>
-              <div className="cover-key">
-                <span className="k-label">Zimmer</span>
-                <span className="k-value">{p.rooms || "-"}</span>
-              </div>
-              <div className="cover-key">
-                <span className="k-label">Baujahr</span>
-                <span className="k-value">{p.yearBuilt || "-"}</span>
-              </div>
-              <div className="cover-key">
-                <span className="k-label">Energieklasse</span>
-                <span className="k-value">{p.energyCert?.energyClass || "-"}</span>
-              </div>
+              {isBundle ? (
+                <>
+                  <div className="cover-key">
+                    <span className="k-label">Wohnungen</span>
+                    <span className="k-value">{units.length}</span>
+                  </div>
+                  <div className="cover-key">
+                    <span className="k-label">Gesamtflaeche</span>
+                    <span className="k-value">{p.livingArea}<span className="k-unit"> m²</span></span>
+                  </div>
+                  <div className="cover-key">
+                    <span className="k-label">Baujahr</span>
+                    <span className="k-value">{p.yearBuilt || "-"}</span>
+                  </div>
+                  <div className="cover-key">
+                    <span className="k-label">Zustand</span>
+                    <span className="k-value">{COND_DE[p.condition] || p.condition}</span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="cover-key">
+                    <span className="k-label">Wohnflaeche</span>
+                    <span className="k-value">{p.livingArea}<span className="k-unit"> m²</span></span>
+                  </div>
+                  <div className="cover-key">
+                    <span className="k-label">Zimmer</span>
+                    <span className="k-value">{p.rooms || "-"}</span>
+                  </div>
+                  <div className="cover-key">
+                    <span className="k-label">Baujahr</span>
+                    <span className="k-value">{p.yearBuilt || "-"}</span>
+                  </div>
+                  <div className="cover-key">
+                    <span className="k-label">Zustand</span>
+                    <span className="k-value">{COND_DE[p.condition] || p.condition}</span>
+                  </div>
+                </>
+              )}
             </div>
           </div>
           <div className="cover-footer">
@@ -134,7 +171,6 @@ export default async function ExposePage({ params }: { params: Promise<{ id: str
                 <MetaCell label="Zustand" value={COND_DE[p.condition] || p.condition} />
                 <MetaCell label="Badezimmer" value={p.bathrooms ? String(p.bathrooms) : "-"} />
                 {p.plotArea && <MetaCell label="Grundstueck" value={`${p.plotArea} m²`} />}
-                {p.energyCert && <MetaCell label="Energie" value={`Klasse ${p.energyCert.energyClass}`} />}
               </div>
             </div>
           </div>
@@ -197,9 +233,6 @@ export default async function ExposePage({ params }: { params: Promise<{ id: str
                   {bldg && Object.entries(bldg).map(([k, v]) => (
                     <tr key={k}><td className="label">{k}</td><td className="value">{v}</td></tr>
                   ))}
-                  {p.energyCert && (
-                    <tr><td className="label">Energieausweis</td><td className="value">{p.energyCert.type === "VERBRAUCH" ? "Verbrauchsausweis" : "Bedarfsausweis"} · {p.energyCert.energyValue} kWh/(m²·a)</td></tr>
-                  )}
                 </tbody>
               </table>
             </div>
@@ -255,6 +288,143 @@ export default async function ExposePage({ params }: { params: Promise<{ id: str
           </section>
         ) : null}
 
+        {/* ═══ UNIT OVERVIEW (bundle only) ═══ */}
+        {isBundle && (
+          <section className="page">
+            <div className="page-inner">
+              <PageHeader address={`${p.street} ${p.houseNumber} · ${p.city}`} />
+              <div className="section-head">
+                <div className="meta-row">
+                  <span className="section-num">— Wohnungsuebersicht</span>
+                  <span className="eyebrow">{units.length} Wohneinheiten</span>
+                </div>
+                <h1>Wohnungen<br /><em>im Ueberblick.</em></h1>
+                <div className="section-rule" />
+              </div>
+
+              <table className="data-table" style={{ marginTop: "6mm" }}>
+                <thead>
+                  <tr>
+                    <td className="label" style={{ fontWeight: 600 }}>Wohnung</td>
+                    <td className="label" style={{ fontWeight: 600 }}>Flaeche</td>
+                    <td className="label" style={{ fontWeight: 600 }}>Zimmer</td>
+                    <td className="label" style={{ fontWeight: 600 }}>Bad</td>
+                    <td className="label" style={{ fontWeight: 600 }}>Etage</td>
+                  </tr>
+                </thead>
+                <tbody>
+                  {units.map((unit) => (
+                    <tr key={unit.id}>
+                      <td className="value" style={{ fontWeight: 600 }}>{unit.unitLabel || "Wohnung"}</td>
+                      <td className="value">{unit.livingArea} m²</td>
+                      <td className="value">{unit.rooms || "-"}</td>
+                      <td className="value">{unit.bathrooms || "-"}</td>
+                      <td className="value">{unit.floor != null ? `${unit.floor}. OG` : "EG"}</td>
+                    </tr>
+                  ))}
+                  <tr style={{ borderTop: "2px solid var(--ink)" }}>
+                    <td className="value" style={{ fontWeight: 600 }}>Gesamt</td>
+                    <td className="value" style={{ fontWeight: 600 }}>{units.reduce((s, u) => s + u.livingArea, 0)} m²</td>
+                    <td className="value" style={{ fontWeight: 600 }}>{units.reduce((s, u) => s + (u.rooms || 0), 0)}</td>
+                    <td className="value" style={{ fontWeight: 600 }}>{units.reduce((s, u) => s + (u.bathrooms || 0), 0)}</td>
+                    <td className="value">—</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <PageFooter section="Wohnungsuebersicht" page={0} total={getPageCount(listing, photos, floorplans)} />
+          </section>
+        )}
+
+        {/* ═══ PER-UNIT DETAIL PAGES (bundle only) ═══ */}
+        {isBundle && units.map((unit) => {
+          const unitRooms = unit.roomProgram as { name: string; area: number }[] | null;
+          const unitFloorplans = unit.media.filter((m: { kind: string }) => m.kind === "FLOORPLAN");
+          const unitPhotos = unit.media.filter((m: { kind: string }) => m.kind === "PHOTO");
+          return [
+            /* ── Unit Detail Page: key facts + room program ── */
+            <section className="page" key={unit.id}>
+              <div className="page-inner">
+                <PageHeader address={`${p.street} ${p.houseNumber} · ${unit.unitLabel || "Wohnung"}`} />
+                <div className="section-head">
+                  <div className="meta-row">
+                    <span className="section-num">— {unit.unitLabel || "Wohnung"}</span>
+                    <span className="eyebrow">{unit.livingArea} m² · {unit.rooms || "-"} Zimmer</span>
+                  </div>
+                  <h1>{unit.unitLabel || "Wohnung"}<br /><em>{unit.livingArea} m²</em></h1>
+                  <div className="section-rule" />
+                </div>
+
+                <div className="meta-grid" style={{ marginBottom: "6mm" }}>
+                  <MetaCell label="Flaeche" value={`${unit.livingArea} m²`} />
+                  <MetaCell label="Zimmer" value={unit.rooms ? String(unit.rooms) : "-"} />
+                  <MetaCell label="Badezimmer" value={unit.bathrooms ? String(unit.bathrooms) : "-"} />
+                  <MetaCell label="Etage" value={unit.floor != null ? `${unit.floor}. OG` : "EG"} />
+                </div>
+
+                {unitRooms && unitRooms.length > 0 && (
+                  <div style={{ marginBottom: "6mm" }}>
+                    <span className="eyebrow">Raumprogramm</span>
+                    <div style={{ height: "2mm" }} />
+                    <div className="rooms">
+                      {unitRooms.map((r, i) => (
+                        <div className="room-row" key={i}>
+                          <span className="r-name">{r.name}</span>
+                          <span className="r-area">{r.area} m²</span>
+                        </div>
+                      ))}
+                      <div className="room-row total">
+                        <span className="r-name">Gesamt</span>
+                        <span className="r-area">{unitRooms.reduce((s, r) => s + r.area, 0).toFixed(1)} m²</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {unitPhotos.length > 0 && (
+                  <div>
+                    <span className="eyebrow">Impressionen</span>
+                    <div style={{ height: "3mm" }} />
+                    <div className="photo-grid">
+                      {unitPhotos.slice(0, 4).map((ph: { id: string; storageKey: string }) => (
+                        <div key={ph.id} className="photo-cell">
+                          <img src={ph.storageKey} alt="" />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+              <PageFooter section={unit.unitLabel || "Wohnung"} page={0} total={getPageCount(listing, photos, floorplans)} />
+            </section>,
+
+            /* ── Unit Floor Plan Pages: one per floor plan ── */
+            ...unitFloorplans.map((ufp: { id: string; storageKey: string; fileName: string | null }, ufpIdx: number) => (
+              <section className="page" key={`${unit.id}-fp-${ufp.id}`}>
+                <div className="page-inner">
+                  <PageHeader address={`${p.street} ${p.houseNumber} · ${unit.unitLabel || "Wohnung"}`} />
+                  <div className="section-head">
+                    <div className="meta-row">
+                      <span className="section-num">— Grundriss {unit.unitLabel || "Wohnung"}{unitFloorplans.length > 1 ? ` (${ufpIdx + 1}/${unitFloorplans.length})` : ""}</span>
+                      <span className="eyebrow">{unit.livingArea} m²</span>
+                    </div>
+                    <h1>Grundriss<br /><em>{unit.unitLabel || "Wohnung"}</em></h1>
+                    <div className="section-rule" />
+                  </div>
+                  <div style={{ textAlign: "center", marginTop: "6mm" }}>
+                    {ufp.storageKey.toLowerCase().endsWith(".pdf") ? (
+                      <iframe src={`${ufp.storageKey}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`} style={{ width: "100%", height: "220mm", border: "none" }} />
+                    ) : (
+                      <img src={ufp.storageKey} alt={`Grundriss ${unit.unitLabel}`} style={{ maxWidth: "100%", maxHeight: "210mm" }} />
+                    )}
+                  </div>
+                </div>
+                <PageFooter section={`Grundriss ${unit.unitLabel || ""}`} page={0} total={getPageCount(listing, photos, floorplans)} />
+              </section>
+            )),
+          ];
+        })}
+
         {/* ═══ ROOM PROGRAM ═══ */}
         {rooms && rooms.length > 0 && (
           <section className="page">
@@ -281,27 +451,31 @@ export default async function ExposePage({ params }: { params: Promise<{ id: str
           </section>
         )}
 
-        {/* ═══ FLOOR PLAN ═══ */}
-        {floorplans.length > 0 && (
-          <section className="page">
+        {/* ═══ FLOOR PLANS ═══ */}
+        {floorplans.map((fp, fpIdx) => (
+          <section className="page" key={`fp-${fp.id}`}>
             <div className="page-inner">
               <PageHeader address={`${p.street} ${p.houseNumber} · ${p.city}`} />
               <div className="section-head">
                 <div className="meta-row">
-                  <span className="section-num">— Grundriss</span>
+                  <span className="section-num">— {isBundle ? "Grundriss Gebaeude" : "Grundriss"}{floorplans.length > 1 ? ` (${fpIdx + 1}/${floorplans.length})` : ""}</span>
                 </div>
-                <h1>Grundriss</h1>
+                <h1>{isBundle ? "Gebaeudegrundriss" : "Grundriss"}</h1>
                 <div className="section-rule" />
               </div>
               <div style={{ textAlign: "center", marginTop: "8mm" }}>
-                <img src={floorplans[0].storageKey} alt="Grundriss" style={{ maxWidth: "100%", maxHeight: "200mm" }} />
+                {fp.storageKey.toLowerCase().endsWith(".pdf") ? (
+                  <iframe src={`${fp.storageKey}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`} style={{ width: "100%", height: "220mm", border: "none" }} />
+                ) : (
+                  <img src={fp.storageKey} alt={fp.fileName || "Grundriss"} style={{ maxWidth: "100%", maxHeight: "210mm" }} />
+                )}
               </div>
             </div>
             <PageFooter section="Grundriss" page={0} total={getPageCount(listing, photos, floorplans)} />
           </section>
-        )}
+        ))}
 
-        {/* ═══ ENERGIE & PREIS ═══ */}
+        {/* ═══ ENERGIE & VERKAUF ═══ */}
         <section className="page">
           <div className="page-inner">
             <PageHeader address={`${p.street} ${p.houseNumber} · ${p.city}`} />
@@ -319,21 +493,25 @@ export default async function ExposePage({ params }: { params: Promise<{ id: str
                 {p.energyCert ? (
                   <>
                     <span className="eyebrow">Energieausweis</span>
-                    <div style={{ height: "3mm" }} />
+                    <div style={{ height: "4mm" }} />
+                    <EnergyScale energyClass={p.energyCert.energyClass} />
+                    <div style={{ height: "4mm" }} />
                     <table className="data-table compact">
                       <tbody>
                         <tr><td className="label">Art</td><td className="value">{p.energyCert.type === "VERBRAUCH" ? "Verbrauchsausweis" : "Bedarfsausweis"}</td></tr>
                         <tr><td className="label">Kennwert</td><td className="value">{p.energyCert.energyValue} kWh/(m²·a)</td></tr>
                         <tr><td className="label">Energietraeger</td><td className="value">{p.energyCert.primarySource}</td></tr>
-                        <tr><td className="label">Effizienzklasse</td><td className="value">{p.energyCert.energyClass}</td></tr>
                         <tr><td className="label">Baujahr</td><td className="value">{p.yearBuilt || "k.A."}</td></tr>
                         <tr><td className="label">Gueltig bis</td><td className="value">{new Date(p.energyCert.validUntil).toLocaleDateString("de-DE")}</td></tr>
                       </tbody>
                     </table>
-                    <div className="energy-class-badge">{p.energyCert.energyClass}</div>
                   </>
                 ) : (
-                  <p className="muted">Kein Energieausweis hinterlegt.</p>
+                  <>
+                    <span className="eyebrow">Energieausweis</span>
+                    <div style={{ height: "3mm" }} />
+                    <p className="muted">Energieausweis liegt zur Besichtigung vor.</p>
+                  </>
                 )}
               </div>
               <div>
@@ -437,6 +615,28 @@ export default async function ExposePage({ params }: { params: Promise<{ id: str
           </div>
         </section>
     </>
+  );
+}
+
+const ENERGY_COLORS: Record<string, string> = {
+  "A+": "#00823b", A: "#1a9641", B: "#55b247", C: "#a6d96a",
+  D: "#d9ef8b", E: "#fee08b", F: "#fdae61", G: "#f46d43", H: "#d73027",
+};
+const ENERGY_CLASSES_LIST = ["A+", "A", "B", "C", "D", "E", "F", "G", "H"];
+
+function EnergyScale({ energyClass }: { energyClass: string }) {
+  return (
+    <div className="energy-scale">
+      {ENERGY_CLASSES_LIST.map((cls) => {
+        const isActive = cls === energyClass;
+        return (
+          <div key={cls} className={`es-cell${isActive ? " es-active" : ""}`} style={{ background: ENERGY_COLORS[cls] || "#ccc" }}>
+            <span className="es-label">{cls}</span>
+            {isActive && <div className="es-arrow" />}
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -550,7 +750,6 @@ p.small { font-size: 8.5pt; line-height: 1.55; }
 .legal { font-size: 7.5pt; line-height: 1.55; color: var(--ink-soft); }
 .legal h4 { font-family: Helvetica, sans-serif; font-size: 7pt; letter-spacing: .25em; text-transform: uppercase; color: var(--ink); margin: 3mm 0 1.5mm; font-weight: 600; }
 .legal p { font-size: 7.5pt; margin-bottom: 2.5mm; line-height: 1.55; }
-.energy-class-badge { display: inline-block; background: #4FA84F; color: white; font-weight: 600; font-size: 22pt; padding: 4mm 8mm; margin-top: 3mm; letter-spacing: .05em; }
 .back-cover { background: var(--ink); color: var(--paper-pure); }
 .back-cover .bc-mark { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; }
 .back-cover .bc-mark .brand { color: var(--paper-pure); font-size: 22pt; letter-spacing: .25em; }
@@ -581,5 +780,11 @@ p.small { font-size: 8.5pt; line-height: 1.55; }
 .placeholder .ph-tag { font-family: Helvetica, sans-serif; font-size: 7pt; letter-spacing: .2em; text-transform: uppercase; color: var(--ink-faint); }
 .photo-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 3mm; margin-top: 6mm; }
 .photo-cell img { width: 100%; height: 80mm; object-fit: cover; display: block; }
+.energy-scale { display: flex; gap: 1px; margin: 0; }
+.es-cell { flex: 1; text-align: center; padding: 2.5mm 0; position: relative; transition: all .15s; }
+.es-cell .es-label { font-family: Helvetica, sans-serif; font-size: 7pt; font-weight: 600; color: white; letter-spacing: .04em; text-shadow: 0 0.5px 1px rgba(0,0,0,.3); }
+.es-cell.es-active { transform: scaleY(1.35); z-index: 2; box-shadow: 0 1px 4px rgba(0,0,0,.25); }
+.es-cell.es-active .es-label { font-size: 9pt; font-weight: 700; }
+.es-arrow { position: absolute; bottom: -3mm; left: 50%; transform: translateX(-50%); width: 0; height: 0; border-left: 2mm solid transparent; border-right: 2mm solid transparent; border-top: 2.5mm solid var(--ink); }
 @media screen { .page { margin: 10mm auto; box-shadow: 0 2px 20px rgba(0,0,0,.1); } }
 `;

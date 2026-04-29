@@ -15,6 +15,15 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
         energyCert: true,
         media: { orderBy: { ordering: "asc" } },
         listings: { orderBy: { createdAt: "desc" } },
+        parent: { select: { id: true, street: true, houseNumber: true, city: true } },
+        units: {
+          orderBy: { unitLabel: "asc" },
+          include: {
+            media: { orderBy: { ordering: "asc" } },
+            listings: { select: { id: true, status: true, slug: true }, take: 1 },
+            energyCert: { select: { id: true } },
+          },
+        },
       },
     });
 
@@ -61,13 +70,30 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
 
     const existing = await prisma.property.findFirst({
       where: { id, userId: user.id },
+      include: { units: { select: { id: true } } },
     });
 
     if (!existing) {
       return NextResponse.json({ error: "Property not found" }, { status: 404 });
     }
 
-    await prisma.property.delete({ where: { id } });
+    const propertyIds = [id, ...existing.units.map((u) => u.id)];
+
+    const listings = await prisma.listing.findMany({
+      where: { propertyId: { in: propertyIds } },
+      select: { id: true },
+    });
+    const listingIds = listings.map((l) => l.id);
+
+    await prisma.$transaction([
+      prisma.viewing.deleteMany({ where: { listingId: { in: listingIds } } }),
+      prisma.offer.deleteMany({ where: { listingId: { in: listingIds } } }),
+      prisma.lead.deleteMany({ where: { listingId: { in: listingIds } } }),
+      prisma.syndicationTarget.deleteMany({ where: { listingId: { in: listingIds } } }),
+      prisma.listing.deleteMany({ where: { propertyId: { in: propertyIds } } }),
+      prisma.property.deleteMany({ where: { id: { in: propertyIds } } }),
+    ]);
+
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error("Delete property error:", err);
