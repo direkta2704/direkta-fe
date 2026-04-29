@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getRequiredUser } from "@/lib/session";
+import { sendOfferDecisionEmail } from "@/lib/email";
 
 export const dynamic = "force-dynamic";
 
@@ -59,6 +60,33 @@ export async function POST(
         finalPrice: offer.amount,
       },
     });
+
+    // Notify accepted buyer
+    const acceptedBuyer = await prisma.buyerProfile.findUnique({ where: { id: offer.buyerId } });
+    const prop = await prisma.property.findFirst({ where: { id: offer.listing.propertyId } });
+    if (acceptedBuyer && prop) {
+      const addr = `${prop.street} ${prop.houseNumber}, ${prop.city}`;
+      sendOfferDecisionEmail(acceptedBuyer.email, {
+        buyerName: acceptedBuyer.name,
+        propertyAddress: addr,
+        amount: Number(offer.amount).toLocaleString("de-DE"),
+        accepted: true,
+      }).catch((err) => console.error("Email send failed:", err));
+
+      // Notify rejected buyers
+      const rejectedOffers = await prisma.offer.findMany({
+        where: { listingId: offer.listingId, id: { not: id }, status: "REJECTED" },
+        include: { buyer: true },
+      });
+      for (const ro of rejectedOffers) {
+        sendOfferDecisionEmail(ro.buyer.email, {
+          buyerName: ro.buyer.name,
+          propertyAddress: addr,
+          amount: Number(ro.amount).toLocaleString("de-DE"),
+          accepted: false,
+        }).catch((err) => console.error("Email send failed:", err));
+      }
+    }
 
     // Log events
     await prisma.listingEvent.create({

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { scoreOffer } from "@/lib/offer-scoring";
+import { sendNewOfferEmail } from "@/lib/email";
 
 export const dynamic = "force-dynamic";
 
@@ -77,6 +78,21 @@ export async function POST(req: Request) {
       where: { listingId, emailRaw: email.toLowerCase().trim() },
       data: { status: "OFFER_MADE" },
     });
+
+    // Notify seller
+    const property = await prisma.property.findFirst({
+      where: { id: listing.propertyId },
+      include: { user: { select: { email: true } } },
+    });
+    if (property?.user.email) {
+      sendNewOfferEmail(property.user.email, {
+        buyerName: name,
+        amount: Number(amount).toLocaleString("de-DE"),
+        scoreComposite: scores.scoreComposite,
+        propertyAddress: `${property.street} ${property.houseNumber}, ${property.city}`,
+        listingId,
+      }).catch((err) => console.error("Email send failed:", err));
+    }
 
     await prisma.listingEvent.create({
       data: {

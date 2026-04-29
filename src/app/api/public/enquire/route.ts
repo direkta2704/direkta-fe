@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { calculateLeadScore } from "@/lib/lead-scoring";
+import { sendNewLeadEmail } from "@/lib/email";
 
 export const dynamic = "force-dynamic";
 
@@ -62,6 +63,23 @@ export async function POST(req: Request) {
         source: "direkta",
       },
     });
+
+    // Notify seller via email
+    const property = await prisma.property.findFirst({
+      where: { id: listing.propertyId },
+      include: { user: { select: { email: true } } },
+    });
+    if (property?.user.email) {
+      sendNewLeadEmail(property.user.email, {
+        leadName: name || "Unbekannt",
+        leadEmail: email,
+        leadPhone: phone,
+        message,
+        qualityScore,
+        propertyAddress: `${property.street} ${property.houseNumber}, ${property.city}`,
+        listingId,
+      }).catch((err) => console.error("Email send failed:", err));
+    }
 
     // Log event
     await prisma.listingEvent.create({

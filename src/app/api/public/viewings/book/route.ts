@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { generateICS } from "@/lib/ics";
+import { sendViewingConfirmationEmail } from "@/lib/email";
 
 export const dynamic = "force-dynamic";
 
@@ -71,6 +72,23 @@ export async function POST(req: Request) {
 
     // Generate .ics for buyer
     const p = viewing.listing.property;
+
+    // Notify seller
+    const seller = await prisma.user.findFirst({
+      where: { properties: { some: { listings: { some: { id: viewing.listingId } } } } },
+      select: { email: true },
+    });
+    const viewDate = viewing.startsAt.toLocaleDateString("de-DE");
+    const viewTime = viewing.startsAt.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+    if (seller?.email) {
+      sendViewingConfirmationEmail(seller.email, {
+        buyerName: name,
+        propertyAddress: `${p.street} ${p.houseNumber}, ${p.city}`,
+        date: viewDate,
+        time: viewTime,
+        mode: viewing.mode,
+      }).catch((err) => console.error("Email send failed:", err));
+    }
     const ics = generateICS({
       title: `Besichtigung: ${p.street} ${p.houseNumber}`,
       description: `Immobilienbesichtigung — ${p.street} ${p.houseNumber}, ${p.postcode} ${p.city}`,
