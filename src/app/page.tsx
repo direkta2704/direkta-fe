@@ -142,6 +142,9 @@ export default function Home() {
             <a href="#pricing" className="underline-link text-[11px] font-black uppercase tracking-[0.18em] text-slate-700 hover:text-primary transition-colors">
               Preise
             </a>
+            <a href="/was-ist-meine-immobilie-wert" className="bg-primary/10 text-primary px-3 py-2 rounded-full text-[11px] font-black uppercase tracking-[0.18em] hover:bg-primary/20 transition-colors">
+              Immobilie bewerten
+            </a>
           </nav>
           <div className="flex items-center gap-2 flex-shrink-0">
             <button
@@ -181,6 +184,7 @@ export default function Home() {
                 { href: "/immobilien", label: "Inserate" },
                 { href: "#compare", label: "Vergleich" },
                 { href: "#pricing", label: "Preise" },
+                { href: "/was-ist-meine-immobilie-wert", label: "Immobilie bewerten" },
               ].map((link) => (
                 <a
                   key={link.href}
@@ -270,10 +274,11 @@ export default function Home() {
                 </span>
               </button>
               <a
-                href="#how"
-                className="group flex items-center gap-2 text-blueprint font-black text-sm uppercase tracking-[0.18em] underline-link"
+                href="/was-ist-meine-immobilie-wert"
+                className="group flex items-center gap-2 bg-white border-2 border-slate-200 hover:border-primary text-blueprint px-8 py-4 rounded-full text-sm font-black uppercase tracking-[0.18em] transition-all duration-300 hover:scale-[1.03]"
               >
-                So funktioniert&apos;s
+                <span className="material-symbols-outlined text-lg text-primary">calculate</span>
+                Kostenlos bewerten
               </a>
             </div>
 
