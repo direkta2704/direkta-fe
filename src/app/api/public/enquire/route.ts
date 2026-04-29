@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { calculateLeadScore } from "@/lib/lead-scoring";
-import { sendNewLeadEmail } from "@/lib/email";
+import { sendNewLeadEmail, sendBuyerEnquiryConfirmation } from "@/lib/email";
+import { generateExposePdf } from "@/lib/pdf-generate";
 
 export const dynamic = "force-dynamic";
 
@@ -79,6 +80,30 @@ export async function POST(req: Request) {
         propertyAddress: `${property.street} ${property.houseNumber}, ${property.city}`,
         listingId,
       }).catch((err) => console.error("Email send failed:", err));
+    }
+
+    // Send expose PDF to buyer (async, don't block response)
+    if (property) {
+      const addr = `${property.street} ${property.houseNumber}, ${property.city}`;
+      const pdfFilename = `Expose_${property.street}_${property.houseNumber}_${property.city}.pdf`.replace(/\s+/g, "_");
+      (async () => {
+        try {
+          const baseUrl = req.headers.get("origin") || `${new URL(req.url).protocol}//${new URL(req.url).host}`;
+          const pdfBuffer = await generateExposePdf(`${baseUrl}/expose/${listingId}`);
+          await sendBuyerEnquiryConfirmation(email, {
+            buyerName: name || "Interessent",
+            propertyAddress: addr,
+            pdfBuffer,
+            pdfFilename,
+          });
+        } catch (err) {
+          console.error("Buyer PDF email failed:", err);
+          sendBuyerEnquiryConfirmation(email, {
+            buyerName: name || "Interessent",
+            propertyAddress: addr,
+          }).catch((e) => console.error("Buyer email fallback failed:", e));
+        }
+      })();
     }
 
     // Log event

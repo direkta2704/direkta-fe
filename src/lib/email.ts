@@ -141,3 +141,35 @@ export async function sendOfferDecisionEmail(to: string, data: {
     `),
   });
 }
+
+export async function sendBuyerEnquiryConfirmation(to: string, data: {
+  buyerName: string;
+  propertyAddress: string;
+  pdfBuffer?: Buffer;
+  pdfFilename?: string;
+}) {
+  const attachments = data.pdfBuffer && data.pdfFilename
+    ? [{ filename: data.pdfFilename, content: data.pdfBuffer, contentType: "application/pdf" }]
+    : [];
+
+  await transporter.sendMail({
+    from: FROM, to,
+    subject: `Ihr Expose: ${data.propertyAddress}`,
+    html: layout(`
+      <h2 style="margin:0 0 4px;font-size:18px;color:#0F1B2E;">Vielen Dank fuer Ihr Interesse</h2>
+      <p style="margin:0 0 20px;color:#485468;font-size:14px;">${data.propertyAddress}</p>
+      <p style="font-size:13px;color:#485468;line-height:1.6;">
+        Hallo ${data.buyerName},<br><br>
+        vielen Dank fuer Ihre Anfrage. Anbei finden Sie das ausfuehrliche Expose mit allen Details zur Immobilie.
+        Der Eigentuemer wird sich in Kuerze bei Ihnen melden.
+      </p>
+      ${data.pdfBuffer ? `<div style="margin-top:16px;padding:12px;background:#f7f3ea;border-radius:8px;font-size:13px;color:#485468;">
+        <strong>📎 Expose PDF</strong> — ${data.pdfFilename} (im Anhang)
+      </div>` : ""}
+      <p style="margin-top:16px;font-size:12px;color:#8A92A0;">
+        Diese E-Mail wurde automatisch von Direkta versendet.
+      </p>
+    `),
+    attachments,
+  });
+}
