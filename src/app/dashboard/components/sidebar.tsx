@@ -25,6 +25,7 @@ const navAgents = [
 
 const navTools = [
   { href: "/dashboard/syndication", label: "Portal-Sync", icon: "sync_alt" },
+  { href: "/dashboard/activities", label: "Aktivitäten", icon: "history" },
 ];
 
 const navBottom = [
