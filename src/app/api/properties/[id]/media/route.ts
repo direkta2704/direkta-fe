@@ -4,6 +4,7 @@ import { getRequiredUser } from "@/lib/session";
 import { writeFile, mkdir } from "fs/promises";
 import path from "path";
 import { randomUUID } from "crypto";
+import sharp from "sharp";
 
 export const dynamic = "force-dynamic";
 
@@ -90,13 +91,49 @@ export async function POST(
       }
     }
 
-    const ext = file.name.split(".").pop() || "jpg";
-    const fileName = `${randomUUID()}.${ext}`;
     const uploadDir = path.join(process.cwd(), "public", "uploads", id);
     await mkdir(uploadDir, { recursive: true });
 
-    const buffer = Buffer.from(await file.arrayBuffer());
-    await writeFile(path.join(uploadDir, fileName), buffer);
+    const rawBuffer = Buffer.from(await file.arrayBuffer());
+    const isImage = file.type.startsWith("image/");
+
+    let finalBuffer: Buffer;
+    let finalExt: string;
+    let finalMime: string;
+    let width: number | undefined;
+    let height: number | undefined;
+
+    if (isImage) {
+      const image = sharp(rawBuffer);
+      const meta = await image.metadata();
+      const maxDim = kind === "FLOORPLAN" ? 2400 : 1920;
+      const needsResize = (meta.width && meta.width > maxDim) || (meta.height && meta.height > maxDim);
+
+      let pipeline = needsResize
+        ? image.resize({ width: maxDim, height: maxDim, fit: "inside", withoutEnlargement: true })
+        : image;
+
+      if (meta.format === "png" && kind === "FLOORPLAN") {
+        finalBuffer = await pipeline.png({ quality: 85, compressionLevel: 9 }).toBuffer();
+        finalExt = "png";
+        finalMime = "image/png";
+      } else {
+        finalBuffer = await pipeline.jpeg({ quality: 82, mozjpeg: true }).toBuffer();
+        finalExt = "jpg";
+        finalMime = "image/jpeg";
+      }
+
+      const outMeta = await sharp(finalBuffer).metadata();
+      width = outMeta.width;
+      height = outMeta.height;
+    } else {
+      finalBuffer = rawBuffer;
+      finalExt = file.name.split(".").pop() || "pdf";
+      finalMime = file.type;
+    }
+
+    const fileName = `${randomUUID()}.${finalExt}`;
+    await writeFile(path.join(uploadDir, fileName), finalBuffer);
 
     const storageKey = `/uploads/${id}/${fileName}`;
 
@@ -108,8 +145,10 @@ export async function POST(
         kind: kind as "PHOTO" | "FLOORPLAN" | "DOCUMENT" | "ENERGY_PDF",
         storageKey,
         fileName: file.name,
-        mimeType: file.type,
-        sizeBytes: file.size,
+        mimeType: finalMime,
+        sizeBytes: finalBuffer.length,
+        width: width || null,
+        height: height || null,
         ordering: existing,
       },
     });

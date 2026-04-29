@@ -1,6 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
+import { Suspense } from "react";
+import PrintButton from "./print-button";
 
 export const dynamic = "force-dynamic";
 
@@ -62,6 +64,7 @@ export default async function ExposePage({ params }: { params: Promise<{ id: str
   return (
     <>
       <style dangerouslySetInnerHTML={{ __html: EXPOSE_CSS }} />
+        <Suspense><PrintButton /></Suspense>
         {/* ═══ COVER ═══ */}
         <section className="page cover">
           <div className="cover-top">
@@ -786,5 +789,9 @@ p.small { font-size: 8.5pt; line-height: 1.55; }
 .es-cell.es-active { transform: scaleY(1.35); z-index: 2; box-shadow: 0 1px 4px rgba(0,0,0,.25); }
 .es-cell.es-active .es-label { font-size: 9pt; font-weight: 700; }
 .es-arrow { position: absolute; bottom: -3mm; left: 50%; transform: translateX(-50%); width: 0; height: 0; border-left: 2mm solid transparent; border-right: 2mm solid transparent; border-top: 2.5mm solid var(--ink); }
+.print-controls { position: fixed; top: 20px; right: 20px; z-index: 1000; }
+.print-btn { display: flex; align-items: center; gap: 8px; padding: 12px 20px; background: #0F1B2E; color: white; border: none; border-radius: 12px; font-family: Helvetica, sans-serif; font-size: 13px; font-weight: 700; letter-spacing: .05em; cursor: pointer; box-shadow: 0 4px 20px rgba(0,0,0,.25); transition: all .15s; }
+.print-btn:hover { background: #B85432; transform: translateY(-1px); box-shadow: 0 6px 24px rgba(0,0,0,.3); }
+@media print { .print-controls { display: none !important; } }
 @media screen { .page { margin: 10mm auto; box-shadow: 0 2px 20px rgba(0,0,0,.1); } }
 `;
