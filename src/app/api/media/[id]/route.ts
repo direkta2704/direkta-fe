@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getRequiredUser } from "@/lib/session";
 import { unlink } from "fs/promises";
 import path from "path";
+import { extractS3Key, deleteFromS3 } from "@/lib/s3";
 
 export const dynamic = "force-dynamic";
 
@@ -23,11 +24,16 @@ export async function DELETE(
       return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
     }
 
-    try {
-      const filePath = path.join(process.cwd(), "public", asset.storageKey);
-      await unlink(filePath);
-    } catch {
-      // file may not exist on disk
+    const s3Key = extractS3Key(asset.storageKey);
+    if (s3Key) {
+      await deleteFromS3(s3Key);
+    } else {
+      try {
+        const filePath = path.join(process.cwd(), "public", asset.storageKey);
+        await unlink(filePath);
+      } catch {
+        // file may not exist on disk
+      }
     }
 
     await prisma.mediaAsset.delete({ where: { id } });

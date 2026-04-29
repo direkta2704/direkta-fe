@@ -5,6 +5,7 @@ import { writeFile, mkdir } from "fs/promises";
 import path from "path";
 import { randomUUID } from "crypto";
 import sharp from "sharp";
+import { isS3Enabled, uploadToS3 } from "@/lib/s3";
 
 export const dynamic = "force-dynamic";
 
@@ -80,19 +81,16 @@ export async function POST(
     }
 
     if (kind === "PHOTO") {
-      const existing = await prisma.mediaAsset.count({
+      const photoCount = await prisma.mediaAsset.count({
         where: { propertyId: id, kind: "PHOTO" },
       });
-      if (existing >= 30) {
+      if (photoCount >= 30) {
         return NextResponse.json(
           { error: "Maximal 30 Fotos erlaubt" },
           { status: 400 }
         );
       }
     }
-
-    const uploadDir = path.join(process.cwd(), "public", "uploads", id);
-    await mkdir(uploadDir, { recursive: true });
 
     const rawBuffer = Buffer.from(await file.arrayBuffer());
     const isImage = file.type.startsWith("image/");
@@ -133,9 +131,17 @@ export async function POST(
     }
 
     const fileName = `${randomUUID()}.${finalExt}`;
-    await writeFile(path.join(uploadDir, fileName), finalBuffer);
+    let storageKey: string;
 
-    const storageKey = `/uploads/${id}/${fileName}`;
+    if (isS3Enabled()) {
+      const s3Key = `properties/${id}/${fileName}`;
+      storageKey = await uploadToS3(s3Key, finalBuffer, finalMime);
+    } else {
+      const uploadDir = path.join(process.cwd(), "public", "uploads", id);
+      await mkdir(uploadDir, { recursive: true });
+      await writeFile(path.join(uploadDir, fileName), finalBuffer);
+      storageKey = `/uploads/${id}/${fileName}`;
+    }
 
     const existing = kind === "PHOTO" ? await prisma.mediaAsset.count({ where: { propertyId: id, kind: "PHOTO" } }) : 0;
 
