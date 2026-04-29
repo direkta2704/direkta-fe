@@ -28,7 +28,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     });
 
     if (!property) {
-      return NextResponse.json({ error: "Property not found" }, { status: 404 });
+      return NextResponse.json({ error: "Immobilie nicht gefunden" }, { status: 404 });
     }
 
     return NextResponse.json(property);
@@ -48,7 +48,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     });
 
     if (!existing) {
-      return NextResponse.json({ error: "Property not found" }, { status: 404 });
+      return NextResponse.json({ error: "Immobilie nicht gefunden" }, { status: 404 });
     }
 
     const property = await prisma.property.update({
@@ -59,7 +59,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     return NextResponse.json(property);
   } catch (err) {
     console.error("Update property error:", err);
-    return NextResponse.json({ error: "Failed to update" }, { status: 500 });
+    return NextResponse.json({ error: "Aktualisierung fehlgeschlagen" }, { status: 500 });
   }
 }
 
@@ -74,7 +74,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
     });
 
     if (!existing) {
-      return NextResponse.json({ error: "Property not found" }, { status: 404 });
+      return NextResponse.json({ error: "Immobilie nicht gefunden" }, { status: 404 });
     }
 
     const propertyIds = [id, ...existing.units.map((u) => u.id)];
@@ -97,6 +97,6 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error("Delete property error:", err);
-    return NextResponse.json({ error: "Failed to delete" }, { status: 500 });
+    return NextResponse.json({ error: "Löschen fehlgeschlagen" }, { status: 500 });
   }
 }

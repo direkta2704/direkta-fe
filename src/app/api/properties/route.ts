@@ -72,7 +72,7 @@ export async function POST(req: Request) {
     return NextResponse.json(property, { status: 201 });
   } catch (err) {
     console.error("Create property error:", err);
-    const message = err instanceof Error ? err.message : "Failed to create property";
+    const message = err instanceof Error ? err.message : "Immobilie konnte nicht erstellt werden";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

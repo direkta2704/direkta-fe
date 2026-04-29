@@ -4,21 +4,21 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 const PROPERTY_TYPES = [
-  { value: "ETW", label: "Apartment", sub: "Eigentumswohnung", icon: "apartment" },
-  { value: "EFH", label: "Detached House", sub: "Einfamilienhaus", icon: "house" },
-  { value: "MFH", label: "Multi-Family", sub: "Mehrfamilienhaus", icon: "holiday_village" },
-  { value: "DHH", label: "Semi-Detached", sub: "Doppelhaushälfte", icon: "other_houses" },
-  { value: "RH", label: "Terraced House", sub: "Reihenhaus", icon: "other_houses" },
-  { value: "GRUNDSTUECK", label: "Land / Plot", sub: "Grundstück", icon: "landscape" },
+  { value: "ETW", label: "Eigentumswohnung", sub: "Wohnung / Apartment", icon: "apartment" },
+  { value: "EFH", label: "Einfamilienhaus", sub: "Freistehendes Haus", icon: "house" },
+  { value: "MFH", label: "Mehrfamilienhaus", sub: "Bis 4 Wohneinheiten", icon: "holiday_village" },
+  { value: "DHH", label: "Doppelhaushälfte", sub: "Haushälfte", icon: "other_houses" },
+  { value: "RH", label: "Reihenhaus", sub: "Reihen- / Endhaus", icon: "other_houses" },
+  { value: "GRUNDSTUECK", label: "Grundstück", sub: "Bauland / Fläche", icon: "landscape" },
 ];
 
 const CONDITIONS = [
-  { value: "ERSTBEZUG", label: "First Occupancy", sub: "Erstbezug" },
-  { value: "NEUBAU", label: "New Build", sub: "Neubau" },
-  { value: "GEPFLEGT", label: "Well Maintained", sub: "Gepflegt" },
-  { value: "RENOVIERUNGS_BEDUERFTIG", label: "Needs Renovation", sub: "Renovierungsbedürftig" },
-  { value: "SANIERUNGS_BEDUERFTIG", label: "Needs Refurbishment", sub: "Sanierungsbedürftig" },
-  { value: "ROHBAU", label: "Shell Construction", sub: "Rohbau" },
+  { value: "ERSTBEZUG", label: "Erstbezug", sub: "Erstmalig bezogen" },
+  { value: "NEUBAU", label: "Neubau", sub: "Neuwertig" },
+  { value: "GEPFLEGT", label: "Gepflegt", sub: "Guter Zustand" },
+  { value: "RENOVIERUNGS_BEDUERFTIG", label: "Renovierungsbedürftig", sub: "Teilsanierung nötig" },
+  { value: "SANIERUNGS_BEDUERFTIG", label: "Sanierungsbedürftig", sub: "Umfangreiche Arbeiten" },
+  { value: "ROHBAU", label: "Rohbau", sub: "Nur Gebäudehülle" },
 ];
 
 const ENERGY_CLASSES = ["A+", "A", "B", "C", "D", "E", "F", "G", "H"];
@@ -159,13 +159,13 @@ export default function NewPropertyPage() {
 
       if (!res.ok) {
         const data = await res.json();
-        throw new Error(data.error || "Failed to create property");
+        throw new Error(data.error || "Immobilie konnte nicht erstellt werden");
       }
 
       const property = await res.json();
       router.push(`/dashboard/properties/${property.id}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
+      setError(err instanceof Error ? err.message : "Ein Fehler ist aufgetreten");
       setLoading(false);
     }
   }
@@ -320,7 +320,7 @@ export default function NewPropertyPage() {
                   type="number"
                   value={form.plotArea}
                   onChange={(e) => update({ plotArea: e.target.value })}
-                  placeholder="e.g. 450"
+                  placeholder="z.B. 450"
                   className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm text-blueprint placeholder:text-slate-400 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
                 />
               </div>
@@ -504,8 +504,8 @@ export default function NewPropertyPage() {
                   </label>
                   <div className="flex gap-3">
                     {[
-                      { v: "VERBRAUCH", l: "Consumption-based", sub: "Verbrauchsausweis" },
-                      { v: "BEDARF", l: "Demand-based", sub: "Bedarfsausweis" },
+                      { v: "VERBRAUCH", l: "Verbrauchsausweis", sub: "Nach Verbrauch" },
+                      { v: "BEDARF", l: "Bedarfsausweis", sub: "Nach Bedarf" },
                     ].map((t) => (
                       <button
                         key={t.v}
@@ -554,7 +554,7 @@ export default function NewPropertyPage() {
                       type="number"
                       value={form.energyValue}
                       onChange={(e) => update({ energyValue: e.target.value })}
-                      placeholder="e.g. 125"
+                      placeholder="z.B. 125"
                       className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm text-blueprint placeholder:text-slate-400 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
                     />
                   </div>

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Bricolage_Grotesque, Manrope } from "next/font/google";
 import Providers from "./providers";
 import CookieBanner from "./components/cookie-banner";
+import TranslateSafe from "./components/translate-safe";
 import "./globals.css";
 
 const bricolage = Bricolage_Grotesque({
@@ -30,20 +31,20 @@ export default function RootLayout({
   return (
     <html
       lang="de"
-      translate="no"
-      className={`${bricolage.variable} ${manrope.variable} antialiased notranslate`}
+      className={`${bricolage.variable} ${manrope.variable} antialiased`}
       suppressHydrationWarning
     >
       <head>
-        <meta name="google" content="notranslate" />
         <link
           href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
           rel="stylesheet"
         />
       </head>
       <body className="bg-background-light text-blueprint overflow-x-hidden" suppressHydrationWarning>
-        <Providers>{children}</Providers>
-        <CookieBanner />
+        <TranslateSafe>
+          <Providers>{children}</Providers>
+          <CookieBanner />
+        </TranslateSafe>
       </body>
     </html>
   );

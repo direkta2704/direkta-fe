@@ -21,7 +21,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     });
 
     if (!listing) {
-      return NextResponse.json({ error: "Listing not found" }, { status: 404 });
+      return NextResponse.json({ error: "Inserat nicht gefunden" }, { status: 404 });
     }
 
     return NextResponse.json(listing);
@@ -41,7 +41,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     });
 
     if (!existing) {
-      return NextResponse.json({ error: "Listing not found" }, { status: 404 });
+      return NextResponse.json({ error: "Inserat nicht gefunden" }, { status: 404 });
     }
 
     // Hard compliance block: cannot publish without energy cert + 6 photos + description + price
@@ -95,6 +95,6 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     return NextResponse.json(listing);
   } catch (err) {
     console.error("Update listing error:", err);
-    return NextResponse.json({ error: "Failed to update" }, { status: 500 });
+    return NextResponse.json({ error: "Aktualisierung fehlgeschlagen" }, { status: 500 });
   }
 }

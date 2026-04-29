@@ -76,6 +76,6 @@ export async function POST(req: Request) {
     return NextResponse.json(listing, { status: 201 });
   } catch (err) {
     console.error("Create listing error:", err);
-    return NextResponse.json({ error: "Failed to create listing" }, { status: 500 });
+    return NextResponse.json({ error: "Inserat konnte nicht erstellt werden" }, { status: 500 });
   }
 }
