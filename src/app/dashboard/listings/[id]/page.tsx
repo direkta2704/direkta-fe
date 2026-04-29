@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import ExposeSection from "./expose-section";
 
 interface Comparable {
@@ -64,6 +64,8 @@ const CONFIDENCE_DE: Record<string, { label: string; color: string }> = {
 export default function ListingDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const paymentStatus = searchParams.get("payment");
   const [listing, setListing] = useState<Listing | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
@@ -144,22 +146,27 @@ export default function ListingDetailPage() {
     setPublishing(true);
     setError("");
     try {
-      // Save first
+      // Save current state first
       await fetch(`/api/listings/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ titleShort, descriptionLong, askingPrice: parseFloat(askingPrice) }),
       });
-      // Then publish
-      const res = await fetch(`/api/listings/${id}`, {
-        method: "PATCH",
+
+      // Create Stripe checkout session
+      const res = await fetch("/api/checkout", {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "ACTIVE" }),
+        body: JSON.stringify({ listingId: id }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      setListing((prev) => (prev ? { ...prev, ...data } : prev));
-      router.push("/dashboard/listings");
+      if (!res.ok) throw new Error(data.error || "Checkout fehlgeschlagen");
+
+      // Redirect to Stripe
+      if (data.url) {
+        window.location.href = data.url;
+        return;
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Veröffentlichung fehlgeschlagen");
     }
@@ -256,6 +263,18 @@ export default function ListingDetailPage() {
         </div>
       )}
 
+      {paymentStatus === "success" && (
+        <div className="mb-6 px-4 py-3 rounded-xl bg-emerald-50 border border-emerald-200 text-sm text-emerald-700 font-medium flex items-center gap-2">
+          <span className="material-symbols-outlined text-emerald-600">check_circle</span>
+          Zahlung erfolgreich! Ihr Inserat wird in Kuerze veroeffentlicht.
+        </div>
+      )}
+      {paymentStatus === "cancelled" && (
+        <div className="mb-6 px-4 py-3 rounded-xl bg-amber-50 border border-amber-200 text-sm text-amber-700 font-medium flex items-center gap-2">
+          <span className="material-symbols-outlined text-amber-600">info</span>
+          Zahlung abgebrochen. Ihr Inserat bleibt als Entwurf gespeichert.
+        </div>
+      )}
       {error && (
         <div className="mb-6 px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-600 font-medium">{error}</div>
       )}
@@ -494,14 +513,16 @@ export default function ListingDetailPage() {
             <button onClick={handleSave} disabled={saving} className="bg-blueprint hover:bg-primary text-white px-6 py-3 rounded-xl text-sm font-black uppercase tracking-[0.15em] transition-colors disabled:opacity-60">
               {saving ? "Wird gespeichert..." : "Speichern"}
             </button>
-            <button
-              onClick={handlePublish}
-              disabled={!canPublish || publishing}
-              className="bg-primary hover:bg-primary-dark text-white px-6 py-3 rounded-xl text-sm font-black uppercase tracking-[0.18em] transition-all hover:scale-[1.02] shadow-lg shadow-primary/25 disabled:opacity-40 disabled:hover:scale-100 flex items-center gap-2"
-            >
-              <span className="material-symbols-outlined text-lg">publish</span>
-              {publishing ? "Wird veröffentlicht..." : "Veröffentlichen"}
-            </button>
+            {listing.status === "DRAFT" && (
+              <button
+                onClick={handlePublish}
+                disabled={!canPublish || publishing}
+                className="bg-primary hover:bg-primary-dark text-white px-6 py-3 rounded-xl text-sm font-black uppercase tracking-[0.18em] transition-all hover:scale-[1.02] shadow-lg shadow-primary/25 disabled:opacity-40 disabled:hover:scale-100 flex items-center gap-2"
+              >
+                <span className="material-symbols-outlined text-lg">publish</span>
+                {publishing ? "Weiterleitung..." : `Veröffentlichen · EUR 999`}
+              </button>
+            )}
           </div>
         </div>
       </div>

@@ -44,6 +44,30 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       return NextResponse.json({ error: "Listing not found" }, { status: 404 });
     }
 
+    // Hard compliance block: cannot publish without energy cert + 6 photos + description + price
+    if (body.status === "ACTIVE" && existing.status !== "ACTIVE") {
+      const property = await prisma.property.findFirst({
+        where: { id: existing.propertyId },
+        include: {
+          energyCert: { select: { id: true } },
+          _count: { select: { media: { where: { kind: "PHOTO" } } } },
+        },
+      });
+
+      const violations: string[] = [];
+      if (!property?.energyCert) violations.push("Energieausweis fehlt");
+      if ((property?._count.media || 0) < 6) violations.push(`Mindestens 6 Fotos erforderlich (aktuell: ${property?._count.media || 0})`);
+      if (!existing.descriptionLong && !body.descriptionLong) violations.push("Beschreibung fehlt");
+      if (!existing.askingPrice && !body.askingPrice) violations.push("Angebotspreis fehlt");
+
+      if (violations.length > 0) {
+        return NextResponse.json(
+          { error: `Veröffentlichung nicht möglich: ${violations.join(", ")}` },
+          { status: 400 }
+        );
+      }
+    }
+
     const listing = await prisma.listing.update({
       where: { id },
       data: {
