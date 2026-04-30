@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { trackEvent, EVENTS } from "@/lib/posthog";
 
 const PROPERTY_TYPES = [
   { value: "ETW", label: "Eigentumswohnung", sub: "Wohnung / Apartment", icon: "apartment" },
@@ -163,6 +164,7 @@ export default function NewPropertyPage() {
       }
 
       const property = await res.json();
+      trackEvent(EVENTS.PROPERTY_CREATED, { type: form.type, city: form.city, livingArea: form.livingArea });
       router.push(`/dashboard/properties/${property.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Ein Fehler ist aufgetreten");

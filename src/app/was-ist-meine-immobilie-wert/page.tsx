@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { trackEvent, EVENTS } from "@/lib/posthog";
 
 const TYPES = [
   { value: "ETW", label: "Wohnung", icon: "apartment" },
@@ -66,6 +67,7 @@ export default function ValuationPage() {
       if (res.ok) {
         const data = await res.json();
         setResult(data);
+        trackEvent(EVENTS.VALUATION_COMPLETED, { type: form.type, city: form.city, median: data.median });
         setStep(2);
       }
     } catch {
@@ -81,6 +83,7 @@ export default function ValuationPage() {
     // In production, this would send a detailed PDF report via email
     // For now, just reveal the full results
     await new Promise((r) => setTimeout(r, 800));
+    trackEvent(EVENTS.VALUATION_EMAIL_CAPTURED, { email });
     setEmailSent(true);
     setEmailLoading(false);
   }

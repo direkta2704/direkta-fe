@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import ExposeSection from "./expose-section";
+import { trackEvent, EVENTS } from "@/lib/posthog";
 
 interface Comparable {
   id: string;
@@ -100,6 +101,7 @@ export default function ListingDetailPage() {
       setTitleShort(data.titleShort || "");
       setDescriptionLong(data.descriptionLong || "");
       setListing((prev) => (prev ? { ...prev, ...data } : prev));
+      trackEvent(EVENTS.AI_TEXT_GENERATED, { listingId: id });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Generierung fehlgeschlagen");
     }
@@ -114,6 +116,7 @@ export default function ListingDetailPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       setListing((prev) => (prev ? { ...prev, priceRecommendation: data } : prev));
+      trackEvent(EVENTS.PRICE_CALCULATED, { listingId: id });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Preisberechnung fehlgeschlagen");
     }
