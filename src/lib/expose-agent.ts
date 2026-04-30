@@ -1206,9 +1206,28 @@ function normalizeUserPatch(data: Record<string, unknown>): Partial<WorkingMemor
     };
     patch.type = map[data.type.toLowerCase()] || data.type.toUpperCase();
   }
-  if (typeof data.street === "string") patch.street = data.street;
+  if (typeof data.street === "string") {
+    // Split "Marktstraße 12" into street + houseNumber if LLM merged them
+    const streetMatch = data.street.match(/^(.+?)\s+(\d+\s*\w?)$/);
+    if (streetMatch && !data.houseNumber) {
+      patch.street = streetMatch[1];
+      patch.houseNumber = streetMatch[2].trim();
+    } else {
+      patch.street = data.street;
+    }
+  }
   if (typeof data.houseNumber === "string" || typeof data.houseNumber === "number") patch.houseNumber = String(data.houseNumber);
-  if (typeof data.postcode === "string" || typeof data.postcode === "number") patch.postcode = String(data.postcode);
+  if (typeof data.postcode === "string" || typeof data.postcode === "number") {
+    // Split "76571 Gaggenau" into postcode + city if LLM merged them
+    const pcStr = String(data.postcode);
+    const pcMatch = pcStr.match(/^(\d{5})\s+(.+)$/);
+    if (pcMatch && !data.city) {
+      patch.postcode = pcMatch[1];
+      patch.city = pcMatch[2];
+    } else {
+      patch.postcode = pcStr.replace(/\D/g, "").slice(0, 5);
+    }
+  }
   if (typeof data.city === "string") patch.city = data.city;
   if (typeof data.livingArea === "number") patch.livingArea = data.livingArea;
   if (typeof data.plotArea === "number") patch.plotArea = data.plotArea;
@@ -1276,20 +1295,27 @@ Bereits bekannt: ${known || "nichts"}
 
 Nutzernachricht: "${userMessage}"
 
-Erlaubte Felder (nur neue/geänderte extrahieren):
-- type: ETW|EFH|MFH|DHH|RH|GRUNDSTUECK
-- street: Straßenname
-- houseNumber: Hausnummer
-- postcode: PLZ
-- city: Stadt
+WICHTIGE REGELN:
+- Überschreibe KEINE bereits bekannten Felder, es sei denn der Nutzer korrigiert sie explizit.
+- "Grundstück hat X m²" bedeutet plotArea, NICHT type=GRUNDSTUECK. Ändere type nur wenn der Nutzer den Immobilientyp explizit ändert.
+- street und houseNumber GETRENNT: "Marktstraße 12" → street: "Marktstraße", houseNumber: "12"
+- postcode und city GETRENNT: "76571 Gaggenau" → postcode: "76571", city: "Gaggenau"
+- postcode ist IMMER nur die 5-stellige Zahl, city ist IMMER nur der Ortsname
+
+Erlaubte Felder (nur NEUE/GEÄNDERTE extrahieren):
+- type: ETW|EFH|MFH|DHH|RH|GRUNDSTUECK (NUR der Immobilientyp, nicht Grundstücksfläche!)
+- street: nur Straßenname ohne Hausnummer
+- houseNumber: nur die Hausnummer
+- postcode: nur 5-stellige PLZ
+- city: nur Ortsname
 - livingArea: Wohnfläche in m² (Zahl)
-- plotArea: Grundstücksfläche in m² (Zahl)
+- plotArea: Grundstücksfläche in m² (Zahl) — "Grundstück" hier = Fläche, nicht Typ!
 - yearBuilt: Baujahr (Zahl)
 - rooms: Zimmeranzahl (Zahl)
 - bathrooms: Badezimmer (Zahl)
 - floor: Etage (Zahl)
 - condition: ERSTBEZUG|NEUBAU|GEPFLEGT|RENOVIERUNGS_BEDUERFTIG|SANIERUNGS_BEDUERFTIG|ROHBAU
-- attributes: Array von Strings (Balkon, Keller, Garten, Stellplatz, etc.)
+- attributes: Array von Strings (Balkon, Keller, Garten, Stellplatz, Fussbodenheizung, etc.)
 - hasEnergyCert: true/false
 - energyCertType: VERBRAUCH|BEDARF
 - energyClass: A+|A|B|C|D|E|F|G|H
@@ -1297,7 +1323,7 @@ Erlaubte Felder (nur neue/geänderte extrahieren):
 - energySource: Gas|Öl|Fernwärme|Strom|etc.
 - assumptions: Array von getroffenen Annahmen
 
-Antworte NUR mit JSON. Leeres Objekt {} wenn nichts extrahiert wurde.`;
+Antworte NUR mit JSON. Leeres Objekt {} wenn nichts Neues extrahiert wurde.`;
 
   try {
     const llm = await callLlm({
