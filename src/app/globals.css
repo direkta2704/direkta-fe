@@ -325,6 +325,55 @@ h6 {
   background-color: rgba(236, 91, 19, 0.04);
 }
 
+/* Journey timeline animations */
+.journey-line-makler {
+  transform-origin: left;
+  animation: drawTimeline 1.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.journey-line-direkta {
+  transform-origin: left;
+  animation: drawTimeline 1.5s cubic-bezier(0.22, 1, 0.36, 1) 0.3s both;
+}
+@keyframes drawTimeline {
+  0% { transform: scaleX(0); }
+  100% { transform: scaleX(1); }
+}
+
+.reveal-stagger.in .journey-card-makler,
+.reveal-stagger.in .journey-card-direkta {
+  animation: cardReveal 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.reveal-stagger.in .journey-card-makler:nth-child(1),
+.reveal-stagger.in .journey-card-direkta:nth-child(1) { animation-delay: 0.1s; }
+.reveal-stagger.in .journey-card-makler:nth-child(2),
+.reveal-stagger.in .journey-card-direkta:nth-child(2) { animation-delay: 0.18s; }
+.reveal-stagger.in .journey-card-makler:nth-child(3),
+.reveal-stagger.in .journey-card-direkta:nth-child(3) { animation-delay: 0.26s; }
+.reveal-stagger.in .journey-card-makler:nth-child(4),
+.reveal-stagger.in .journey-card-direkta:nth-child(4) { animation-delay: 0.34s; }
+.reveal-stagger.in .journey-card-makler:nth-child(5),
+.reveal-stagger.in .journey-card-direkta:nth-child(5) { animation-delay: 0.42s; }
+.reveal-stagger.in .journey-card-makler:nth-child(6),
+.reveal-stagger.in .journey-card-direkta:nth-child(6) { animation-delay: 0.50s; }
+.reveal-stagger.in .journey-card-makler:nth-child(7),
+.reveal-stagger.in .journey-card-direkta:nth-child(7) { animation-delay: 0.58s; }
+.reveal-stagger.in .journey-card-makler:nth-child(8),
+.reveal-stagger.in .journey-card-direkta:nth-child(8) { animation-delay: 0.66s; }
+
+@keyframes cardReveal {
+  0% { opacity: 0; transform: translateY(30px) scale(0.95); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.journey-card-makler,
+.journey-card-direkta {
+  opacity: 0;
+}
+.reveal-stagger.in .journey-card-makler,
+.reveal-stagger.in .journey-card-direkta {
+  opacity: 1;
+}
+
 /* Underline link */
 
 .underline-link {

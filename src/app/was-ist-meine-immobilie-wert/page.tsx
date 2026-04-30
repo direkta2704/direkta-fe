@@ -95,10 +95,10 @@ export default function ValuationPage() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#0F1B2E] to-[#1a2d4a]">
       {/* Nav */}
-      <nav className="flex items-center justify-between px-6 lg:px-16 py-5">
+      <nav className="flex items-center justify-between px-6 lg:px-16 py-5" suppressHydrationWarning>
         <Link href="/" className="flex items-center gap-2">
           <span className="material-symbols-outlined text-2xl text-primary">home_work</span>
-          <span className="text-lg font-black tracking-tight text-white">DIREKTA<span className="text-primary">.</span></span>
+          <span className="text-lg font-black tracking-tight text-white" translate="no">DIREKTA<span className="text-primary">.</span></span>
         </Link>
         <Link
           href="/"

@@ -18,7 +18,8 @@ export default function Home() {
 
   useEffect(() => {
     if (status === "authenticated") {
-      router.replace("/dashboard");
+      const timer = setTimeout(() => router.replace("/dashboard"), 100);
+      return () => clearTimeout(timer);
     }
   }, [status, router]);
 
@@ -30,21 +31,36 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (!listingsLoaded) return;
-    const io = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            entry.target.classList.add("in");
-            io.unobserve(entry.target);
-          }
-        });
-      },
-      { threshold: 0.12, rootMargin: "0px 0px -60px 0px" }
-    );
-    document.querySelectorAll(".reveal:not(.in)").forEach((el) => io.observe(el));
-    return () => io.disconnect();
-  }, [listingsLoaded]);
+    const observe = () => {
+      const io = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((entry) => {
+            if (entry.isIntersecting) {
+              entry.target.classList.add("in");
+              io.unobserve(entry.target);
+            }
+          });
+        },
+        { threshold: 0.1, rootMargin: "0px 0px -40px 0px" }
+      );
+      document.querySelectorAll(".reveal:not(.in), .reveal-stagger:not(.in)").forEach((el) => io.observe(el));
+      return io;
+    };
+
+    // Observe now, and re-observe periodically to catch DOM changes from re-renders
+    let io = observe();
+    const interval = setInterval(() => {
+      const unresolved = document.querySelectorAll(".reveal:not(.in), .reveal-stagger:not(.in)");
+      if (unresolved.length > 0) {
+        io.disconnect();
+        io = observe();
+      } else {
+        clearInterval(interval);
+      }
+    }, 300);
+
+    return () => { io.disconnect(); clearInterval(interval); };
+  }, []);
 
   useEffect(() => {
     const nav = document.getElementById("navShell");
@@ -895,217 +911,143 @@ export default function Home() {
           </div>
         </section>
 
-        {/* ========== COMPARE — JOURNEY ========== */}
-        <section
-          id="compare"
-          className="py-28 px-6 bg-background-light light-grid"
-        >
+        {/* ========== COMPARE — CUSTOMER JOURNEY ========== */}
+        <section id="compare" className="py-28 px-6 bg-background-light light-grid overflow-hidden">
           <div className="max-w-7xl mx-auto">
-            <div className="text-center max-w-3xl mx-auto mb-16 reveal">
+            <div className="text-center max-w-3xl mx-auto mb-20 reveal">
               <div className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-4 py-1.5 text-primary mb-6">
-                <span className="material-symbols-outlined text-sm">
-                  compare_arrows
-                </span>
-                <span className="text-[10px] font-black uppercase tracking-[0.2em]">
-                  Der ehrliche Vergleich
-                </span>
+                <span className="material-symbols-outlined text-sm">compare_arrows</span>
+                <span className="text-[10px] font-black uppercase tracking-[0.2em]">Customer Journey</span>
               </div>
               <h2 className="text-5xl lg:text-7xl font-black tracking-[-0.04em] leading-[0.9] text-blueprint">
-                Gleiche Immobilie.
-                <br />
-                <span className="text-primary">Zwei Wege.</span>
+                Gleiche Immobilie.<br /><span className="text-primary">Zwei Wege.</span>
               </h2>
+              <p className="mt-6 text-lg text-slate-500">Vom ersten Gedanken bis zur Schlüsselübergabe. Zwei grundverschiedene Erfahrungen.</p>
             </div>
 
-            {/* Header row */}
+            {/* ── MAKLER PATH ── */}
+            <div className="reveal mb-14">
+              <div className="flex items-center gap-4 mb-6">
+                <div className="w-12 h-12 rounded-2xl bg-blueprint/5 border border-blueprint/10 flex items-center justify-center">
+                  <span className="material-symbols-outlined text-blueprint/60 text-2xl">person_search</span>
+                </div>
+                <div>
+                  <h3 className="font-black text-blueprint text-xl">Ohne Direkta — Traditioneller Makler</h3>
+                  <p className="text-sm text-slate-400">~6 Monate · 3,57% Provision = <span className="text-red-500 font-bold">€17.850</span></p>
+                </div>
+              </div>
+
+              {/* Timeline connector */}
+              <div className="relative">
+                <div className="journey-line-makler absolute top-8 left-0 right-0 h-[2px] bg-slate-200 hidden lg:block" />
+                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3 reveal-stagger">
+                  {[
+                    { wk: "Wo. 1-2", title: "Makler finden", desc: "Bewertungstermine mit 3-5 Maklern", pain: "Zeitverschwendung" },
+                    { wk: "Wo. 3-4", title: "Maklervertrag", desc: "Vertrag 6-12 Monate, Alleinauftrag", pain: "3,57% Provision" },
+                    { wk: "Wo. 5-6", title: "Inserat erstellen", desc: "Makler fotografiert und schreibt", pain: "Kein Einfluss" },
+                    { wk: "Wo. 7-8", title: "Live gehen", desc: "Makler veröffentlicht auf Portalen", pain: "Keine Kontrolle" },
+                    { wk: "Wo. 9-10", title: "Besichtigungen", desc: "Makler zeigt die Immobilie", pain: "Kein Einblick" },
+                    { wk: "Wo. 12-15", title: "Verhandlung", desc: "Indirektes Hin und Her", pain: "Kein Käuferkontakt" },
+                    { wk: "Wo. 15-18", title: "Annahme", desc: "Makler empfiehlt Käufer", pain: "Nicht Ihr Interesse" },
+                    { wk: "Wo. 18-20", title: "Notar", desc: "Koordination über Makler", pain: "Noch Kosten" },
+                  ].map((step, i) => (
+                    <div key={i} className="journey-card-makler relative group">
+                      {/* Dot on timeline */}
+                      <div className="hidden lg:block absolute top-[26px] left-1/2 -translate-x-1/2 w-4 h-4 rounded-full bg-white border-[3px] border-slate-300 z-10 group-hover:border-red-400 group-hover:scale-125 transition-all duration-300" />
+                      <div className="bg-white border border-slate-200 rounded-2xl p-4 flex flex-col mt-6 lg:mt-10 group-hover:shadow-xl group-hover:shadow-slate-200/50 group-hover:-translate-y-1 transition-all duration-300">
+                        <div className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-300 mb-2">{step.wk}</div>
+                        <div className="flex items-center gap-2 mb-2">
+                          <div className="w-7 h-7 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-center text-xs font-black text-slate-400 group-hover:bg-red-50 group-hover:text-red-400 group-hover:border-red-100 transition-colors duration-300">{i + 1}</div>
+                          <div className="text-[13px] font-black text-blueprint leading-tight">{step.title}</div>
+                        </div>
+                        <p className="text-[11px] text-slate-400 leading-relaxed flex-1 mb-3">{step.desc}</p>
+                        <div className="pt-2 border-t border-slate-100 group-hover:border-red-100 transition-colors duration-300">
+                          <div className="flex items-center gap-1">
+                            <span className="material-symbols-outlined text-red-300 text-xs group-hover:text-red-500 transition-colors duration-300">warning</span>
+                            <p className="text-[10px] text-red-300 font-bold group-hover:text-red-500 transition-colors duration-300">{step.pain}</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* ── VS divider ── */}
+            <div className="flex items-center justify-center gap-4 my-10 reveal">
+              <div className="h-[1px] flex-1 bg-gradient-to-r from-transparent via-slate-200 to-slate-200" />
+              <div className="w-14 h-14 rounded-full bg-blueprint flex items-center justify-center shadow-xl shadow-blueprint/20">
+                <span className="text-white font-black text-sm">VS</span>
+              </div>
+              <div className="h-[1px] flex-1 bg-gradient-to-l from-transparent via-slate-200 to-slate-200" />
+            </div>
+
+            {/* ── DIREKTA PATH ── */}
+            <div className="reveal mb-14">
+              <div className="flex items-center gap-4 mb-6">
+                <div className="w-12 h-12 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center">
+                  <span className="material-symbols-outlined text-primary text-2xl">rocket_launch</span>
+                </div>
+                <div>
+                  <h3 className="font-black text-blueprint text-xl">Mit Direkta — Selbst verkaufen</h3>
+                  <p className="text-sm text-slate-400">~8 Wochen · <span className="text-primary font-bold">€999 Festpreis</span> · Volle Kontrolle</p>
+                </div>
+              </div>
+
+              {/* Timeline connector */}
+              <div className="relative">
+                <div className="journey-line-direkta absolute top-8 left-0 right-0 h-[2px] bg-primary/20 hidden lg:block" />
+                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3 reveal-stagger">
+                  {[
+                    { day: "Tag 1", title: "Anmelden", desc: "E-Mail + Login in 30 Sekunden", icon: "login" },
+                    { day: "Tag 1", title: "Exposé-Agent", desc: "KI erstellt Ihr Exposé per Dialog", icon: "forum" },
+                    { day: "Tag 2-3", title: "Preis & Check", desc: "3 Strategien + Compliance-Prüfung", icon: "trending_up" },
+                    { day: "Tag 3-5", title: "Veröffentlichen", desc: "1-Klick, automatisch GEG-konform", icon: "publish" },
+                    { day: "Wo. 3-5", title: "Leads", desc: "Auto-qualifiziert + Score-Ranking", icon: "people" },
+                    { day: "Wo. 5-7", title: "Angebote", desc: "Vergleich: Betrag, Finanz, Timing", icon: "handshake" },
+                    { day: "Wo. 7", title: "Annehmen", desc: "1-Klick + Reservierungsvertrag", icon: "check_circle" },
+                    { day: "Wo. 8", title: "Notar", desc: "Auto-generierte Checkliste", icon: "gavel" },
+                  ].map((step, i) => (
+                    <div key={i} className="journey-card-direkta relative group">
+                      {/* Dot on timeline */}
+                      <div className="hidden lg:block absolute top-[26px] left-1/2 -translate-x-1/2 w-4 h-4 rounded-full bg-white border-[3px] border-primary/40 z-10 group-hover:border-primary group-hover:scale-125 group-hover:shadow-lg group-hover:shadow-primary/30 transition-all duration-300" />
+                      <div className="bg-white border-2 border-primary/10 rounded-2xl p-4 flex flex-col mt-6 lg:mt-10 group-hover:border-primary/40 group-hover:shadow-xl group-hover:shadow-primary/10 group-hover:-translate-y-1 transition-all duration-300">
+                        <div className="text-[9px] font-black uppercase tracking-[0.2em] text-primary/50 mb-2">{step.day}</div>
+                        <div className="flex items-center gap-2 mb-2">
+                          <div className="w-7 h-7 rounded-lg bg-primary/5 border border-primary/10 flex items-center justify-center group-hover:bg-primary group-hover:border-primary transition-all duration-300">
+                            <span className="material-symbols-outlined text-primary text-sm group-hover:text-white transition-colors duration-300">{step.icon}</span>
+                          </div>
+                          <div className="text-[13px] font-black text-blueprint leading-tight">{step.title}</div>
+                        </div>
+                        <p className="text-[11px] text-slate-400 leading-relaxed flex-1">{step.desc}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* ── THE DELTA ── */}
             <div className="reveal">
-              <div className="hidden md:grid grid-cols-12 gap-4 mb-4 px-4">
-                <div className="col-span-3 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
-                  Phase
-                </div>
-                <div className="col-span-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">
-                  Ohne Direkta
-                </div>
-                <div className="col-span-4 text-[10px] font-black uppercase tracking-[0.2em] text-primary">
-                  Mit Direkta
-                </div>
-                <div className="col-span-1 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 text-right">
-                  Ersparnis
-                </div>
-              </div>
+              <div className="bg-blueprint rounded-3xl p-10 relative overflow-hidden">
+                {/* Background glow */}
+                <div className="absolute top-0 right-0 w-96 h-96 bg-primary/10 rounded-full blur-[120px] -translate-y-1/2 translate-x-1/2" />
+                <div className="absolute bottom-0 left-0 w-64 h-64 bg-primary/5 rounded-full blur-[80px] translate-y-1/2 -translate-x-1/2" />
 
-              {/* Rows */}
-              <div className="bg-white border border-slate-200 rounded-3xl divide-y divide-slate-100 overflow-hidden">
-                {/* Row 1 */}
-                <div className="journey-row grid md:grid-cols-12 gap-4 p-6 items-center">
-                  <div className="md:col-span-3">
-                    <div className="text-xs font-black uppercase tracking-widest text-slate-400 md:hidden mb-1">
-                      Phase
+                <div className="relative grid sm:grid-cols-2 lg:grid-cols-4 gap-8">
+                  {[
+                    { label: "Zeitersparnis", value: "~12", unit: "Wochen schneller", color: "text-white" },
+                    { label: "Kostenersparnis", value: "€16.851", unit: "gespart (bei €500k)", color: "text-primary" },
+                    { label: "Transparenz", value: "100%", unit: "Alle Daten sichtbar", color: "text-white" },
+                    { label: "Kontrolle", value: "Ihre", unit: "Ortsunabhängig verkaufen", color: "text-white" },
+                  ].map((stat, i) => (
+                    <div key={i} className="text-center group">
+                      <div className="text-[9px] font-black uppercase tracking-[0.3em] text-white/30 mb-3">{stat.label}</div>
+                      <div className={`text-5xl font-black ${stat.color} transition-transform duration-500 group-hover:scale-110`}>{stat.value}</div>
+                      <div className="text-sm text-white/50 mt-2">{stat.unit}</div>
                     </div>
-                    <div className="font-black text-blueprint text-lg">
-                      Onboarding
-                    </div>
-                  </div>
-                  <div className="md:col-span-4 text-sm text-slate-600">
-                    Makler suchen · 3–5 treffen · Maklervertrag unterschreiben
-                  </div>
-                  <div className="md:col-span-4 text-sm text-blueprint font-medium">
-                    Login + Expos&eacute;-Assistent (15–20 Min.)
-                  </div>
-                  <div className="md:col-span-1 text-right">
-                    <span className="inline-block bg-primary/10 text-primary px-3 py-1 rounded-full text-xs font-black">
-                      ~3 Wo.
-                    </span>
-                  </div>
-                </div>
-                {/* Row 2 */}
-                <div className="journey-row grid md:grid-cols-12 gap-4 p-6 items-center">
-                  <div className="md:col-span-3">
-                    <div className="font-black text-blueprint text-lg">
-                      Inserat-Vorbereitung
-                    </div>
-                  </div>
-                  <div className="md:col-span-4 text-sm text-slate-600">
-                    Fototermin des Maklers · generisches Expos&eacute;
-                  </div>
-                  <div className="md:col-span-4 text-sm text-blueprint font-medium">
-                    KI-erstelltes Expos&eacute; · Verkäufer bearbeitet · Compliance-Prüfung
-                  </div>
-                  <div className="md:col-span-1 text-right">
-                    <span className="inline-block bg-primary/10 text-primary px-3 py-1 rounded-full text-xs font-black">
-                      ~2 Wo.
-                    </span>
-                  </div>
-                </div>
-                {/* Row 3 */}
-                <div className="journey-row grid md:grid-cols-12 gap-4 p-6 items-center">
-                  <div className="md:col-span-3">
-                    <div className="font-black text-blueprint text-lg">
-                      Preise
-                    </div>
-                  </div>
-                  <div className="md:col-span-4 text-sm text-slate-600">
-                    Vom Makler festgelegt · intransparent · auf schnellen Abschluss optimiert
-                  </div>
-                  <div className="md:col-span-4 text-sm text-blueprint font-medium">
-                    Drei explizite Strategien mit Vergleichswerten
-                  </div>
-                  <div className="md:col-span-1 text-right">
-                    <span className="inline-block bg-slate-100 text-slate-500 px-3 py-1 rounded-full text-xs font-black">
-                      Klarheit
-                    </span>
-                  </div>
-                </div>
-                {/* Row 4 */}
-                <div className="journey-row grid md:grid-cols-12 gap-4 p-6 items-center">
-                  <div className="md:col-span-3">
-                    <div className="font-black text-blueprint text-lg">
-                      Verteilung
-                    </div>
-                  </div>
-                  <div className="md:col-span-4 text-sm text-slate-600">
-                    Makler veröffentlicht auf Portalen nach eigenem Zeitplan
-                  </div>
-                  <div className="md:col-span-4 text-sm text-blueprint font-medium">
-                    Auto-Veröffentlichung auf IS24 innerhalb von 30 Minuten
-                  </div>
-                  <div className="md:col-span-1 text-right">
-                    <span className="inline-block bg-primary/10 text-primary px-3 py-1 rounded-full text-xs font-black">
-                      ~1–2 Wo.
-                    </span>
-                  </div>
-                </div>
-                {/* Row 5 */}
-                <div className="journey-row grid md:grid-cols-12 gap-4 p-6 items-center">
-                  <div className="md:col-span-3">
-                    <div className="font-black text-blueprint text-lg">
-                      Interessenten
-                    </div>
-                  </div>
-                  <div className="md:col-span-4 text-sm text-slate-600">
-                    Vom Makler gefiltert · Verkäufer hat keinen Einblick
-                  </div>
-                  <div className="md:col-span-4 text-sm text-blueprint font-medium">
-                    Auto-qualifiziert · nach Score sortiert · im Posteingang sichtbar
-                  </div>
-                  <div className="md:col-span-1 text-right">
-                    <span className="inline-block bg-slate-100 text-slate-500 px-3 py-1 rounded-full text-xs font-black">
-                      Transparenz
-                    </span>
-                  </div>
-                </div>
-                {/* Row 6 */}
-                <div className="journey-row grid md:grid-cols-12 gap-4 p-6 items-center">
-                  <div className="md:col-span-3">
-                    <div className="font-black text-blueprint text-lg">
-                      Verhandlung
-                    </div>
-                  </div>
-                  <div className="md:col-span-4 text-sm text-slate-600">
-                    4–6 Wochen indirektes Hin und Her über den Makler
-                  </div>
-                  <div className="md:col-span-4 text-sm text-blueprint font-medium">
-                    Strukturierte Angebote · bewertet · nebeneinander verglichen
-                  </div>
-                  <div className="md:col-span-1 text-right">
-                    <span className="inline-block bg-primary/10 text-primary px-3 py-1 rounded-full text-xs font-black">
-                      ~3–4 Wo.
-                    </span>
-                  </div>
-                </div>
-                {/* Row 7 */}
-                <div className="journey-row grid md:grid-cols-12 gap-4 p-6 items-center">
-                  <div className="md:col-span-3">
-                    <div className="font-black text-blueprint text-lg">
-                      Abschluss
-                    </div>
-                  </div>
-                  <div className="md:col-span-4 text-sm text-slate-600">
-                    2 Wochen: Makler bereitet Notartermin vor
-                  </div>
-                  <div className="md:col-span-4 text-sm text-blueprint font-medium">
-                    1-Klick-Annahme · automatisch erstelltes Notar-Paket
-                  </div>
-                  <div className="md:col-span-1 text-right">
-                    <span className="inline-block bg-primary/10 text-primary px-3 py-1 rounded-full text-xs font-black">
-                      ~1 Wo.
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Total bar */}
-            <div className="mt-6 grid md:grid-cols-3 gap-4 reveal">
-              <div className="bg-blueprint text-white rounded-3xl p-7">
-                <div className="text-[10px] font-black uppercase tracking-[0.2em] text-white/50 mb-2">
-                  Ohne Direkta
-                </div>
-                <div className="text-3xl font-black counter-num">
-                  ~ 20 Wochen
-                </div>
-                <div className="text-sm text-white/60 mt-1">
-                  €17.850 Provision
-                </div>
-              </div>
-              <div className="bg-primary text-white rounded-3xl p-7">
-                <div className="text-[10px] font-black uppercase tracking-[0.2em] text-white/70 mb-2">
-                  Mit Direkta
-                </div>
-                <div className="text-3xl font-black counter-num">
-                  ~ 8 Wochen
-                </div>
-                <div className="text-sm text-white/80 mt-1">€999 Festpreis</div>
-              </div>
-              <div className="bg-white border border-slate-200 rounded-3xl p-7">
-                <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-2">
-                  Netto-Ersparnis
-                </div>
-                <div className="text-3xl font-black text-blueprint counter-num">
-                  €16,851
-                </div>
-                <div className="text-sm text-slate-500 mt-1">
-                  ~12 Wochen schneller
+                  ))}
                 </div>
               </div>
             </div>
