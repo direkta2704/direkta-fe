@@ -53,6 +53,7 @@ export async function POST(
           include: {
             energyCert: true,
             media: { where: { kind: "PHOTO" }, orderBy: { ordering: "asc" } },
+            user: { select: { name: true, email: true, phone: true } },
           },
         },
       },
@@ -111,20 +112,40 @@ export async function POST(
         data: { status: "RUNNING", startedAt: new Date() },
       });
 
+      // Pass raw S3 keys — the driver downloads from S3 directly
+      const photoKeys = p.media.map((m) => m.storageKey);
+
+      // Split seller name into first/last
+      const nameParts = (p.user?.name || "").split(" ");
+      const firstName = nameParts[0] || null;
+      const lastName = nameParts.slice(1).join(" ") || null;
+
       const result = await driver.publish({
         title: listing.titleShort || `${p.street} ${p.houseNumber}`,
         description: listing.descriptionLong || "",
         price: listing.askingPrice ? Number(listing.askingPrice) : 0,
         propertyType: p.type,
         livingArea: p.livingArea,
+        plotArea: p.plotArea,
         rooms: p.rooms,
+        bathrooms: p.bathrooms,
+        floor: p.floor,
+        yearBuilt: p.yearBuilt,
+        condition: p.condition,
+        attributes: (p.attributes as string[]) || [],
         city: p.city,
         postcode: p.postcode,
         street: p.street,
         houseNumber: p.houseNumber,
-        photos: p.media.map((m) => m.storageKey),
+        photos: photoKeys,
         energyClass: p.energyCert?.energyClass || null,
         energyValue: p.energyCert?.energyValue || null,
+        energyCertType: p.energyCert?.type || null,
+        energyPrimarySource: p.energyCert?.primarySource || null,
+        sellerFirstName: firstName,
+        sellerLastName: lastName,
+        sellerEmail: p.user?.email || null,
+        sellerPhone: p.user?.phone || null,
       });
 
       await prisma.syndicationTarget.update({

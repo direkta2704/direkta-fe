@@ -7,7 +7,13 @@ export interface PublishInput {
   price: number;
   propertyType: string;
   livingArea: number;
+  plotArea: number | null;
   rooms: number | null;
+  bathrooms: number | null;
+  floor: number | null;
+  yearBuilt: number | null;
+  condition: string | null;
+  attributes: string[];
   city: string;
   postcode: string;
   street: string;
@@ -15,6 +21,12 @@ export interface PublishInput {
   photos: string[];
   energyClass: string | null;
   energyValue: number | null;
+  energyCertType: string | null;
+  energyPrimarySource: string | null;
+  sellerFirstName: string | null;
+  sellerLastName: string | null;
+  sellerEmail: string | null;
+  sellerPhone: string | null;
 }
 
 export interface PublishResult {
@@ -98,6 +110,12 @@ export class IS24MockDriver implements PortalDriver {
 export function getDriver(portal: string): PortalDriver {
   switch (portal) {
     case "IMMOSCOUT24":
+      // Prefer REST API driver when consumer key is configured
+      if (process.env.IS24_CONSUMER_KEY) {
+        const { IS24ApiDriver } = require("./is24-api-driver");
+        return new IS24ApiDriver();
+      }
+      // Fallback: browser automation (legacy)
       if (process.env.IS24_EMAIL && process.env.IS24_PASSWORD) {
         const { IS24BrowserDriver } = require("./is24-driver");
         return new IS24BrowserDriver();
