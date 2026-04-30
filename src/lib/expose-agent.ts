@@ -1502,7 +1502,21 @@ export async function runAgentTurn(
     const ext = await extractMemoryFromMessage(userMessage, workingMemory, ctx.agentRunId);
     costCentsThisTurn += ext.costCents;
     costCentsTotal += ext.costCents;
-    if (ext.patch) workingMemory = applyPatch(workingMemory, ext.patch);
+    if (ext.patch) {
+      workingMemory = applyPatch(workingMemory, ext.patch);
+      // Persist as TOOL turn so rebuildMemory picks up the patch
+      await prisma.conversationTurn.create({
+        data: {
+          conversationId: ctx.conversationId,
+          role: "TOOL",
+          content: "memory_extract",
+          toolName: "memory_extract",
+          toolInput: asJson({ userMessage: userMessage.slice(0, 200) }),
+          toolOutput: asJson({ memoryPatch: ext.patch }),
+          latencyMs: 0,
+        },
+      });
+    }
   }
 
   return {
