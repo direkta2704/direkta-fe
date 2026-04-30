@@ -1,28 +1,32 @@
 "use client";
 
-import { Component, type ReactNode } from "react";
+import { useEffect } from "react";
 
-interface Props { children: ReactNode; }
-interface State { hasError: boolean; }
+export default function TranslateSafe({ children }: { children: React.ReactNode }) {
+  useEffect(() => {
+    const origError = console.error;
+    console.error = (...args: unknown[]) => {
+      const msg = typeof args[0] === "string" ? args[0] : "";
+      if (msg.includes("removeChild") || msg.includes("insertBefore") || msg.includes("not a child")) {
+        return;
+      }
+      origError.apply(console, args);
+    };
 
-export default class TranslateSafe extends Component<Props, State> {
-  constructor(props: Props) {
-    super(props);
-    this.state = { hasError: false };
-  }
+    const handler = (e: ErrorEvent) => {
+      if (e.message?.includes("removeChild") || e.message?.includes("insertBefore") || e.message?.includes("not a child")) {
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
+      }
+    };
+    window.addEventListener("error", handler, true);
 
-  static getDerivedStateFromError(error: Error) {
-    if (error.message?.includes("removeChild") || error.message?.includes("insertBefore") || error.message?.includes("not a child")) {
-      return { hasError: true };
-    }
-    throw error;
-  }
+    return () => {
+      console.error = origError;
+      window.removeEventListener("error", handler, true);
+    };
+  }, []);
 
-  componentDidCatch() {
-    setTimeout(() => this.setState({ hasError: false }), 100);
-  }
-
-  render() {
-    return this.props.children;
-  }
+  return <>{children}</>;
 }

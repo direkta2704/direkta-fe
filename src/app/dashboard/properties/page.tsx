@@ -57,8 +57,10 @@ export default function PropertiesPage() {
     try {
       const res = await fetch(`/api/properties/${id}`, { method: "DELETE" });
       if (res.ok) {
-        setProperties((prev) => prev.filter((p) => p.id !== id));
         setConfirmId(null);
+        setDeleting(null);
+        setTimeout(() => setProperties((prev) => prev.filter((p) => p.id !== id)), 50);
+        return;
       } else {
         setDeleteError("Immobilie konnte nicht gelöscht werden. Bitte versuchen Sie es erneut.");
       }

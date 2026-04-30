@@ -1084,10 +1084,8 @@ export default function PropertyDetailPage() {
               </div>
             )}
           </div>
-        </div>
 
-        {/* Expose details — full width below the grid */}
-        <div className="lg:col-span-3 mt-6 space-y-6">
+          {/* Expose details */}
           <TextImport propertyId={property.id} onImported={fetchProperty} />
           <ExposeFields
             propertyId={property.id}
@@ -1097,8 +1095,8 @@ export default function PropertyDetailPage() {
           />
         </div>
 
-        {/* Right column */}
-        <div className="space-y-6">
+        {/* Right column — sticky sidebar */}
+        <div className="space-y-6 lg:sticky lg:top-6 lg:self-start">
           <div className="bg-blueprint rounded-2xl p-7 text-white">
             <h3 className="font-black mb-4">Status</h3>
             <div className="space-y-3">
