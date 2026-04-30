@@ -98,6 +98,10 @@ export class IS24MockDriver implements PortalDriver {
 export function getDriver(portal: string): PortalDriver {
   switch (portal) {
     case "IMMOSCOUT24":
+      if (process.env.IS24_EMAIL && process.env.IS24_PASSWORD) {
+        const { IS24BrowserDriver } = require("./is24-driver");
+        return new IS24BrowserDriver();
+      }
       return new IS24MockDriver();
     default:
       throw new Error(`Kein Treiber für Portal: ${portal}`);
