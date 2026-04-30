@@ -6,7 +6,7 @@ import path from "path";
 import { randomUUID } from "crypto";
 import sharp from "sharp";
 import { isS3Enabled, uploadToS3 } from "@/lib/s3";
-import { executeTool, rebuildMemory } from "@/lib/expose-agent";
+import { executeTool, rebuildMemory, MAX_COST_CENTS } from "@/lib/expose-agent";
 import type { PhotoUpload } from "@/lib/expose-agent";
 import type { Prisma } from "@prisma/client";
 
@@ -109,7 +109,7 @@ export async function POST(
       sizeBytes: finalBuffer.length,
       width: width ?? null,
       height: height ?? null,
-      kind: kind === "ENERGY_PDF" ? "PHOTO" : kind, // for memory we only track PHOTO|FLOORPLAN
+      kind,
     };
 
     // For non-ENERGY_PDF: just record the upload in memory via a SYSTEM turn
@@ -126,12 +126,13 @@ export async function POST(
         },
       });
 
-      // Auto-trigger photo_analyse so Phase 5 / rubric can require an exterior or floorplan
+      // Auto-trigger photo_analyse (with cost cap check)
       const memAfterUpload = rebuildMemory((await prisma.conversation.findFirst({
         where: { id }, include: { turns: { orderBy: { createdAt: "asc" } } },
       }))?.turns ?? []);
       const photoIndex = memAfterUpload.uploads.length - 1;
-      if (photoIndex >= 0) {
+      const currentCost = agentRun.costCents ?? 0;
+      if (photoIndex >= 0 && currentCost < MAX_COST_CENTS) {
         const tr = await executeTool("photo_analyse", { photoIndex }, memAfterUpload);
 
         await prisma.conversationTurn.create({

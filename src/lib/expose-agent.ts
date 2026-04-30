@@ -1105,12 +1105,18 @@ function derivePhase(m: WorkingMemory): WorkingMemory["phase"] {
 
 const ORCHESTRATOR_SYSTEM_PROMPT = `Du bist der Direkta Exposé-Agent. Du führst deutsche Immobilieneigentümer in einem Gespräch durch die Erstellung eines GEG-konformen Inserats.
 
-REGELN:
+WICHTIGSTE REGEL — EINE FRAGE PRO NACHRICHT:
+Du darfst pro Nachricht NUR EINE einzige Frage stellen. Niemals zwei oder mehr Fragen in einer Nachricht.
+FALSCH: "Wie groß ist die Wohnung und wie viele Zimmer hat sie?"
+FALSCH: "Könnten Sie mir bitte die Wohnfläche, die Bäder, das Baujahr und den Zustand mitteilen?"
+RICHTIG: "Wie groß ist die Wohnfläche in Quadratmetern?"
+Frage nach EINEM Datenpunkt, warte auf die Antwort, dann frage den nächsten.
+
+WEITERE REGELN:
 - Sprich Deutsch in der Sie-Form, professionell und freundlich.
-- Stelle IMMER nur EINE Frage pro Nachricht. NIE mehrere Fragen kombinieren.
 - Sei kurz: 1–3 Sätze pro Nachricht.
 - Erfinde KEINE Immobilien-Eigenschaften.
-- Aktualisiere dein Wissen über die Immobilie aus der Nutzerantwort: ruf das Tool "set_memory" NICHT auf — schreibe stattdessen am Ende deiner Nachricht einen versteckten Datenblock (siehe unten), der vom System geparst wird.
+- Daten werden automatisch aus deiner Konversation extrahiert — du musst KEINE ###MEMORY### Blöcke schreiben.
 - Wenn du genug Informationen hast, RUFE TOOLS AUF (function calling), in dieser Reihenfolge:
   1. address_validate (sobald komplette Adresse vorhanden)
   2. pricing_recommend (sobald alle Pflichtfelder gesetzt)
@@ -1119,28 +1125,28 @@ REGELN:
   5. handoff_commit (nur wenn listing_review pass=true UND der Verkäufer bestätigt hat)
 - Wenn listing_review fehlschlägt: rufe listing_draft erneut auf, mit Hinweis auf die Fehler.
 
-ABLAUF:
+ABLAUF (frage Schritt für Schritt, EIN Feld pro Nachricht):
 1. Begrüßung → Immobilientyp (ETW/EFH/MFH/DHH/RH/Grundstück)
-2. Adresse (Straße, Hausnummer, PLZ, Stadt)
-3. Details: Wohnfläche, Zimmer, Bäder, Baujahr, Etage (nur ETW), Zustand, Ausstattung
-4. Energieausweis: ja/nein → Typ, Klasse, Wert, Primärenergieträger
-5. Fotos: bitte um Upload (mind. 6) — der Verkäufer lädt selbst hoch
-6. Pricing aufrufen, dem Verkäufer Preisband zeigen
-7. Draft + Review aufrufen, dem Verkäufer den Entwurf zeigen
-8. Bestätigung holen → handoff_commit
-
-DATEN-EXTRAKTION aus Nutzerantworten:
-Wenn der Nutzer Daten preisgibt, hänge an deine Antwort am Ende einen unsichtbaren Block:
-###MEMORY###
-{"feldname": "wert", ...}
-###END###
-Erlaubte Felder: type, street, houseNumber, postcode, city, livingArea, plotArea, yearBuilt, rooms, bathrooms, floor, condition, attributes (Array), hasEnergyCert (boolean), energyCertType, energyClass, energyValue, energySource, askingPrice, priceOverride (boolean), assumptions (Array)
+2. Adresse (Straße + Hausnummer)
+3. PLZ + Stadt
+4. Wohnfläche (m²)
+5. Zimmeranzahl
+6. Badezimmer
+7. Baujahr
+8. Etage (nur bei ETW)
+9. Zustand
+10. Besondere Ausstattung (Balkon, Garten, Keller, etc.)
+11. Energieausweis: ja/nein → wenn ja: Typ, Klasse, Wert, Primärenergieträger (je einzeln fragen)
+12. Fotos: bitte um Upload (mind. 6)
+13. Pricing aufrufen, dem Verkäufer Preisband zeigen
+14. Draft + Review, Entwurf zeigen
+15. Bestätigung holen → handoff_commit
 
 IMMOBILIENTYPEN: ETW, EFH, MFH, DHH, RH, GRUNDSTUECK
 ZUSTAND: ERSTBEZUG, NEUBAU, GEPFLEGT, RENOVIERUNGS_BEDUERFTIG, SANIERUNGS_BEDUERFTIG, ROHBAU
 ENERGIEKLASSEN: A+, A, B, C, D, E, F, G, H
 
-Wenn du eine Annahme triffst (z. B. "Bad" → 1 Bad), trage sie in "assumptions" ein.`;
+Wenn du eine Annahme triffst (z. B. "Bad" → 1 Bad), erwähne sie in deiner Antwort.`;
 
 function buildMemoryContext(m: WorkingMemory): string {
   const missing = getMissingFields(m);
@@ -1252,6 +1258,74 @@ export interface AgentTurnResult {
   costCentsTotal: number;
   finished: boolean;                     // handoff_commit fired and rubric passed
   abortedReason?: "cost_cap" | "max_iterations" | "rubric_failed_repeatedly";
+}
+
+async function extractMemoryFromMessage(
+  userMessage: string,
+  currentMemory: WorkingMemory,
+  agentRunId: string,
+): Promise<{ patch: Partial<WorkingMemory> | null; costCents: number }> {
+  const known = Object.entries(currentMemory)
+    .filter(([k, v]) => v !== null && k !== "uploads" && k !== "draft" && k !== "lastRubric" && k !== "assumptions" && k !== "priceBand")
+    .map(([k, v]) => `${k}: ${v}`)
+    .join(", ");
+
+  const prompt = `Extrahiere Immobiliendaten aus der Nutzernachricht. Gib NUR ein JSON-Objekt zurück.
+
+Bereits bekannt: ${known || "nichts"}
+
+Nutzernachricht: "${userMessage}"
+
+Erlaubte Felder (nur neue/geänderte extrahieren):
+- type: ETW|EFH|MFH|DHH|RH|GRUNDSTUECK
+- street: Straßenname
+- houseNumber: Hausnummer
+- postcode: PLZ
+- city: Stadt
+- livingArea: Wohnfläche in m² (Zahl)
+- plotArea: Grundstücksfläche in m² (Zahl)
+- yearBuilt: Baujahr (Zahl)
+- rooms: Zimmeranzahl (Zahl)
+- bathrooms: Badezimmer (Zahl)
+- floor: Etage (Zahl)
+- condition: ERSTBEZUG|NEUBAU|GEPFLEGT|RENOVIERUNGS_BEDUERFTIG|SANIERUNGS_BEDUERFTIG|ROHBAU
+- attributes: Array von Strings (Balkon, Keller, Garten, Stellplatz, etc.)
+- hasEnergyCert: true/false
+- energyCertType: VERBRAUCH|BEDARF
+- energyClass: A+|A|B|C|D|E|F|G|H
+- energyValue: kWh/m²a (Zahl)
+- energySource: Gas|Öl|Fernwärme|Strom|etc.
+- assumptions: Array von getroffenen Annahmen
+
+Antworte NUR mit JSON. Leeres Objekt {} wenn nichts extrahiert wurde.`;
+
+  try {
+    const llm = await callLlm({
+      messages: [{ role: "user", content: prompt }],
+      temperature: 0.0,
+      maxTokens: 400,
+      responseFormat: { type: "json_object" },
+    });
+
+    await prisma.agentStep.create({
+      data: {
+        agentRunId,
+        ordinal: await nextStepOrdinal(agentRunId),
+        toolName: "memory_extract",
+        input: asJson({ userMessage: userMessage.slice(0, 200) }),
+        output: asJson({ raw: llm.message.content?.slice(0, 500) }),
+        latencyMs: 0,
+        ok: true,
+      },
+    });
+
+    const raw = JSON.parse(llm.message.content || "{}");
+    const patch = normalizeUserPatch(raw);
+    const hasData = Object.keys(patch).length > 0;
+    return { patch: hasData ? patch : null, costCents: llm.usage.costCents };
+  } catch {
+    return { patch: null, costCents: 0 };
+  }
 }
 
 export async function runAgentTurn(
@@ -1390,11 +1464,19 @@ export async function runAgentTurn(
     }
   }
 
-  // Parse the inline ###MEMORY### block from the agent's user-facing message
+  // Parse any inline ###MEMORY### block (backwards compatible)
   if (agentMessage) {
     const parsed = parseInlineMemory(agentMessage);
     agentMessage = parsed.cleaned;
     if (parsed.patch) workingMemory = applyPatch(workingMemory, parsed.patch);
+  }
+
+  // Dual-pass extraction: dedicated LLM call to reliably extract data
+  if (userMessage && agentMessage && costCentsTotal < MAX_COST_CENTS) {
+    const ext = await extractMemoryFromMessage(userMessage, workingMemory, ctx.agentRunId);
+    costCentsThisTurn += ext.costCents;
+    costCentsTotal += ext.costCents;
+    if (ext.patch) workingMemory = applyPatch(workingMemory, ext.patch);
   }
 
   return {
