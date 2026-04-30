@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import type { WorkingMemory } from "@/lib/expose-agent";
 
@@ -17,7 +17,7 @@ const PHASE_LABELS: Record<string, string> = {
   details: "Details",
   energy: "Energieausweis",
   photos: "Fotos",
-  draft: "Zusammenfassung",
+  draft: "Entwurf",
   confirm: "Bestätigung",
 };
 
@@ -26,15 +26,70 @@ export default function ExposeAgentPage() {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [turns, setTurns] = useState<Turn[]>([]);
   const [memory, setMemory] = useState<WorkingMemory | null>(null);
+  const [costCents, setCostCents] = useState(0);
+  const [maxCostCents, setMaxCostCents] = useState(200);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [starting, setStarting] = useState(false);
   const [handing, setHanding] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
+  const [editingTurnId, setEditingTurnId] = useState<string | null>(null);
+  const [editingTurnContent, setEditingTurnContent] = useState("");
+  const [resuming, setResuming] = useState(true);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
+  const energyInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [turns]);
+
+  // F-M5-02: resume the most recent ACTIVE conversation on mount so navigating
+  // away and back doesn't lose the chat. Conversations older than 24h are
+  // auto-closed server-side; we just pick whichever is still ACTIVE.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/agents/expose/conversations");
+        if (!res.ok) return;
+        const list: Array<{ id: string; status: string; startedAt: string }> = await res.json();
+        if (!Array.isArray(list)) return;
+        const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+        const active = list.find((c) => c.status === "ACTIVE" && new Date(c.startedAt).getTime() > cutoff);
+        if (!active || cancelled) return;
+
+        const detailRes = await fetch(`/api/agents/expose/conversations/${active.id}`);
+        if (!detailRes.ok || cancelled) return;
+        const detail = await detailRes.json();
+        if (cancelled || !detail?.id) return;
+        setConversationId(detail.id);
+        setTurns(detail.turns || []);
+        setMemory(detail.memory);
+        setCostCents(detail.costCents || 0);
+        setMaxCostCents(detail.maxCostCents || 200);
+      } catch {
+        // ignore — fall through to start screen
+      } finally {
+        if (!cancelled) setResuming(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  function startNewConversation() {
+    if (!confirm("Aktuelles Gespräch verlassen und ein neues starten?")) return;
+    setConversationId(null);
+    setTurns([]);
+    setMemory(null);
+    setCostCents(0);
+    setInput("");
+    setEditingTurnId(null);
+    setEditingTurnContent("");
+    void startConversation();
+  }
 
   async function startConversation() {
     setStarting(true);
@@ -45,6 +100,8 @@ export default function ExposeAgentPage() {
       setConversationId(data.id);
       setTurns(data.turns);
       setMemory(data.memory);
+      setCostCents(data.costCents || 0);
+      setMaxCostCents(data.maxCostCents || 200);
     } catch (err) {
       alert(err instanceof Error ? err.message : "Fehler beim Starten");
     }
@@ -54,12 +111,11 @@ export default function ExposeAgentPage() {
   async function sendMessage(e: React.FormEvent) {
     e.preventDefault();
     if (!input.trim() || !conversationId || loading) return;
-
     const userMessage = input.trim();
     setInput("");
+    const optimisticIdx = turns.length;
     setTurns((prev) => [...prev, { role: "USER", content: userMessage }]);
     setLoading(true);
-
     try {
       const res = await fetch(`/api/agents/expose/conversations/${conversationId}/turns`, {
         method: "POST",
@@ -68,12 +124,70 @@ export default function ExposeAgentPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      setTurns((prev) => [...prev, { role: "AGENT", content: data.content }]);
+      setTurns((prev) => {
+        const next = [...prev];
+        // Patch the optimistic user turn with its real id
+        if (next[optimisticIdx] && next[optimisticIdx].role === "USER" && data.userTurnId) {
+          next[optimisticIdx] = { ...next[optimisticIdx], id: data.userTurnId };
+        }
+        next.push({ id: data.agentTurnId, role: "AGENT", content: data.content });
+        return next;
+      });
       if (data.memory) setMemory(data.memory);
+      if (typeof data.costCents === "number") setCostCents(data.costCents);
+      if (data.finished && data.listingId) {
+        router.push(`/dashboard/listings/${data.listingId}`);
+      }
     } catch (err) {
       setTurns((prev) => [...prev, { role: "AGENT", content: `Fehler: ${err instanceof Error ? err.message : "Unbekannt"}` }]);
     }
     setLoading(false);
+  }
+
+  const upload = useCallback(
+    async (file: File, kind: "PHOTO" | "FLOORPLAN" | "ENERGY_PDF") => {
+      if (!conversationId) return;
+      setUploading(true);
+      try {
+        const fd = new FormData();
+        fd.append("file", file);
+        fd.append("kind", kind);
+        const res = await fetch(`/api/agents/expose/conversations/${conversationId}/upload`, {
+          method: "POST",
+          body: fd,
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        if (data.memory) setMemory(data.memory);
+        const label = kind === "ENERGY_PDF" ? "Energieausweis" : kind === "FLOORPLAN" ? "Grundriss" : "Foto";
+        setTurns((prev) => [
+          ...prev,
+          { role: "SYSTEM", content: `📎 ${label} hochgeladen: ${file.name}${data.message ? ` — ${data.message}` : ""}` },
+        ]);
+      } catch (err) {
+        alert(err instanceof Error ? err.message : "Upload fehlgeschlagen");
+      }
+      setUploading(false);
+    },
+    [conversationId],
+  );
+
+  const handlePhotoFiles = useCallback(
+    async (files: FileList) => {
+      for (const file of Array.from(files)) {
+        const isImage = file.type.startsWith("image/");
+        const isPdf = file.type === "application/pdf";
+        if (isPdf) await upload(file, "ENERGY_PDF");
+        else if (isImage) await upload(file, "PHOTO");
+      }
+    },
+    [upload],
+  );
+
+  function onDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setDragOver(false);
+    if (e.dataTransfer.files.length) handlePhotoFiles(e.dataTransfer.files);
   }
 
   async function handleHandoff() {
@@ -90,25 +204,86 @@ export default function ExposeAgentPage() {
     setHanding(false);
   }
 
-  const readyForHandoff = memory && memory.type && memory.street && memory.city && memory.livingArea && memory.condition;
+  async function saveDraftEdit(titleShort: string, descriptionLong: string, askingPrice: number | null, priceOverride: boolean) {
+    if (!conversationId) return;
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/agents/expose/conversations/${conversationId}/draft`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ titleShort, descriptionLong, askingPrice, priceOverride }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setMemory(data.memory);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Speichern fehlgeschlagen");
+    }
+    setLoading(false);
+  }
 
-  // Start screen
+  async function saveTurnEdit(turnId: string, content: string) {
+    if (!conversationId) return;
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/agents/expose/conversations/${conversationId}/turns/${turnId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      if (data.memory) setMemory(data.memory);
+      setTurns((prev) => prev.map((t) => (t.id === turnId ? { ...t, content } : t)));
+      setEditingTurnId(null);
+      setEditingTurnContent("");
+      setTurns((prev) => [
+        ...prev,
+        { role: "SYSTEM", content: "✏️ Antwort korrigiert — der Assistent berücksichtigt die Änderung in der nächsten Nachricht." },
+      ]);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Speichern fehlgeschlagen");
+    }
+    setLoading(false);
+  }
+
+  function switchToForm() {
+    if (memory) {
+      try {
+        sessionStorage.setItem("expose-agent-prefill", JSON.stringify(memory));
+      } catch { /* ignore */ }
+    }
+    router.push("/dashboard/properties/new?from=agent");
+  }
+
+  const photoCount = memory?.uploads.filter((u) => u.kind === "PHOTO").length || 0;
+  const readyForHandoff = !!memory?.lastRubric?.passed && !!memory?.draft;
+  const hasDraft = !!memory?.draft;
+  const costPct = Math.min(100, Math.round((costCents / maxCostCents) * 100));
+
+  if (resuming) {
+    return (
+      <div className="max-w-2xl mx-auto text-center py-20">
+        <div className="w-20 h-20 rounded-2xl bg-primary/10 text-primary flex items-center justify-center mx-auto mb-6">
+          <div className="w-8 h-8 border-4 border-primary/30 border-t-primary rounded-full animate-spin" />
+        </div>
+        <p className="text-sm text-slate-400">Suche nach laufendem Gespräch...</p>
+      </div>
+    );
+  }
+
   if (!conversationId) {
     return (
       <div className="max-w-2xl mx-auto text-center py-20">
         <div className="w-20 h-20 rounded-2xl bg-primary/10 text-primary flex items-center justify-center mx-auto mb-6">
           <span className="material-symbols-outlined text-4xl">forum</span>
         </div>
-        <h1 className="text-3xl font-black text-blueprint tracking-tight mb-3">
-          Exposé-Assistent
-        </h1>
-        <p className="text-lg text-slate-500 mb-2">
-          Erstellen Sie Ihr Inserat im Gespräch — Schritt für Schritt.
-        </p>
+        <h1 className="text-3xl font-black text-blueprint tracking-tight mb-3">Exposé-Assistent</h1>
+        <p className="text-lg text-slate-500 mb-2">Erstellen Sie Ihr Inserat im Gespräch — Schritt für Schritt.</p>
         <p className="text-sm text-slate-400 mb-10 max-w-md mx-auto">
-          Der Assistent führt Sie durch alle nötigen Angaben: Immobilientyp, Adresse,
-          Details, Energieausweis. Am Ende erhalten Sie ein fertiges Inserat mit
-          KI-generierter Beschreibung und Preisempfehlung.
+          Der Assistent führt Sie durch alle nötigen Angaben: Immobilientyp, Adresse, Details, Fotos,
+          Energieausweis. Am Ende erhalten Sie ein fertiges Inserat mit KI-generierter Beschreibung
+          und Preisempfehlung.
         </p>
         <button
           onClick={startConversation}
@@ -129,10 +304,35 @@ export default function ExposeAgentPage() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-5rem)] gap-6">
-      {/* Chat area */}
+    <div
+      className="flex h-[calc(100vh-5rem)] gap-6 relative"
+      onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={onDrop}
+    >
+      {dragOver && (
+        <div className="absolute inset-0 z-50 bg-primary/10 border-4 border-dashed border-primary rounded-2xl flex items-center justify-center pointer-events-none">
+          <div className="bg-white rounded-xl px-6 py-4 shadow-xl">
+            <span className="material-symbols-outlined text-4xl text-primary block text-center">cloud_upload</span>
+            <p className="text-sm font-bold text-blueprint mt-2">Bilder oder Energieausweis hier ablegen</p>
+          </div>
+        </div>
+      )}
+
+      {showPreview && memory && (
+        <ExposePreview
+          memory={memory}
+          onClose={() => setShowPreview(false)}
+          onSave={saveDraftEdit}
+          onConfirm={async () => {
+            setShowPreview(false);
+            await handleHandoff();
+          }}
+          handing={handing}
+        />
+      )}
+
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Header */}
         <div className="flex items-center justify-between pb-4 border-b border-slate-200 mb-4">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
@@ -140,49 +340,114 @@ export default function ExposeAgentPage() {
             </div>
             <div>
               <h1 className="font-black text-blueprint">Exposé-Assistent</h1>
-              <p className="text-xs text-slate-400">{turns.length} Nachrichten</p>
+              <p className="text-xs text-slate-400">{turns.length} Nachrichten · {costPct}% Budget</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => router.push("/dashboard/properties/new")}
+              onClick={startNewConversation}
+              disabled={starting}
+              className="text-xs font-bold text-slate-400 hover:text-blueprint transition-colors px-3 py-2 disabled:opacity-50"
+              title="Neues Gespräch starten"
+            >
+              {starting ? "Start..." : "+ Neu"}
+            </button>
+            <button
+              onClick={switchToForm}
               className="text-xs font-bold text-slate-400 hover:text-blueprint transition-colors px-3 py-2"
+              title="Daten ins Formular übernehmen"
             >
               Zum Formular
             </button>
+            {hasDraft && (
+              <button
+                onClick={() => setShowPreview(true)}
+                className="bg-white border border-slate-200 hover:border-primary text-blueprint px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-[0.15em] transition-all flex items-center gap-2"
+              >
+                <span className="material-symbols-outlined text-base">visibility</span>
+                Vorschau
+              </button>
+            )}
             {readyForHandoff && (
               <button
-                onClick={handleHandoff}
+                onClick={() => setShowPreview(true)}
                 disabled={handing}
                 className="bg-primary hover:bg-primary-dark text-white px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-[0.15em] transition-all hover:scale-[1.02] shadow-lg shadow-primary/25 disabled:opacity-60 flex items-center gap-2"
               >
                 <span className="material-symbols-outlined text-base">check_circle</span>
-                {handing ? "Wird erstellt..." : "Inserat erstellen"}
+                {handing ? "Wird erstellt..." : "Inserat prüfen & erstellen"}
               </button>
             )}
           </div>
         </div>
 
-        {/* Messages */}
         <div className="flex-1 overflow-y-auto space-y-4 pb-4">
-          {turns.map((turn, i) => (
-            <div key={i} className={`flex ${turn.role === "USER" ? "justify-end" : "justify-start"}`}>
-              <div className={`max-w-[80%] rounded-2xl px-5 py-3 ${
-                turn.role === "USER"
-                  ? "bg-blueprint text-white rounded-br-md"
-                  : "bg-white border border-slate-200 text-blueprint rounded-bl-md"
-              }`}>
-                {turn.role === "AGENT" && (
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="material-symbols-outlined text-primary text-sm">smart_toy</span>
-                    <span className="text-[10px] font-black uppercase tracking-widest text-primary">Assistent</span>
+          {turns.map((turn, i) => {
+            if (turn.role === "SYSTEM") {
+              return (
+                <div key={i} className="flex justify-center">
+                  <div className="bg-slate-100 text-slate-600 rounded-full px-4 py-1.5 text-xs font-bold">
+                    {turn.content}
                   </div>
-                )}
-                <p className="text-sm leading-relaxed whitespace-pre-line">{turn.content}</p>
+                </div>
+              );
+            }
+            const isEditing = turn.role === "USER" && editingTurnId && editingTurnId === turn.id;
+            return (
+              <div key={i} className={`flex group ${turn.role === "USER" ? "justify-end" : "justify-start"}`}>
+                <div className={`max-w-[80%] rounded-2xl px-5 py-3 relative ${
+                  turn.role === "USER"
+                    ? "bg-blueprint text-white rounded-br-md"
+                    : "bg-white border border-slate-200 text-blueprint rounded-bl-md"
+                }`}>
+                  {turn.role === "AGENT" && (
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="material-symbols-outlined text-primary text-sm">smart_toy</span>
+                      <span className="text-[10px] font-black uppercase tracking-widest text-primary">Assistent</span>
+                    </div>
+                  )}
+                  {isEditing ? (
+                    <div>
+                      <textarea
+                        value={editingTurnContent}
+                        onChange={(e) => setEditingTurnContent(e.target.value)}
+                        className="w-full bg-white/10 text-white rounded p-2 text-sm border border-white/30 outline-none"
+                        rows={3}
+                        autoFocus
+                      />
+                      <div className="flex gap-2 mt-2 justify-end">
+                        <button
+                          onClick={() => { setEditingTurnId(null); setEditingTurnContent(""); }}
+                          className="text-[10px] font-bold uppercase tracking-wider opacity-70 hover:opacity-100"
+                        >
+                          Abbrechen
+                        </button>
+                        <button
+                          onClick={() => turn.id && saveTurnEdit(turn.id, editingTurnContent)}
+                          disabled={!editingTurnContent.trim() || loading}
+                          className="bg-white text-blueprint text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded disabled:opacity-50"
+                        >
+                          Speichern
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-sm leading-relaxed whitespace-pre-line">{turn.content}</p>
+                  )}
+                  {turn.role === "USER" && turn.id && !isEditing && (
+                    <button
+                      onClick={() => { setEditingTurnId(turn.id!); setEditingTurnContent(turn.content); }}
+                      className="absolute -left-8 top-2 opacity-0 group-hover:opacity-100 w-7 h-7 bg-white border border-slate-200 rounded-full flex items-center justify-center text-slate-500 hover:text-blueprint transition-all"
+                      title="Korrigieren"
+                    >
+                      <span className="material-symbols-outlined text-sm">edit</span>
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
-          {loading && (
+            );
+          })}
+          {(loading || uploading) && (
             <div className="flex justify-start">
               <div className="bg-white border border-slate-200 rounded-2xl rounded-bl-md px-5 py-4">
                 <div className="flex items-center gap-2">
@@ -196,9 +461,47 @@ export default function ExposeAgentPage() {
           <div ref={chatEndRef} />
         </div>
 
-        {/* Input */}
         <form onSubmit={sendMessage} className="pt-4 border-t border-slate-200">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => photoInputRef.current?.click()}
+              disabled={uploading || loading}
+              className="w-12 h-12 bg-slate-100 hover:bg-slate-200 text-blueprint rounded-xl flex items-center justify-center transition-colors disabled:opacity-40"
+              title="Fotos hochladen"
+            >
+              <span className="material-symbols-outlined">add_photo_alternate</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => energyInputRef.current?.click()}
+              disabled={uploading || loading}
+              className="w-12 h-12 bg-slate-100 hover:bg-slate-200 text-blueprint rounded-xl flex items-center justify-center transition-colors disabled:opacity-40"
+              title="Energieausweis hochladen"
+            >
+              <span className="material-symbols-outlined">picture_as_pdf</span>
+            </button>
+            <input
+              ref={photoInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              multiple
+              hidden
+              onChange={(e) => {
+                if (e.target.files) handlePhotoFiles(e.target.files);
+                e.target.value = "";
+              }}
+            />
+            <input
+              ref={energyInputRef}
+              type="file"
+              accept="application/pdf,image/jpeg,image/png"
+              hidden
+              onChange={(e) => {
+                if (e.target.files?.[0]) upload(e.target.files[0], "ENERGY_PDF");
+                e.target.value = "";
+              }}
+            />
             <input
               type="text"
               value={input}
@@ -219,12 +522,9 @@ export default function ExposeAgentPage() {
         </form>
       </div>
 
-      {/* Memory sidebar */}
       <div className="hidden lg:block w-72 flex-shrink-0">
         <div className="bg-white rounded-2xl border border-slate-200 p-5 sticky top-24">
           <h3 className="font-black text-blueprint text-sm mb-4">Fortschritt</h3>
-
-          {/* Phase progress */}
           <div className="space-y-2 mb-6">
             {(["greet", "basics", "details", "energy", "photos", "draft"] as const).map((phase) => {
               const phases = ["greet", "basics", "details", "energy", "photos", "draft"];
@@ -232,7 +532,6 @@ export default function ExposeAgentPage() {
               const phaseIdx = phases.indexOf(phase);
               const isDone = phaseIdx < currentIdx;
               const isCurrent = phaseIdx === currentIdx;
-
               return (
                 <div key={phase} className="flex items-center gap-2">
                   <span className={`material-symbols-outlined text-base ${
@@ -248,19 +547,44 @@ export default function ExposeAgentPage() {
             })}
           </div>
 
-          {/* Collected data */}
           {memory && (
             <div className="space-y-2 pt-4 border-t border-slate-100">
               <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-2">Erfasste Daten</div>
               {memory.type && <MemoryItem label="Typ" value={memory.type} />}
               {memory.street && <MemoryItem label="Adresse" value={`${memory.street} ${memory.houseNumber || ""}`} />}
               {memory.city && <MemoryItem label="Ort" value={`${memory.postcode || ""} ${memory.city}`} />}
+              {memory.addressValidated && <MemoryItem label="Geo" value="✓ validiert" />}
               {memory.livingArea && <MemoryItem label="Fläche" value={`${memory.livingArea} m²`} />}
               {memory.rooms && <MemoryItem label="Zimmer" value={String(memory.rooms)} />}
               {memory.condition && <MemoryItem label="Zustand" value={memory.condition} />}
               {memory.energyClass && <MemoryItem label="Energie" value={memory.energyClass} />}
+              <MemoryItem label="Fotos" value={`${photoCount} / 6`} />
+              {memory.priceBand && (
+                <MemoryItem
+                  label="Preis"
+                  value={`${(memory.priceBand.low / 1000).toFixed(0)}–${(memory.priceBand.high / 1000).toFixed(0)} k€`}
+                />
+              )}
+              {memory.draft && <MemoryItem label="Entwurf" value="✓ vorhanden" />}
+              {memory.lastRubric && (
+                <MemoryItem
+                  label="Quality"
+                  value={memory.lastRubric.passed ? "✓ bestanden" : `✗ ${memory.lastRubric.failures.length}`}
+                />
+              )}
             </div>
           )}
+
+          <div className="mt-5 pt-4 border-t border-slate-100">
+            <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-2">Budget</div>
+            <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+              <div
+                className={`h-full transition-all ${costPct > 80 ? "bg-red-500" : costPct > 50 ? "bg-amber-500" : "bg-primary"}`}
+                style={{ width: `${costPct}%` }}
+              />
+            </div>
+            <div className="text-[10px] text-slate-400 mt-1">{(costCents / 100).toFixed(2)} € / {(maxCostCents / 100).toFixed(2)} €</div>
+          </div>
         </div>
       </div>
     </div>
@@ -272,6 +596,242 @@ function MemoryItem({ label, value }: { label: string; value: string }) {
     <div className="flex items-center justify-between text-xs">
       <span className="text-slate-400">{label}</span>
       <span className="font-bold text-blueprint">{value}</span>
+    </div>
+  );
+}
+
+function ExposePreview({
+  memory,
+  onClose,
+  onSave,
+  onConfirm,
+  handing,
+}: {
+  memory: WorkingMemory;
+  onClose: () => void;
+  onSave: (titleShort: string, descriptionLong: string, askingPrice: number | null, priceOverride: boolean) => Promise<void>;
+  onConfirm: () => void | Promise<void>;
+  handing: boolean;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [titleShort, setTitleShort] = useState(memory.draft?.titleShort || "");
+  const [descriptionLong, setDescriptionLong] = useState(memory.draft?.descriptionLong || "");
+  const [askingPrice, setAskingPrice] = useState<string>(memory.askingPrice ? String(memory.askingPrice) : "");
+  const [priceOverride, setPriceOverride] = useState(memory.priceOverride);
+  const [saving, setSaving] = useState(false);
+
+  const photos = memory.uploads.filter((u) => u.kind === "PHOTO");
+  const passed = memory.lastRubric?.passed === true;
+  const failures = memory.lastRubric?.failures || [];
+
+  async function save() {
+    setSaving(true);
+    const askPrice = askingPrice ? Number(askingPrice) : null;
+    await onSave(titleShort, descriptionLong, askPrice, priceOverride);
+    setSaving(false);
+    setEditing(false);
+  }
+
+  return (
+    <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl max-w-3xl w-full max-h-[92vh] overflow-y-auto shadow-2xl">
+        <div className="sticky top-0 bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="material-symbols-outlined text-primary text-2xl">description</span>
+            <div>
+              <h2 className="font-black text-blueprint">Exposé-Vorschau</h2>
+              <p className="text-xs text-slate-400">Prüfen Sie Inhalt und Annahmen, bevor Sie das Inserat erstellen.</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-blueprint">
+            <span className="material-symbols-outlined">close</span>
+          </button>
+        </div>
+
+        <div className="p-6 space-y-6">
+          {/* Quality status */}
+          <div className={`rounded-xl p-4 ${passed ? "bg-green-50 border border-green-200" : "bg-amber-50 border border-amber-200"}`}>
+            <div className="flex items-center gap-2 mb-2">
+              <span className={`material-symbols-outlined ${passed ? "text-green-600" : "text-amber-600"}`}>
+                {passed ? "verified" : "warning"}
+              </span>
+              <span className={`text-sm font-black ${passed ? "text-green-700" : "text-amber-700"}`}>
+                {passed ? "Quality Rubric bestanden" : "Quality Rubric noch nicht bestanden"}
+              </span>
+            </div>
+            {failures.length > 0 && (
+              <ul className="text-xs text-amber-800 space-y-1 ml-7 list-disc">
+                {failures.map((f, i) => <li key={i}>{f}</li>)}
+              </ul>
+            )}
+          </div>
+
+          {/* Title */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Titel (max. 160)</label>
+              {!editing && (
+                <button onClick={() => setEditing(true)} className="text-xs font-bold text-primary hover:underline flex items-center gap-1">
+                  <span className="material-symbols-outlined text-sm">edit</span>
+                  Bearbeiten
+                </button>
+              )}
+            </div>
+            {editing ? (
+              <input
+                value={titleShort}
+                onChange={(e) => setTitleShort(e.target.value.slice(0, 160))}
+                className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none"
+                maxLength={160}
+              />
+            ) : (
+              <h3 className="text-lg font-black text-blueprint">{titleShort}</h3>
+            )}
+          </div>
+
+          {/* Photos */}
+          {photos.length > 0 && (
+            <div>
+              <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-2">Fotos ({photos.length})</div>
+              <div className="grid grid-cols-3 gap-2">
+                {photos.slice(0, 6).map((p, i) => (
+                  <div key={i} className="aspect-[4/3] bg-slate-100 rounded-lg overflow-hidden">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={p.storageKey} alt={p.fileName} className="w-full h-full object-cover" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Description */}
+          <div>
+            <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 block mb-2">Beschreibung</label>
+            {editing ? (
+              <textarea
+                value={descriptionLong}
+                onChange={(e) => setDescriptionLong(e.target.value)}
+                rows={14}
+                className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none font-mono leading-relaxed"
+              />
+            ) : (
+              <div className="prose prose-sm max-w-none text-blueprint whitespace-pre-wrap leading-relaxed">{descriptionLong}</div>
+            )}
+            <p className="text-xs text-slate-400 mt-1">
+              {descriptionLong.split(/\s+/).filter(Boolean).length} Wörter ·{" "}
+              {descriptionLong.split(/\n\s*\n/).filter((p) => p.trim().length > 0).length} Absätze
+            </p>
+          </div>
+
+          {/* Price + override */}
+          {memory.priceBand && (
+            <div>
+              <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-2">Preis</div>
+              <div className="bg-slate-50 rounded-xl p-4">
+                <div className="grid grid-cols-3 gap-3 mb-3">
+                  <PriceCell label="Schnellverkauf" value={memory.priceBand.strategyQuick} />
+                  <PriceCell label="Realistisch" value={memory.priceBand.strategyReal} highlight />
+                  <PriceCell label="Maximum" value={memory.priceBand.strategyMax} />
+                </div>
+                <div className="text-xs text-slate-500 mb-2">
+                  Empfohlenes Band: {memory.priceBand.low.toLocaleString("de-DE")} – {memory.priceBand.high.toLocaleString("de-DE")} € · Konfidenz: {memory.priceBand.confidence}
+                </div>
+                {editing && (
+                  <div className="flex items-center gap-3 mt-2">
+                    <input
+                      type="number"
+                      value={askingPrice}
+                      onChange={(e) => setAskingPrice(e.target.value)}
+                      placeholder="Wunschpreis"
+                      className="flex-1 px-3 py-2 rounded-lg border border-slate-200 text-sm focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none"
+                    />
+                    <label className="flex items-center gap-1 text-xs text-slate-600">
+                      <input type="checkbox" checked={priceOverride} onChange={(e) => setPriceOverride(e.target.checked)} />
+                      außerhalb Band ok
+                    </label>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Assumptions (confidence flag) */}
+          {memory.assumptions.length > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="material-symbols-outlined text-amber-600 text-base">info</span>
+                <span className="text-xs font-black uppercase tracking-wider text-amber-700">Annahmen des Assistenten</span>
+              </div>
+              <ul className="text-xs text-amber-800 space-y-1 list-disc ml-5">
+                {memory.assumptions.map((a, i) => <li key={i}>{a}</li>)}
+              </ul>
+            </div>
+          )}
+
+          {/* Key facts (GEG) */}
+          {memory.energyClass && (
+            <div>
+              <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-2">Energieausweis (GEG)</div>
+              <div className="bg-slate-50 rounded-xl p-4 text-sm space-y-1 text-slate-700">
+                <div>Typ: {memory.energyCertType === "BEDARF" ? "Bedarfsausweis" : "Verbrauchsausweis"}</div>
+                <div>Klasse: <span className="font-black">{memory.energyClass}</span></div>
+                <div>Kennwert: {memory.energyValue} kWh/(m²·a)</div>
+                <div>Energieträger: {memory.energySource}</div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="sticky bottom-0 bg-white border-t border-slate-200 px-6 py-4 flex items-center justify-between gap-3">
+          {editing ? (
+            <>
+              <button
+                onClick={() => {
+                  setEditing(false);
+                  setTitleShort(memory.draft?.titleShort || "");
+                  setDescriptionLong(memory.draft?.descriptionLong || "");
+                }}
+                className="text-sm font-bold text-slate-500 px-4 py-2"
+              >
+                Abbrechen
+              </button>
+              <button
+                onClick={save}
+                disabled={saving || !titleShort.trim() || !descriptionLong.trim()}
+                className="bg-primary text-white px-6 py-3 rounded-xl text-sm font-black uppercase tracking-wider disabled:opacity-50 flex items-center gap-2"
+              >
+                <span className="material-symbols-outlined text-base">save</span>
+                {saving ? "Speichern..." : "Speichern & neu prüfen"}
+              </button>
+            </>
+          ) : (
+            <>
+              <button onClick={onClose} className="text-sm font-bold text-slate-500 px-4 py-2">
+                Zurück zum Chat
+              </button>
+              <button
+                onClick={onConfirm}
+                disabled={!passed || handing}
+                className="bg-primary hover:bg-primary-dark text-white px-6 py-3 rounded-xl text-sm font-black uppercase tracking-wider transition-all hover:scale-[1.02] shadow-lg shadow-primary/25 disabled:opacity-50 flex items-center gap-2"
+              >
+                <span className="material-symbols-outlined text-base">check_circle</span>
+                {handing ? "Wird erstellt..." : "Bestätigen & Inserat erstellen"}
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PriceCell({ label, value, highlight }: { label: string; value: number; highlight?: boolean }) {
+  return (
+    <div className={`rounded-lg p-3 ${highlight ? "bg-primary/10 border border-primary/30" : "bg-white border border-slate-200"}`}>
+      <div className="text-[9px] font-black uppercase tracking-wider text-slate-400">{label}</div>
+      <div className={`text-sm font-black mt-1 ${highlight ? "text-primary" : "text-blueprint"}`}>
+        {value.toLocaleString("de-DE")} €
+      </div>
     </div>
   );
 }

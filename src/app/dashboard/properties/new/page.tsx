@@ -82,10 +82,44 @@ const initialForm: FormData = {
   energySource: "",
 };
 
+// F-M5-12: read prefill data handed over from the Exposé Agent
+function readAgentPrefill(): Partial<FormData> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = sessionStorage.getItem("expose-agent-prefill");
+    if (!raw) return {};
+    const m = JSON.parse(raw) as Record<string, unknown>;
+    sessionStorage.removeItem("expose-agent-prefill");
+    const next: Partial<FormData> = {};
+    if (typeof m.type === "string") next.type = m.type;
+    if (typeof m.street === "string") next.street = m.street;
+    if (typeof m.houseNumber === "string") next.houseNumber = m.houseNumber;
+    if (typeof m.postcode === "string") next.postcode = m.postcode;
+    if (typeof m.city === "string") next.city = m.city;
+    if (typeof m.livingArea === "number") next.livingArea = String(m.livingArea);
+    if (typeof m.plotArea === "number") next.plotArea = String(m.plotArea);
+    if (typeof m.yearBuilt === "number") next.yearBuilt = String(m.yearBuilt);
+    if (typeof m.rooms === "number") next.rooms = String(m.rooms);
+    if (typeof m.bathrooms === "number") next.bathrooms = String(m.bathrooms);
+    if (typeof m.floor === "number") next.floor = String(m.floor);
+    if (typeof m.condition === "string") next.condition = m.condition;
+    if (Array.isArray(m.attributes)) next.attributes = m.attributes.map(String);
+    if (typeof m.hasEnergyCert === "boolean") next.hasEnergyCert = m.hasEnergyCert;
+    if (typeof m.energyCertType === "string") next.energyCertType = m.energyCertType;
+    if (typeof m.energyClass === "string") next.energyClass = m.energyClass;
+    if (typeof m.energyValue === "number") next.energyValue = String(m.energyValue);
+    if (typeof m.energySource === "string") next.energySource = m.energySource;
+    if (typeof m.energyValidUntil === "string") next.energyValidUntil = m.energyValidUntil;
+    return next;
+  } catch {
+    return {};
+  }
+}
+
 export default function NewPropertyPage() {
   const router = useRouter();
   const [step, setStep] = useState(0);
-  const [form, setForm] = useState<FormData>(initialForm);
+  const [form, setForm] = useState<FormData>(() => ({ ...initialForm, ...readAgentPrefill() }));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 

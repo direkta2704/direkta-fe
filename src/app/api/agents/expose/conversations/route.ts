@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getRequiredUser } from "@/lib/session";
-import { INITIAL_MEMORY, buildPrompt, callAgent, extractData, applyExtracted } from "@/lib/expose-agent";
+import { INITIAL_MEMORY, generateInitialGreeting, MAX_COST_CENTS } from "@/lib/expose-agent";
 
 export const dynamic = "force-dynamic";
 
@@ -32,27 +32,57 @@ export async function POST(req: Request) {
       },
     });
 
-    // Generate initial greeting
-    const memory = INITIAL_MEMORY;
-    const messages = buildPrompt(memory, []);
-    const agentResponse = await callAgent(messages);
-    const { cleanMessage } = extractData(agentResponse);
+    // Create the AgentRun audit container (Lastenheft §10.5)
+    const agentRun = await prisma.agentRun.create({
+      data: {
+        agentKind: "EXPOSE",
+        conversationId: conversation.id,
+        goal: "Produce a publication-ready Exposé through conversational dialog",
+        status: "RUNNING",
+        costCents: 0,
+      },
+    });
 
-    // Save agent greeting turn
+    // Generate initial greeting via the LLM (also persisted as the first AgentStep)
+    let greeting = "Willkommen beim Direkta Exposé-Assistenten. Welchen Immobilientyp möchten Sie verkaufen?";
+    let greetingCostCents = 0;
+    try {
+      const r = await generateInitialGreeting({
+        conversationId: conversation.id,
+        agentRunId: agentRun.id,
+        userId: user.id,
+        startingCostCents: 0,
+      });
+      greeting = r.message;
+      greetingCostCents = r.costCents;
+    } catch (e) {
+      console.error("Greeting generation failed:", e);
+    }
+
+    await prisma.agentRun.update({
+      where: { id: agentRun.id },
+      data: { costCents: greetingCostCents },
+    });
+
     await prisma.conversationTurn.create({
       data: {
         conversationId: conversation.id,
         role: "AGENT",
-        content: cleanMessage,
+        content: greeting,
       },
     });
 
-    return NextResponse.json({
-      id: conversation.id,
-      status: conversation.status,
-      memory,
-      turns: [{ role: "AGENT", content: cleanMessage, createdAt: new Date() }],
-    }, { status: 201 });
+    return NextResponse.json(
+      {
+        id: conversation.id,
+        status: conversation.status,
+        memory: INITIAL_MEMORY,
+        turns: [{ role: "AGENT", content: greeting, createdAt: new Date() }],
+        costCents: greetingCostCents,
+        maxCostCents: MAX_COST_CENTS,
+      },
+      { status: 201 },
+    );
   } catch (err) {
     console.error("Create conversation error:", err);
     return NextResponse.json({ error: "Konversation konnte nicht gestartet werden" }, { status: 500 });

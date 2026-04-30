@@ -1,15 +1,19 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getRequiredUser } from "@/lib/session";
-import { INITIAL_MEMORY, applyExtracted, isReadyForDraft, type WorkingMemory } from "@/lib/expose-agent";
-import { generateListingTexts } from "@/lib/ai";
+import { rebuildMemory, isReadyForDraft } from "@/lib/expose-agent";
 import { calculatePricing } from "@/lib/pricing";
+import { generateExposePdf } from "@/lib/expose-pdf";
+import { isS3Enabled, uploadToS3, getFromS3 } from "@/lib/s3";
+import { writeFile, mkdir, readFile } from "fs/promises";
+import path from "path";
+import { randomUUID } from "crypto";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(
   req: Request,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const user = await getRequiredUser();
@@ -20,24 +24,38 @@ export async function POST(
       where: { id, userId: user.id },
       include: { turns: { orderBy: { createdAt: "asc" } } },
     });
-
     if (!conversation) {
       return NextResponse.json({ error: "Konversation nicht gefunden" }, { status: 404 });
     }
 
-    // Rebuild memory
-    let memory: WorkingMemory = { ...INITIAL_MEMORY };
-    for (const turn of conversation.turns) {
-      if (turn.toolOutput && typeof turn.toolOutput === "object") {
-        memory = applyExtracted(memory, turn.toolOutput as Record<string, unknown>);
-      }
-    }
+    const memory = rebuildMemory(conversation.turns);
 
     if (!isReadyForDraft(memory)) {
       return NextResponse.json({ error: "Nicht alle Pflichtfelder ausgefüllt" }, { status: 400 });
     }
 
-    // Create Property
+    // F-M5-05: handoff blocked unless the rubric passed
+    if (!memory.lastRubric?.passed) {
+      return NextResponse.json(
+        {
+          error: "Quality Rubric nicht bestanden. Bitte den Assistenten 'listing_review' erneut aufrufen lassen.",
+          rubric: memory.lastRubric,
+        },
+        { status: 412 },
+      );
+    }
+
+    if (!memory.draft) {
+      return NextResponse.json({ error: "Kein Entwurf vorhanden" }, { status: 412 });
+    }
+
+    // Photos: F-M1-04 / rubric requires ≥6 — already enforced by rubric, but double-check
+    const photoCount = memory.uploads.filter((u) => u.kind === "PHOTO").length;
+    if (photoCount < 6) {
+      return NextResponse.json({ error: `Nur ${photoCount} Fotos vorhanden (Soll: ≥6)` }, { status: 412 });
+    }
+
+    // Create the Property record
     const property = await prisma.property.create({
       data: {
         userId: user.id,
@@ -46,6 +64,8 @@ export async function POST(
         houseNumber: memory.houseNumber!,
         postcode: memory.postcode!,
         city: memory.city!,
+        lat: memory.lat,
+        lng: memory.lng,
         livingArea: memory.livingArea!,
         plotArea: memory.plotArea,
         yearBuilt: memory.yearBuilt,
@@ -57,7 +77,6 @@ export async function POST(
       },
     });
 
-    // Create Energy Certificate if provided
     if (memory.hasEnergyCert && memory.energyClass) {
       await prisma.energyCertificate.create({
         data: {
@@ -71,54 +90,45 @@ export async function POST(
       });
     }
 
-    // Generate listing text
-    let titleShort = null;
-    let descriptionLong = null;
-    try {
-      const texts = await generateListingTexts({
-        type: memory.type!,
-        street: memory.street!,
-        houseNumber: memory.houseNumber!,
-        postcode: memory.postcode!,
-        city: memory.city!,
-        livingArea: memory.livingArea!,
-        plotArea: memory.plotArea,
-        yearBuilt: memory.yearBuilt,
-        rooms: memory.rooms,
-        bathrooms: memory.bathrooms,
-        floor: memory.floor,
-        condition: memory.condition!,
-        attributes: memory.attributes.length > 0 ? memory.attributes : null,
-        energyCert: memory.energyClass ? {
-          type: memory.energyCertType || "VERBRAUCH",
-          energyClass: memory.energyClass,
-          energyValue: memory.energyValue || 0,
-          primarySource: memory.energySource || "",
-        } : null,
+    // Attach uploaded media to the property
+    for (let i = 0; i < memory.uploads.length; i++) {
+      const u = memory.uploads[i];
+      await prisma.mediaAsset.create({
+        data: {
+          propertyId: property.id,
+          kind: u.kind,
+          storageKey: u.storageKey,
+          fileName: u.fileName,
+          mimeType: u.mimeType,
+          sizeBytes: u.sizeBytes,
+          width: u.width,
+          height: u.height,
+          ordering: i,
+        },
       });
-      titleShort = texts.titleShort;
-      descriptionLong = texts.descriptionLong;
-    } catch (e) {
-      console.error("Text generation during handoff:", e);
     }
 
-    // Create Listing
+    // Create the Listing in REVIEW status (F-M5-08)
     const citySlug = memory.city!.toLowerCase().replace(/[^a-z0-9]+/g, "-");
-    const typeMap: Record<string, string> = { ETW: "wohnung", EFH: "einfamilienhaus", MFH: "mehrfamilienhaus", DHH: "doppelhaushaelfte", RH: "reihenhaus", GRUNDSTUECK: "grundstueck" };
+    const typeMap: Record<string, string> = {
+      ETW: "wohnung", EFH: "einfamilienhaus", MFH: "mehrfamilienhaus",
+      DHH: "doppelhaushaelfte", RH: "reihenhaus", GRUNDSTUECK: "grundstueck",
+    };
     const slug = `${citySlug}/${typeMap[memory.type!] || memory.type!.toLowerCase()}-${Math.random().toString(36).slice(2, 6)}`;
 
     const listing = await prisma.listing.create({
       data: {
         propertyId: property.id,
         slug,
-        titleShort,
-        descriptionLong,
+        titleShort: memory.draft.titleShort,
+        descriptionLong: memory.draft.descriptionLong,
+        askingPrice: memory.askingPrice ?? null,
         status: "REVIEW",
       },
     });
 
-    // Run pricing
-    try {
+    // Persist the price recommendation snapshot (recompute to capture comparables)
+    if (memory.priceBand) {
       const pricing = calculatePricing({
         type: memory.type!,
         city: memory.city!,
@@ -133,7 +143,6 @@ export async function POST(
         attributes: memory.attributes.length > 0 ? memory.attributes : null,
         energyCert: memory.energyClass ? { energyClass: memory.energyClass, energyValue: memory.energyValue || 0 } : null,
       });
-
       await prisma.priceRecommendation.create({
         data: {
           listingId: listing.id,
@@ -157,21 +166,127 @@ export async function POST(
           },
         },
       });
-    } catch (e) {
-      console.error("Pricing during handoff:", e);
     }
 
-    // Close conversation
+    // Generate the designed Exposé PDF (F-M5-09)
+    try {
+      const PROPERTY_TYPE_DE: Record<string, string> = {
+        ETW: "Eigentumswohnung", EFH: "Einfamilienhaus", MFH: "Mehrfamilienhaus",
+        DHH: "Doppelhaushälfte", RH: "Reihenhaus", GRUNDSTUECK: "Grundstück",
+      };
+      const CONDITION_DE: Record<string, string> = {
+        ERSTBEZUG: "Erstbezug", NEUBAU: "Neubau", GEPFLEGT: "Gepflegt",
+        RENOVIERUNGS_BEDUERFTIG: "Renovierungsbedürftig",
+        SANIERUNGS_BEDUERFTIG: "Sanierungsbedürftig", ROHBAU: "Rohbau",
+      };
+
+      // Load up to 6 photo bytes for the PDF
+      const photoBytes: { bytes: Uint8Array; mimeType: string }[] = [];
+      for (const u of memory.uploads.filter((u) => u.kind === "PHOTO").slice(0, 6)) {
+        try {
+          if (u.storageKey.startsWith("/uploads/")) {
+            const local = path.join(process.cwd(), "public", u.storageKey.replace(/^\/+/, ""));
+            const buf = await readFile(local);
+            photoBytes.push({ bytes: new Uint8Array(buf), mimeType: u.mimeType });
+          } else {
+            const key = u.storageKey.replace(/^https?:\/\/[^/]+\//, "").replace(/^\/+/, "");
+            const obj = await getFromS3(key);
+            if (obj) {
+              const reader = obj.body.getReader();
+              const chunks: Uint8Array[] = [];
+              while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                if (value) chunks.push(value);
+              }
+              const total = chunks.reduce((n, c) => n + c.length, 0);
+              const merged = new Uint8Array(total);
+              let off = 0;
+              for (const c of chunks) { merged.set(c, off); off += c.length; }
+              photoBytes.push({ bytes: merged, mimeType: u.mimeType });
+            }
+          }
+        } catch (e) {
+          console.error("Failed to load photo for PDF:", u.fileName, e);
+        }
+      }
+
+      const pdfBuffer = await generateExposePdf({
+        titleShort: memory.draft.titleShort,
+        descriptionLong: memory.draft.descriptionLong,
+        address: `${memory.street} ${memory.houseNumber}, ${memory.postcode}`,
+        city: memory.city!,
+        propertyType: PROPERTY_TYPE_DE[memory.type!] || memory.type!,
+        livingArea: memory.livingArea!,
+        rooms: memory.rooms,
+        yearBuilt: memory.yearBuilt,
+        condition: CONDITION_DE[memory.condition!] || memory.condition!,
+        askingPrice: memory.askingPrice,
+        priceBand: memory.priceBand
+          ? { low: memory.priceBand.low, median: memory.priceBand.median, high: memory.priceBand.high, confidence: memory.priceBand.confidence }
+          : null,
+        energy: memory.energyClass
+          ? {
+              class: memory.energyClass,
+              value: memory.energyValue || 0,
+              source: memory.energySource || "—",
+              type: memory.energyCertType || "VERBRAUCH",
+              validUntil: memory.energyValidUntil || "—",
+            }
+          : null,
+        attributes: memory.attributes,
+        photos: photoBytes,
+        generatedAt: new Date().toLocaleDateString("de-DE"),
+      });
+
+      const fileName = `expose-${randomUUID()}.pdf`;
+      let storageKey: string;
+      if (isS3Enabled()) {
+        const s3Key = `properties/${property.id}/${fileName}`;
+        storageKey = await uploadToS3(s3Key, pdfBuffer, "application/pdf");
+      } else {
+        const dir = path.join(process.cwd(), "public", "uploads", property.id);
+        await mkdir(dir, { recursive: true });
+        await writeFile(path.join(dir, fileName), pdfBuffer);
+        storageKey = `/uploads/${property.id}/${fileName}`;
+      }
+
+      await prisma.mediaAsset.create({
+        data: {
+          propertyId: property.id,
+          listingId: listing.id,
+          kind: "DOCUMENT",
+          storageKey,
+          fileName: `Exposé-${memory.city}-${memory.draft.titleShort.slice(0, 30)}.pdf`,
+          mimeType: "application/pdf",
+          sizeBytes: pdfBuffer.length,
+        },
+      });
+    } catch (e) {
+      console.error("Exposé PDF generation failed:", e);
+      // PDF is SHOULD priority — don't block handoff if it fails
+    }
+
     await prisma.conversation.update({
       where: { id },
       data: { status: "COMPLETED", listingId: listing.id, closedAt: new Date() },
+    });
+
+    await prisma.agentRun.updateMany({
+      where: { conversationId: id, status: "RUNNING" },
+      data: { status: "SUCCEEDED", listingId: listing.id, finishedAt: new Date() },
     });
 
     await prisma.listingEvent.create({
       data: {
         listingId: listing.id,
         type: "CREATED",
-        payload: { source: "expose-agent", conversationId: id },
+        payload: JSON.parse(JSON.stringify({
+          source: "expose-agent",
+          conversationId: id,
+          assumptions: memory.assumptions,
+          rubric: memory.lastRubric,
+        })),
         actorUserId: user.id,
       },
     });
@@ -180,6 +295,7 @@ export async function POST(
       ok: true,
       propertyId: property.id,
       listingId: listing.id,
+      assumptions: memory.assumptions,
     });
   } catch (err) {
     console.error("Handoff error:", err);

@@ -1,0 +1,426 @@
+{
+  "generatedAt": "2026-04-30T11:09:59.035Z",
+  "totalCases": 30,
+  "cases": [
+    {
+      "id": "syn-01",
+      "file": "syn-01.pdf",
+      "expected": {
+        "id": "syn-01",
+        "type": "VERBRAUCH",
+        "energyClass": "C",
+        "energyValue": 110,
+        "primarySource": "Erdgas",
+        "validUntil": "2030-04-12",
+        "template": "label-value"
+      },
+      "synthetic": true
+    },
+    {
+      "id": "syn-02",
+      "file": "syn-02.pdf",
+      "expected": {
+        "id": "syn-02",
+        "type": "BEDARF",
+        "energyClass": "A",
+        "energyValue": 48,
+        "primarySource": "Wärmepumpe",
+        "validUntil": "2032-09-01",
+        "template": "table"
+      },
+      "synthetic": true
+    },
+    {
+      "id": "syn-03",
+      "file": "syn-03.pdf",
+      "expected": {
+        "id": "syn-03",
+        "type": "VERBRAUCH",
+        "energyClass": "E",
+        "energyValue": 168,
+        "primarySource": "Heizöl",
+        "validUntil": "2029-11-23",
+        "template": "narrative"
+      },
+      "synthetic": true
+    },
+    {
+      "id": "syn-04",
+      "file": "syn-04.pdf",
+      "expected": {
+        "id": "syn-04",
+        "type": "BEDARF",
+        "energyClass": "B",
+        "energyValue": 72,
+        "primarySource": "Fernwärme",
+        "validUntil": "2031-02-15",
+        "template": "label-value"
+      },
+      "synthetic": true
+    },
+    {
+      "id": "syn-05",
+      "file": "syn-05.pdf",
+      "expected": {
+        "id": "syn-05",
+        "type": "VERBRAUCH",
+        "energyClass": "F",
+        "energyValue": 198,
+        "primarySource": "Erdgas",
+        "validUntil": "2028-07-30",
+        "template": "table"
+      },
+      "synthetic": true
+    },
+    {
+      "id": "syn-06",
+      "file": "syn-06.pdf",
+      "expected": {
+        "id": "syn-06",
+        "type": "BEDARF",
+        "energyClass": "A+",
+        "energyValue": 30,
+        "primarySource": "Wärmepumpe",
+        "validUntil": "2033-05-10",
+        "template": "narrative"
+      },
+      "synthetic": true
+    },
+    {
+      "id": "syn-07",
+      "file": "syn-07.pdf",
+      "expected": {
+        "id": "syn-07",
+        "type": "VERBRAUCH",
+        "energyClass": "D",
+        "energyValue": 138,
+        "primarySource": "Erdgas",
+        "validUntil": "2030-08-22",
+        "template": "label-value"
+      },
+      "synthetic": true
+    },
+    {
+      "id": "syn-08",
+      "file": "syn-08.pdf",
+      "expected": {
+        "id": "syn-08",
+        "type": "BEDARF",
+        "energyClass": "C",
+        "energyValue": 95,
+        "primarySource": "Erdgas",
+        "validUntil": "2031-12-04",
+        "template": "table"
+      },
+      "synthetic": true
+    },
+    {
+      "id": "syn-09",
+      "file": "syn-09.pdf",
+      "expected": {
+        "id": "syn-09",
+        "type": "VERBRAUCH",
+        "energyClass": "G",
+        "energyValue": 235,
+        "primarySource": "Heizöl",
+        "validUntil": "2027-03-18",
+        "template": "narrative"
+      },
+      "synthetic": true
+    },
+    {
+      "id": "syn-10",
+      "file": "syn-10.pdf",
+      "expected": {
+        "id": "syn-10",
+        "type": "BEDARF",
+        "energyClass": "B",
+        "energyValue": 78,
+        "primarySource": "Pellets",
+        "validUntil": "2032-01-20",
+        "template": "label-value"
+      },
+      "synthetic": true
+    },
+    {
+      "id": "syn-11",
+      "file": "syn-11.pdf",
+      "expected": {
+        "id": "syn-11",
+        "type": "VERBRAUCH",
+        "energyClass": "C",
+        "energyValue": 102,
+        "primarySource": "Fernwärme",
+        "validUntil": "2030-10-09",
+        "template": "table"
+      },
+      "synthetic": true
+    },
+    {
+      "id": "syn-12",
+      "file": "syn-12.pdf",
+      "expected": {
+        "id": "syn-12",
+        "type": "BEDARF",
+        "energyClass": "A",
+        "energyValue": 52,
+        "primarySource": "Wärmepumpe",
+        "validUntil": "2033-06-25",
+        "template": "narrative"
+      },
+      "synthetic": true
+    },
+    {
+      "id": "syn-13",
+      "file": "syn-13.pdf",
+      "expected": {
+        "id": "syn-13",
+        "type": "VERBRAUCH",
+        "energyClass": "D",
+        "energyValue": 145,
+        "primarySource": "Erdgas",
+        "validUntil": "2029-04-14",
+        "template": "label-value"
+      },
+      "synthetic": true
+    },
+    {
+      "id": "syn-14",
+      "file": "syn-14.pdf",
+      "expected": {
+        "id": "syn-14",
+        "type": "BEDARF",
+        "energyClass": "C",
+        "energyValue": 108,
+        "primarySource": "Erdgas",
+        "validUntil": "2031-09-30",
+        "template": "table"
+      },
+      "synthetic": true
+    },
+    {
+      "id": "syn-15",
+      "file": "syn-15.pdf",
+      "expected": {
+        "id": "syn-15",
+        "type": "VERBRAUCH",
+        "energyClass": "E",
+        "energyValue": 175,
+        "primarySource": "Heizöl",
+        "validUntil": "2028-12-17",
+        "template": "narrative"
+      },
+      "synthetic": true
+    },
+    {
+      "id": "syn-16",
+      "file": "syn-16.pdf",
+      "expected": {
+        "id": "syn-16",
+        "type": "BEDARF",
+        "energyClass": "B",
+        "energyValue": 70,
+        "primarySource": "Erdgas",
+        "validUntil": "2032-08-08",
+        "template": "label-value"
+      },
+      "synthetic": true
+    },
+    {
+      "id": "syn-17",
+      "file": "syn-17.pdf",
+      "expected": {
+        "id": "syn-17",
+        "type": "VERBRAUCH",
+        "energyClass": "F",
+        "energyValue": 205,
+        "primarySource": "Heizöl",
+        "validUntil": "2027-11-26",
+        "template": "table"
+      },
+      "synthetic": true
+    },
+    {
+      "id": "syn-18",
+      "file": "syn-18.pdf",
+      "expected": {
+        "id": "syn-18",
+        "type": "BEDARF",
+        "energyClass": "A+",
+        "energyValue": 32,
+        "primarySource": "Wärmepumpe",
+        "validUntil": "2033-03-12",
+        "template": "narrative"
+      },
+      "synthetic": true
+    },
+    {
+      "id": "syn-19",
+      "file": "syn-19.pdf",
+      "expected": {
+        "id": "syn-19",
+        "type": "VERBRAUCH",
+        "energyClass": "C",
+        "energyValue": 115,
+        "primarySource": "Fernwärme",
+        "validUntil": "2030-06-05",
+        "template": "label-value"
+      },
+      "synthetic": true
+    },
+    {
+      "id": "syn-20",
+      "file": "syn-20.pdf",
+      "expected": {
+        "id": "syn-20",
+        "type": "BEDARF",
+        "energyClass": "B",
+        "energyValue": 80,
+        "primarySource": "Erdgas",
+        "validUntil": "2031-10-19",
+        "template": "table"
+      },
+      "synthetic": true
+    },
+    {
+      "id": "syn-21",
+      "file": "syn-21.pdf",
+      "expected": {
+        "id": "syn-21",
+        "type": "VERBRAUCH",
+        "energyClass": "D",
+        "energyValue": 132,
+        "primarySource": "Erdgas",
+        "validUntil": "2029-08-02",
+        "template": "narrative"
+      },
+      "synthetic": true
+    },
+    {
+      "id": "syn-22",
+      "file": "syn-22.pdf",
+      "expected": {
+        "id": "syn-22",
+        "type": "BEDARF",
+        "energyClass": "A",
+        "energyValue": 50,
+        "primarySource": "Wärmepumpe",
+        "validUntil": "2032-12-13",
+        "template": "label-value"
+      },
+      "synthetic": true
+    },
+    {
+      "id": "syn-23",
+      "file": "syn-23.pdf",
+      "expected": {
+        "id": "syn-23",
+        "type": "VERBRAUCH",
+        "energyClass": "F",
+        "energyValue": 192,
+        "primarySource": "Erdgas",
+        "validUntil": "2028-05-29",
+        "template": "table"
+      },
+      "synthetic": true
+    },
+    {
+      "id": "syn-24",
+      "file": "syn-24.pdf",
+      "expected": {
+        "id": "syn-24",
+        "type": "BEDARF",
+        "energyClass": "B",
+        "energyValue": 75,
+        "primarySource": "Fernwärme",
+        "validUntil": "2031-04-07",
+        "template": "narrative"
+      },
+      "synthetic": true
+    },
+    {
+      "id": "syn-25",
+      "file": "syn-25.pdf",
+      "expected": {
+        "id": "syn-25",
+        "type": "VERBRAUCH",
+        "energyClass": "E",
+        "energyValue": 178,
+        "primarySource": "Erdgas",
+        "validUntil": "2028-09-21",
+        "template": "label-value"
+      },
+      "synthetic": true
+    },
+    {
+      "id": "syn-26",
+      "file": "syn-26.pdf",
+      "expected": {
+        "id": "syn-26",
+        "type": "BEDARF",
+        "energyClass": "C",
+        "energyValue": 92,
+        "primarySource": "Erdgas",
+        "validUntil": "2031-07-14",
+        "template": "table"
+      },
+      "synthetic": true
+    },
+    {
+      "id": "syn-27",
+      "file": "syn-27.pdf",
+      "expected": {
+        "id": "syn-27",
+        "type": "VERBRAUCH",
+        "energyClass": "G",
+        "energyValue": 245,
+        "primarySource": "Heizöl",
+        "validUntil": "2027-01-11",
+        "template": "narrative"
+      },
+      "synthetic": true
+    },
+    {
+      "id": "syn-28",
+      "file": "syn-28.pdf",
+      "expected": {
+        "id": "syn-28",
+        "type": "BEDARF",
+        "energyClass": "A",
+        "energyValue": 45,
+        "primarySource": "Wärmepumpe",
+        "validUntil": "2033-02-28",
+        "template": "label-value"
+      },
+      "synthetic": true
+    },
+    {
+      "id": "syn-29",
+      "file": "syn-29.pdf",
+      "expected": {
+        "id": "syn-29",
+        "type": "VERBRAUCH",
+        "energyClass": "D",
+        "energyValue": 142,
+        "primarySource": "Heizöl",
+        "validUntil": "2029-12-06",
+        "template": "table"
+      },
+      "synthetic": true
+    },
+    {
+      "id": "real-01",
+      "file": "real-01.pdf",
+      "synthetic": false,
+      "expected": {
+        "id": "real-01",
+        "template": "label-value",
+        "type": "?",
+        "energyClass": "?",
+        "energyValue": 0,
+        "primarySource": "?",
+        "validUntil": "?"
+      }
+    }
+  ]
+}

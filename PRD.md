@@ -1,8 +1,9 @@
 # Direkta — Product Requirements Document
 
-**Version:** 1.0 | **Status:** Engineering Handover | **Date:** 2026-04-27
+**Version:** 1.2 | **Status:** Engineering Handover | **Date:** 2026-04-30
 **Market:** Germany (DE) | **Compliance:** GDPR, GwG, GEG, TTDSG
 **Property Scope:** ETW, EFH, MFH (up to 4 units), DHH, RH, Grundstueck
+**Source spec:** Direkta_Lastenheft_Pflichtenheft_v1_2.docx
 
 ---
 
@@ -23,11 +24,28 @@ Everything in scope serves this hypothesis. Anything that does not measurably co
 - Not an AI writing assistant (AI is plumbing, the product is the sales process)
 - Not a two-sided marketplace
 
+### Positioning Statement
+
+> "Direkta is for property owners who want to sell their home without surrendering 3.57% to an agent — but who also want a guided, professional process they can trust. We are not a listing portal. We are not a marketplace. We are a software-driven sales process that replaces the agent."
+
+### Long-Term Vision (Post-MVP Moat)
+
+These capabilities are explicitly **out of scope for the MVP** but inform architectural decisions today: **the data model MUST be designed so this future is not blocked.**
+
+- **Transaction data:** every closed sale produces a verified `(property attributes → final price → time-to-sale)` data point. More accurate than any portal's listing data, which only knows asking prices.
+- **Buyer graph:** Direkta sees which buyers actually close, at what price, with what financing, and how long it took. A unique buyer-quality signal.
+- **Pricing intelligence:** with sufficient transaction volume, Direkta's price recommendation outperforms agent intuition in any micro-market.
+- **Adjacent products:** notary integration, financing brokerage, post-sale services, energy certificates.
+
 ---
 
 ## 2. Problem Statement
 
-In Germany, a typical Maklerprovision of **3.57%** (incl. VAT) on a EUR 500,000 property costs the seller roughly **EUR 17,850**. Yet over **70% of residential transactions** still go through agents — not because agents provide proportional value, but because the process is complex:
+### Market Size
+
+The German residential market sees roughly **800,000–1,000,000 ownership transactions per year** across all property types, with a total transaction volume in the order of **EUR 200–250 billion**. The dominant intermediary is the Makler, historically charging **5.95–7.14% in total commission** split between buyer and seller. Since the **Bestellerprinzip reform of December 2020**, residential commissions must be split roughly equally between buyer and seller, but absolute amounts have not declined.
+
+In Germany, a typical Maklerprovision of **3.57%** (incl. VAT, seller-side) on a EUR 500,000 property costs the seller roughly **EUR 17,850**. Yet over **70% of residential transactions** still go through agents — not because agents provide proportional value, but because the process is complex:
 
 - Owners don't know how to price correctly
 - They can't write a legally compliant listing (GEG, Energieausweis)
@@ -126,6 +144,10 @@ The product must not technically restrict outside this ICP — the constraint is
 - Network for off-market deals (agents have private buyer networks)
 - Highly atypical properties (heritage, agricultural, complex inheritance)
 
+### Visual Journey Map
+
+A high-resolution side-by-side journey map is provided as a separate asset (`Direkta_CustomerJourney.png`) in the repository root. It visualises both paths on a single page: the upper lane shows the traditional Makler path (~20 weeks, ~EUR 17,850 commission) with explicit pain markers; the lower lane shows the Direkta path (~8 weeks, EUR 999 flat fee). The dark band at the bottom quantifies the four key advantages — ~12 weeks faster, ~EUR 16,851 saved, full transparency, and geographic freedom. Use in pitch decks, investor materials, and sales collateral.
+
 ---
 
 ## 6. Product Scope — Six Core Modules
@@ -163,6 +185,39 @@ The product must not technically restrict outside this ICP — the constraint is
 | F-M1-07 | MUST | Seller can edit all AI text before publishing | Edits persist; regeneration doesn't overwrite |
 | F-M1-08 | MUST | Compliance check blocks publish on failure | Missing Energieausweis/GEG/photos blocks publish |
 | F-M1-09 | SHOULD | Display quality score (0-100) for listing | Updates live above publish button |
+
+**AI Capability A — Listing Text Generation (Provider Contract)**
+
+LLM is wrapped behind an internal interface so the underlying model can be swapped without touching product code.
+
+```typescript
+interface TextGenerationProvider {
+  generateLongDescription(input: PropertyDescriptionInput): Promise<string>;
+  generateShortSummary(input: PropertyDescriptionInput): Promise<string>;
+}
+
+type PropertyDescriptionInput = {
+  type: PropertyType;
+  livingArea: number;
+  rooms: number;
+  bathrooms: number;
+  yearBuilt?: number;
+  condition: PropertyCondition;
+  city: string;
+  postcode: string;
+  attributes: string[];        // ['balcony', 'fireplace', 'garage']
+  energyClass: string;
+  energyValue: number;
+  highlights: string[];        // seller-provided
+};
+```
+
+**Constraints:**
+- Output language: German, formal Sie-form, neutral marketing tone
+- Long description: 250–600 words, three paragraphs (property, surroundings, opportunity)
+- Short summary: max 160 characters, no exclamation marks, includes type/rooms/area/city
+- MUST NOT invent attributes not present in the structured input. The system MUST reject and regenerate any output containing unverifiable claims
+- MUST end with a standard disclaimer about Energieausweis values
 
 ### M2 — Pricing Engine
 
@@ -225,6 +280,15 @@ Each enquiry triggers automated follow-up: three structured questions (budget, f
 | F-M3-06 | MUST | Ranked lead list sorted by score | Default: score desc, then recency |
 | F-M3-07 | MUST | Viewing scheduling against seller's slots | .ics invites for both parties |
 | F-M3-08 | SHOULD | Parse portal-forwarded enquiry emails into leads | IS24/Immowelt >=95% field extraction |
+
+**AI Capability B — Buyer Qualification**
+
+Generates outbound qualification emails to buyers and parses inbound replies into a structured `(budget, financingState, timing)` tuple.
+
+**Constraints:**
+- Outbound emails MUST sound human and **MUST NOT** start with `"Sehr geehrte/r Interessent/in"`.
+- Inbound parsing MUST default each field to `UNKNOWN` if classifier confidence < 0.7.
+- Free-text reply containing an explicit decline (`"kein Interesse"`, `"abgesagt"`, equivalents) MUST set lead status to `DECLINED` automatically.
 
 ### M4 — Offer Dashboard
 
@@ -373,11 +437,30 @@ interface PortalDriver {
 | F-M6-13 | SHOULD | Per-listing portal dashboard (status, sync time, stats) | Renders all data |
 | F-M6-14 | MUST | Re-consent required every 90 days | Syndication pauses on expiry |
 
-**IS24 Risk Acknowledgement:**
-- IS24 ToS prohibit automated access — this is a known legal exposure
-- Must obtain legal counsel sign-off before launch
-- Must have migration plan to IS24 API/OpenImmo by month 6
-- Circuit breaker, per-credential isolation, conservative pacing are mandatory mitigations
+**IS24 Browser-Automation Risks (Binding — Founders, Engineering, Product MUST acknowledge before M6 enters production)**
+
+**Legal posture:**
+- **ImmobilienScout24 General Terms of Use prohibit automated access** to the portal. Operating browser automation against IS24 with seller credentials is in breach of those terms even though the credentials are the seller's own.
+- **Precedents under § 4 UWG (unfair competition)** exist where IS24 has obtained injunctions against tools that automate listing operations on behalf of users. Direkta must accept this as a real, not theoretical, exposure.
+- If a seller's IS24 account is suspended due to detected automation, **Direkta is responsible** for restoring the seller's listing on alternative channels and absorbing the disruption.
+
+**Operational risks:**
+- **Bot-detection:** IS24 deploys active anti-automation (Cloudflare, behavioural fingerprinting). Detection rates vary; expect periodic full breakage requiring driver updates within 24 hours.
+- **UI change:** any IS24 layout change can break the driver. SLOs assume up to 1 hour of outage per change, with auto-rollback to manual mode.
+- **Captcha and MFA:** cannot be solved automatically by Direkta. The system MUST hand control back to the seller via a one-click re-auth flow that hands over a controlled browser session.
+
+**Mitigations baked into the architecture:**
+- `PortalDriver` abstraction: `IS24BrowserDriver` is replaceable by `IS24ApiDriver` or `OpenImmoFeedDriver` without product code changes.
+- Per-credential isolation: separate browser contexts; no shared session state across sellers.
+- Conservative pacing: default 1 action per 8 seconds, jittered.
+- Explicit, time-stamped seller consent. The seller must understand they are authorising Direkta to act on their behalf and that automated access may breach IS24 terms.
+- Circuit breaker: ≥ 25% failure rate over 30 minutes pauses all syndication for the affected portal across all sellers, until a human resumes.
+- Migration plan: by **month 6 of operation**, Direkta MUST be on either an IS24 contractual relationship (API or OpenImmo) or migrating off IS24 as a primary distribution channel.
+
+**Founder-level decisions required before launch:**
+1. Sign-off from legal counsel that the consent-gated, seller-credential model is the position Direkta is willing to defend.
+2. Decision on whether to disclose the automation approach in seller-facing copy (**recommended: yes**).
+3. Budget and timeline for IS24 commercial conversation in parallel to MVP launch.
 
 ---
 
@@ -427,7 +510,18 @@ interface PortalDriver {
 | 7 | Offer | Enter amount, upload financing proof + ID, submit. |
 | 8 | Outcome | Accept/decline/counter notification. If accepted: notary workflow. |
 
-### 8.3 Edge Flows (Must Work)
+### 8.3 IS24 Listing Agent — Operational Flow
+
+| # | Stage | What Happens |
+|---|---|---|
+| 1 | Connect | Seller adds IS24 credentials in account settings. Direkta verifies login in a sandboxed run. Credentials encrypted at rest (envelope encryption, per-tenant key). |
+| 2 | Schedule | When the Direkta listing is published, a `SyndicationJob` is enqueued for IS24. |
+| 3 | Push | Worker logs in, fills the IS24 listing form using property + media data, publishes, and stores the resulting IS24 listing ID. |
+| 4 | Sync (daily) | Worker logs in, scrapes the seller's IS24 dashboard for stats and inbound contacts, persists deltas as `PortalStat` and `Lead` records. |
+| 5 | Update | When seller edits the listing in Direkta, an update job is enqueued and the IS24 listing is patched. |
+| 6 | Withdraw | When the listing is paused or closed in Direkta, the IS24 listing is paused or removed accordingly. |
+
+### 8.4 Edge Flows (Must Work)
 
 - Seller pauses listing and resumes later (leads retained, viewings rescheduled)
 - Seller withdraws listing (active buyers notified)
@@ -572,7 +666,332 @@ SyndicationStatus: NONE | QUEUED | LIVE | PAUSED | FAILED | WITHDRAWN
 JobStatus:        QUEUED | RUNNING | SUCCESS | FAILED | RETRYING | DEAD
 ```
 
-Full Prisma schema is defined in the source specification (Section 8.2).
+### Full Prisma Schema
+
+```prisma
+model User {
+  id              String    @id @default(cuid())
+  email           String    @unique
+  emailVerifiedAt DateTime?
+  passwordHash    String?
+  name            String?
+  phone           String?
+  role            UserRole  @default(SELLER)
+  createdAt       DateTime  @default(now())
+  deletedAt       DateTime?
+  listings        Listing[]
+}
+
+enum UserRole { SELLER ADMIN SUPPORT }
+
+model Property {
+  id           String              @id @default(cuid())
+  ownerUserId  String
+  type         PropertyType
+  street       String
+  houseNumber  String
+  postcode     String
+  city         String
+  country      String              @default("DE")
+  lat          Float
+  lng          Float
+  livingArea   Float                // m^2
+  plotArea     Float?
+  yearBuilt    Int?
+  rooms        Float?
+  bathrooms    Int?
+  floor        Int?
+  condition    PropertyCondition
+  attributes   Json                 // freeform: balcony, garage, fireplace, ...
+  energyCert   EnergyCertificate?
+  listings     Listing[]
+  media        MediaAsset[]
+  createdAt    DateTime             @default(now())
+}
+
+enum PropertyType { ETW EFH MFH DHH RH GRUNDSTUECK }
+enum PropertyCondition { ERSTBEZUG GEPFLEGT RENOVIERUNGS_BEDUERFTIG SANIERUNGS_BEDUERFTIG NEUBAU ROHBAU }
+
+model Listing {
+  id              String         @id @default(cuid())
+  propertyId      String
+  status          ListingStatus
+  publishedAt     DateTime?
+  pausedAt        DateTime?
+  closedAt        DateTime?
+  slug            String         @unique
+  titleShort      String          // 160 chars max
+  descriptionLong String          // generated, editable
+  askingPrice     Decimal
+  priceRecId      String?
+  leads           Lead[]
+  offers          Offer[]
+  viewings        Viewing[]
+  events          ListingEvent[]
+  createdAt       DateTime       @default(now())
+}
+
+enum ListingStatus { DRAFT REVIEW ACTIVE PAUSED RESERVED CLOSED WITHDRAWN }
+
+model EnergyCertificate {
+  id             String         @id @default(cuid())
+  propertyId     String         @unique
+  type           EnergyCertType
+  validUntil     DateTime
+  energyClass    String          // A+, A, B, ... H
+  energyValue    Float           // kWh / (m^2 * a)
+  primarySource  String          // gas, oil, district heating, electricity, ...
+  pdfAssetId     String?
+}
+
+enum EnergyCertType { VERBRAUCH BEDARF }
+
+model MediaAsset {
+  id          String    @id @default(cuid())
+  propertyId  String?
+  listingId   String?
+  kind        MediaKind
+  storageKey  String     // S3 key
+  mimeType    String
+  width       Int?
+  height      Int?
+  enhanced    Boolean   @default(false)
+  ordering    Int       @default(0)
+  createdAt   DateTime  @default(now())
+}
+
+enum MediaKind { PHOTO FLOORPLAN DOCUMENT ENERGY_PDF ID_PROOF FINANCING_PROOF }
+
+model PriceRecommendation {
+  id            String          @id @default(cuid())
+  listingId     String          @unique
+  low           Decimal
+  median        Decimal
+  high          Decimal
+  strategyQuick Decimal
+  strategyReal  Decimal
+  strategyMax   Decimal
+  confidence    PriceConfidence
+  comparables   Comparable[]
+  createdAt     DateTime        @default(now())
+}
+
+enum PriceConfidence { LOW MEDIUM HIGH }
+
+model Comparable {
+  id              String       @id @default(cuid())
+  priceRecId      String
+  source          String        // 'is24' | 'immowelt' | 'kleinanzeigen' | 'transaction_db'
+  externalId      String?
+  type            PropertyType
+  livingArea      Float
+  pricePerSqm     Float
+  distanceMeters  Int
+  ageDays         Int
+  similarityScore Float         // 0..1
+}
+
+model Lead {
+  id             String           @id @default(cuid())
+  listingId      String
+  emailRaw       String
+  name           String?
+  phone          String?
+  message        String?
+  budget         Decimal?
+  financingState FinancingState?
+  timing         BuyerTiming?
+  qualityScore   Int?              // 0..100
+  status         LeadStatus
+  createdAt      DateTime         @default(now())
+}
+
+enum FinancingState { CASH PRE_APPROVED IN_PROCESS NONE UNKNOWN }
+enum BuyerTiming { IMMEDIATELY WITHIN_3M WITHIN_6M LATER UNKNOWN }
+enum LeadStatus { NEW QUALIFYING QUALIFIED VIEWING_SCHEDULED OFFER_MADE DECLINED }
+
+model BuyerProfile {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String
+  phone         String?
+  idVerifiedAt  DateTime?
+  idAssetId     String?
+  offers        Offer[]
+}
+
+model Viewing {
+  id         String         @id @default(cuid())
+  listingId  String
+  leadId     String?
+  buyerId    String?
+  startsAt   DateTime
+  endsAt     DateTime
+  mode       ViewingMode
+  status     ViewingStatus
+  notes      String?
+}
+
+enum ViewingMode { ONSITE VIRTUAL }
+enum ViewingStatus { PROPOSED CONFIRMED COMPLETED CANCELLED NO_SHOW }
+
+model Offer {
+  id               String      @id @default(cuid())
+  listingId        String
+  buyerId          String
+  amount           Decimal
+  financingProofId String?
+  conditions       String?
+  desiredClosingAt DateTime?
+  scoreAmount      Int?
+  scoreFinance     Int?
+  scoreTiming      Int?
+  scoreRisk        Int?
+  scoreComposite   Int?
+  status           OfferStatus
+  createdAt        DateTime    @default(now())
+}
+
+enum OfferStatus { SUBMITTED UNDER_REVIEW ACCEPTED REJECTED WITHDRAWN COUNTERED }
+
+model Transaction {
+  id                    String    @id @default(cuid())
+  listingId             String    @unique
+  acceptedOfferId       String    @unique
+  notaryName            String?
+  notaryAddress         String?
+  reservationPdfAssetId String?
+  closedAt              DateTime?
+  finalPrice            Decimal?
+}
+
+model ListingEvent {
+  id          String   @id @default(cuid())
+  listingId   String
+  type        String    // free-form, e.g. 'PUBLISHED', 'LEAD_RECEIVED', 'OFFER_ACCEPTED'
+  payload     Json
+  actorUserId String?
+  createdAt   DateTime @default(now())
+}
+
+// ----- Agentic & Syndication models -----
+
+model Conversation {
+  id         String             @id @default(cuid())
+  userId     String
+  listingId  String?
+  agentKind  AgentKind
+  status     ConversationStatus
+  turns      ConversationTurn[]
+  startedAt  DateTime           @default(now())
+  closedAt   DateTime?
+}
+
+enum AgentKind { EXPOSE LISTING }
+enum ConversationStatus { ACTIVE PAUSED COMPLETED ABANDONED }
+
+model ConversationTurn {
+  id              String   @id @default(cuid())
+  conversationId  String
+  role            TurnRole
+  content         String    // user message, agent message, or serialized tool I/O
+  toolName        String?   // present when role == TOOL
+  toolInput       Json?
+  toolOutput      Json?
+  tokensIn        Int?
+  tokensOut       Int?
+  latencyMs       Int?
+  createdAt       DateTime @default(now())
+}
+
+enum TurnRole { USER AGENT TOOL SYSTEM }
+
+model AgentRun {
+  id             String         @id @default(cuid())
+  agentKind      AgentKind
+  conversationId String?         // null for non-conversational agents (Listing Agent)
+  listingId      String?
+  goal           String          // human-readable, e.g. 'Publish to IS24'
+  status         AgentRunStatus
+  steps          AgentStep[]
+  costCents      Int?            // total LLM cost
+  startedAt      DateTime       @default(now())
+  finishedAt     DateTime?
+  error          String?
+}
+
+enum AgentRunStatus { RUNNING SUCCEEDED FAILED CANCELLED }
+
+model AgentStep {
+  id         String   @id @default(cuid())
+  agentRunId String
+  ordinal    Int
+  toolName   String    // e.g. 'address.validate', 'pricing.recommend', 'is24.publish'
+  input      Json
+  output     Json?
+  latencyMs  Int?
+  ok         Boolean
+  error      String?
+  createdAt  DateTime @default(now())
+}
+
+model PortalCredential {
+  id             String           @id @default(cuid())
+  userId         String
+  portal         Portal
+  username       String
+  passwordCipher Bytes             // envelope-encrypted
+  consentedAt    DateTime
+  reconfirmedAt  DateTime?
+  status         CredentialStatus
+  lastVerifiedAt DateTime?
+}
+
+enum Portal { IMMOSCOUT24 IMMOWELT KLEINANZEIGEN }
+enum CredentialStatus { ACTIVE INVALID REVOKED EXPIRED }
+
+model SyndicationTarget {
+  id                String            @id @default(cuid())
+  listingId         String
+  portal            Portal
+  externalListingId String?            // populated after first publish
+  externalUrl       String?
+  status            SyndicationStatus
+  lastSyncedAt      DateTime?
+  jobs              SyndicationJob[]
+  stats             PortalStat[]
+  @@unique([listingId, portal])
+}
+
+enum SyndicationStatus { NONE QUEUED LIVE PAUSED FAILED WITHDRAWN }
+
+model SyndicationJob {
+  id                  String             @id @default(cuid())
+  syndicationTargetId String
+  kind                SyndicationJobKind
+  status              JobStatus
+  attempts            Int                @default(0)
+  lastError           String?
+  agentRunId          String?
+  scheduledFor        DateTime           @default(now())
+  startedAt           DateTime?
+  finishedAt          DateTime?
+}
+
+enum SyndicationJobKind { PUBLISH UPDATE PAUSE UNPAUSE WITHDRAW SYNC_STATS SYNC_LEADS }
+enum JobStatus { QUEUED RUNNING SUCCESS FAILED RETRYING DEAD }
+
+model PortalStat {
+  id                  String   @id @default(cuid())
+  syndicationTargetId String
+  date                DateTime  // day granularity
+  impressions         Int      @default(0)
+  detailViews         Int      @default(0)
+  contactRequests     Int      @default(0)
+  bookmarks           Int      @default(0)
+  @@unique([syndicationTargetId, date])
+}
+```
 
 ---
 
@@ -663,6 +1082,90 @@ Single REST API at `api.direkta.de/v1`. JSON, Bearer JWT auth, kebab-case paths,
 |---|---|---|
 | POST | `/webhooks/email-inbound` | Postmark inbound mail parsing |
 | POST | `/webhooks/portal-enquiry` | Portal enquiry forwarding |
+
+### Example: Create Listing
+
+```http
+POST /v1/listings
+Authorization: Bearer <jwt>
+Idempotency-Key: 9f3a4d12-7b6c-4e8f-9a2c-1b8d3e4f5a6b
+Content-Type: application/json
+
+{
+  "propertyId": "prop_clz...",
+  "askingPrice": 489000,
+  "titleShort": "Helle 3-Zimmer-Wohnung mit Balkon in Prenzlauer Berg",
+  "descriptionLong": null   // null => trigger generation
+}
+```
+
+```http
+HTTP/1.1 201 Created
+Content-Type: application/json
+
+{
+  "id": "lst_clz...",
+  "status": "DRAFT",
+  "slug": "berlin/3-zimmer-prenzlauer-berg-9f3a",
+  "askingPrice": "489000.00",
+  "createdAt": "2026-04-26T10:14:23Z"
+}
+```
+
+### Example: Error Response (RFC 7807)
+
+```http
+HTTP/1.1 422 Unprocessable Entity
+Content-Type: application/problem+json
+
+{
+  "type": "https://docs.direkta.de/errors/compliance-failed",
+  "title": "Compliance check failed",
+  "status": 422,
+  "detail": "Energy certificate is missing required fields.",
+  "instance": "/v1/listings/lst_clz.../publish",
+  "violations": [
+    { "field": "energyCert.energyClass", "rule": "required" },
+    { "field": "energyCert.validUntil", "rule": "future-date" }
+  ]
+}
+```
+
+### Example: Expose Agent Turn (SSE-Streamed)
+
+```http
+POST /v1/agents/expose/conversations/conv_clz.../turns
+Authorization: Bearer <jwt>
+Content-Type: application/json
+
+{
+  "role": "USER",
+  "content": "Es ist eine 3-Zimmer-Wohnung im 2. OG, ca. 78 m²."
+}
+```
+
+```
+HTTP/1.1 200 OK
+Content-Type: text/event-stream
+
+event: turn.started
+data: {"turnId":"trn_clz...","role":"AGENT"}
+
+event: token
+data: {"text":"Verstanden. "}
+
+event: token
+data: {"text":"Hat die Wohnung einen Balkon oder eine Terrasse?"}
+
+event: tool.call
+data: {"name":"address.validate","input":{"raw":"Schönhauser Allee 123, 10437 Berlin"}}
+
+event: tool.result
+data: {"name":"address.validate","ok":true,"output":{"lat":52.54,"lng":13.41}}
+
+event: turn.completed
+data: {"turnId":"trn_clz...","tokensIn":412,"tokensOut":63,"latencyMs":2840}
+```
 
 ---
 
@@ -799,6 +1302,7 @@ Single REST API at `api.direkta.de/v1`. JSON, Bearer JWT auth, kebab-case paths,
 - Payment: **Stripe** (cards + SEPA Lastschrift), EU-routing
 - Auto-generated PDF invoices stored against Transaction
 - Flat-fee 14-day refunds via Stripe API; Listing flagged REFUNDED but not deleted
+- **Success-fee disputes are handled by support, not by automated refund**
 
 ---
 
@@ -878,6 +1382,7 @@ All simultaneously true:
 | IS24 syndication success rate | >= 95% |
 | IS24 stats sync uptime | >= 99% / 30 days |
 | IS24 lead ingestion latency | <= 30 min (P95) |
+| Post-hoc human intervention rate | < 5% (sales requiring Direkta-staff intervention to complete) |
 
 ### Operational KPIs (Post-Launch)
 - **Weekly:** signups, properties created, listings published, leads, offers, transactions
@@ -926,8 +1431,17 @@ Engineering MUST NOT build these. Product MUST NOT promise them.
 | Grundbuchauszug | Land registry extract required for sale |
 | Gutachterausschuss | Local valuation board producing official transaction data |
 | GwG | Geldwaeschegesetz — German anti-money-laundering law |
+| ICP | Ideal Customer Profile |
 | IS24 | ImmobilienScout24, largest German real estate portal |
 | Makler | Real estate agent/broker |
+| MUST / SHOULD / MAY | RFC 2119 conformance keywords |
+| NFR | Non-Functional Requirement |
 | Notar | Notary, legally required to certify residential sales in Germany |
 | OpenImmo | German XML standard for exchanging real estate listings |
 | PortalDriver | Direkta's internal abstraction over third-party portal integrations |
+| Reservierungsvereinbarung | Reservation agreement between buyer and seller before the notary appointment |
+| SSE | Server-Sent Events, used to stream agent token output to the seller's browser in real time |
+| Syndication | The act of distributing one Direkta listing onto external portals via the Listing Agent |
+| Teilungserklaerung | Declaration of partition, required for condominium (WEG) sales |
+| TTDSG | Telekommunikation-Telemedien-Datenschutz-Gesetz, German implementation of ePrivacy rules |
+| WEG | Wohnungseigentuemergemeinschaft, the legal entity of condominium owners |

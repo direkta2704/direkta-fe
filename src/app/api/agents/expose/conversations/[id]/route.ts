@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getRequiredUser } from "@/lib/session";
-import { INITIAL_MEMORY, applyExtracted, type WorkingMemory } from "@/lib/expose-agent";
+import { rebuildMemory, MAX_COST_CENTS, MAX_TURNS } from "@/lib/expose-agent";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(
   req: Request,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const user = await getRequiredUser();
@@ -25,25 +25,32 @@ export async function GET(
       return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
     }
 
-    // Rebuild working memory from turns
-    let memory: WorkingMemory = { ...INITIAL_MEMORY };
-    for (const turn of conversation.turns) {
-      if (turn.toolOutput && typeof turn.toolOutput === "object") {
-        memory = applyExtracted(memory, turn.toolOutput as Record<string, unknown>);
-      }
-    }
+    const memory = rebuildMemory(conversation.turns);
+
+    const agentRun = await prisma.agentRun.findFirst({
+      where: { conversationId: id, agentKind: "EXPOSE" },
+      orderBy: { startedAt: "desc" },
+      select: { id: true, costCents: true, status: true },
+    });
+
+    // Hide tool & internal-system turns from the chat view
+    const visibleTurns = conversation.turns.filter((t) => t.role === "USER" || t.role === "AGENT" || t.role === "SYSTEM");
 
     return NextResponse.json({
       id: conversation.id,
       status: conversation.status,
       listingId: conversation.listingId,
       memory,
-      turns: conversation.turns.map((t) => ({
+      turns: visibleTurns.map((t) => ({
         id: t.id,
         role: t.role,
-        content: t.content,
+        content: (t.content || "").replace(/###MEMORY###[\s\S]*?###END###/g, "").trim(),
         createdAt: t.createdAt,
       })),
+      costCents: agentRun?.costCents ?? 0,
+      maxCostCents: MAX_COST_CENTS,
+      maxTurns: MAX_TURNS,
+      agentRunStatus: agentRun?.status ?? null,
     });
   } catch {
     return NextResponse.json({ error: "Nicht autorisiert" }, { status: 401 });
