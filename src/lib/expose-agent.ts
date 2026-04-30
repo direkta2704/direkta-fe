@@ -546,26 +546,42 @@ async function tool_photoAnalyse(memory: WorkingMemory, photoIndex: number): Pro
 }
 
 async function tool_addressValidate(args: { street: string; houseNumber: string; postcode: string; city: string }) {
-  const q = encodeURIComponent(`${args.street} ${args.houseNumber}, ${args.postcode} ${args.city}, Deutschland`);
-  try {
-    const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=1&countrycodes=de`, {
-      headers: { "User-Agent": "Direkta-ExposeAgent/1.0 (contact@direkta.de)" },
-    });
-    if (!res.ok) return { ok: false, error: `Nominatim status ${res.status}` };
-    const data = await res.json();
-    if (!Array.isArray(data) || data.length === 0) {
-      return { ok: false, error: "Adresse konnte nicht gefunden werden" };
+  const queries = [
+    `${args.street} ${args.houseNumber}, ${args.postcode} ${args.city}, Deutschland`,
+    `${args.street} ${args.houseNumber}, ${args.city}, Deutschland`,
+    `${args.postcode} ${args.city}, Deutschland`,
+  ];
+
+  for (const raw of queries) {
+    try {
+      const q = encodeURIComponent(raw);
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=1&countrycodes=de`, {
+        headers: { "User-Agent": "Direkta-ExposeAgent/1.0 (contact@direkta.de)" },
+      });
+      if (!res.ok) continue;
+      const data = await res.json();
+      if (Array.isArray(data) && data.length > 0) {
+        const hit = data[0];
+        return {
+          ok: true,
+          lat: parseFloat(hit.lat),
+          lng: parseFloat(hit.lon),
+          displayName: hit.display_name,
+        };
+      }
+    } catch {
+      continue;
     }
-    const hit = data[0];
-    return {
-      ok: true,
-      lat: parseFloat(hit.lat),
-      lng: parseFloat(hit.lon),
-      displayName: hit.display_name,
-    };
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : "Geocoding-Fehler" };
   }
+
+  // All queries failed — accept address without coordinates so the agent moves on
+  return {
+    ok: true,
+    lat: 0,
+    lng: 0,
+    displayName: `${args.street} ${args.houseNumber}, ${args.postcode} ${args.city}`,
+    note: "Adresse konnte nicht geocodiert werden, wurde aber übernommen",
+  };
 }
 
 const ENERGY_EXTRACT_SYS_PROMPT = `Du bist ein Datenextraktor für deutsche Energieausweise.
