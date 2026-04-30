@@ -423,6 +423,37 @@ export default function ListingDetailPage() {
                 />
               </div>
 
+              {/* Asking price — editable */}
+              <div className="mb-6 p-5 bg-slate-50 rounded-xl border border-slate-200">
+                <label className="block text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-2">Angebotspreis</label>
+                <div className="flex items-center gap-3">
+                  <div className="relative flex-1">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">€</span>
+                    <input
+                      type="number"
+                      value={askingPrice}
+                      onChange={(e) => setAskingPrice(e.target.value)}
+                      placeholder="Preis oben wählen oder eigenen eingeben"
+                      className="w-full pl-8 pr-4 py-2.5 rounded-lg border border-slate-200 text-sm text-blueprint placeholder:text-slate-400 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
+                    />
+                  </div>
+                  {askingPrice && (
+                    <span className="text-lg font-black text-blueprint whitespace-nowrap">
+                      €{Number(askingPrice).toLocaleString("de-DE")}
+                    </span>
+                  )}
+                </div>
+                {askingPrice && (
+                  <p className={`text-xs mt-2 ${Number(askingPrice) >= Number(rec.low) && Number(askingPrice) <= Number(rec.high) ? "text-emerald-600" : "text-amber-600"}`}>
+                    {Number(askingPrice) < Number(rec.low)
+                      ? "⚠️ Unter der empfohlenen Preisspanne"
+                      : Number(askingPrice) > Number(rec.high)
+                        ? "⚠️ Über der empfohlenen Preisspanne"
+                        : "✓ Innerhalb der empfohlenen Preisspanne"}
+                  </p>
+                )}
+              </div>
+
               {/* Comparables table */}
               <div>
                 <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-3">
@@ -466,30 +497,6 @@ export default function ListingDetailPage() {
           )}
         </div>
 
-        {/* ── AI Description ── */}
-        <div className="bg-white rounded-2xl border border-slate-200 p-7">
-          <div className="flex items-center justify-between mb-5">
-            <div>
-              <h2 className="text-lg font-black text-blueprint">KI-Beschreibung</h2>
-              <p className="text-xs text-slate-500 mt-1">Professionelle Exposé-Beschreibung aus Ihren Immobiliendaten.</p>
-            </div>
-            <button
-              onClick={handleGenerate}
-              disabled={generating}
-              className="bg-primary hover:bg-primary-dark text-white px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-[0.15em] transition-all hover:scale-[1.02] shadow-lg shadow-primary/25 disabled:opacity-60 flex items-center gap-2"
-            >
-              <span className="material-symbols-outlined text-base">{generating ? "hourglass_top" : "auto_awesome"}</span>
-              {generating ? "Wird generiert..." : descriptionLong ? "Neu generieren" : "Beschreibung generieren"}
-            </button>
-          </div>
-          {generating && (
-            <div className="flex items-center gap-3 py-8 justify-center">
-              <div className="w-6 h-6 border-3 border-primary/30 border-t-primary rounded-full animate-spin" />
-              <p className="text-sm text-slate-500">KI erstellt Ihre Beschreibung...</p>
-            </div>
-          )}
-        </div>
-
         {/* Short title */}
         <div className="bg-white rounded-2xl border border-slate-200 p-7">
           <label className="block text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 mb-2">Kurzbeschreibung (max. 160 Zeichen)</label>
@@ -506,39 +513,31 @@ export default function ListingDetailPage() {
 
         {/* Long description */}
         <div className="bg-white rounded-2xl border border-slate-200 p-7">
-          <label className="block text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 mb-2">Langbeschreibung (250–600 Wörter)</label>
+          <div className="flex items-center justify-between mb-4">
+            <label className="block text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">Langbeschreibung (250–600 Wörter)</label>
+            <button
+              onClick={handleGenerate}
+              disabled={generating}
+              className="bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-[0.15em] transition-all hover:scale-[1.02] shadow-lg shadow-primary/25 disabled:opacity-60 flex items-center gap-1.5"
+            >
+              <span className="material-symbols-outlined text-sm">{generating ? "hourglass_top" : "auto_awesome"}</span>
+              {generating ? "Wird generiert..." : descriptionLong ? "Neu generieren" : "KI generieren"}
+            </button>
+          </div>
+          {generating && (
+            <div className="flex items-center gap-3 py-8 justify-center">
+              <div className="w-6 h-6 border-3 border-primary/30 border-t-primary rounded-full animate-spin" />
+              <p className="text-sm text-slate-500">KI erstellt Ihre Beschreibung...</p>
+            </div>
+          )}
           <textarea
             value={descriptionLong}
             onChange={(e) => setDescriptionLong(e.target.value)}
             rows={12}
-            placeholder="Klicken Sie oben auf 'Beschreibung generieren' für eine KI-erstellte Beschreibung."
+            placeholder="Beschreibung eingeben oder mit dem Button oben per KI generieren lassen."
             className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm text-blueprint placeholder:text-slate-400 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all resize-y leading-relaxed"
           />
           <p className="text-xs text-slate-400 mt-2 text-right">{descriptionLong.split(/\s+/).filter(Boolean).length} Wörter</p>
-        </div>
-
-        {/* Asking price */}
-        <div className="bg-white rounded-2xl border border-slate-200 p-7">
-          <label className="block text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 mb-2">Angebotspreis (€)</label>
-          <div className="relative">
-            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">€</span>
-            <input
-              type="number"
-              value={askingPrice}
-              onChange={(e) => setAskingPrice(e.target.value)}
-              placeholder="z.B. 450000"
-              className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 text-sm text-blueprint placeholder:text-slate-400 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
-            />
-          </div>
-          {rec && askingPrice && (
-            <p className="text-xs mt-2 text-slate-500">
-              {Number(askingPrice) < Number(rec.low)
-                ? "⚠️ Unter der empfohlenen Preisspanne"
-                : Number(askingPrice) > Number(rec.high)
-                  ? "⚠️ Über der empfohlenen Preisspanne"
-                  : "✓ Innerhalb der empfohlenen Preisspanne"}
-            </p>
-          )}
         </div>
 
         {/* Expose content */}

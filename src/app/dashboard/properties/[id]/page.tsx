@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Image from "next/image";
 import ExposeFields from "./expose-fields";
-import TextImport from "./text-import";
+
 
 interface MediaItem {
   id: string;
@@ -876,12 +876,40 @@ export default function PropertyDetailPage() {
             </div>
 
             {property.energyCert && !energyEditing ? (
-              <div className="grid sm:grid-cols-2 gap-y-5 gap-x-8">
-                <Detail label="Typ" value={property.energyCert.type === "VERBRAUCH" ? "Verbrauchsausweis" : "Bedarfsausweis"} />
-                <Detail label="Energieklasse" value={property.energyCert.energyClass} />
-                <Detail label="Energieverbrauch" value={`${property.energyCert.energyValue} kWh/m²·a`} />
-                <Detail label="Primärenergieträger" value={property.energyCert.primarySource} />
-                <Detail label="Gültig bis" value={new Date(property.energyCert.validUntil).toLocaleDateString("de-DE")} />
+              <div className="space-y-5">
+                <div className="grid sm:grid-cols-2 gap-y-5 gap-x-8">
+                  <Detail label="Typ" value={property.energyCert.type === "VERBRAUCH" ? "Verbrauchsausweis" : "Bedarfsausweis"} />
+                  <Detail label="Energieklasse" value={property.energyCert.energyClass} />
+                  <Detail label="Energieverbrauch" value={`${property.energyCert.energyValue} kWh/m²·a`} />
+                  <Detail label="Primärenergieträger" value={property.energyCert.primarySource} />
+                  <Detail label="Gültig bis" value={new Date(property.energyCert.validUntil).toLocaleDateString("de-DE")} />
+                </div>
+                {property.media.filter((m) => m.kind === "ENERGY_PDF").length > 0 && (
+                  <div className="pt-3 border-t border-slate-100">
+                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 mb-2">Dokument</p>
+                    <div className="flex flex-wrap gap-2">
+                      {property.media.filter((m) => m.kind === "ENERGY_PDF").map((pdf) => (
+                        <div key={pdf.id} className="group/pdf relative inline-flex items-center gap-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl px-4 py-2.5 transition-colors">
+                          <a
+                            href={pdf.storageKey}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-2 text-xs font-bold text-blueprint"
+                          >
+                            <span className="material-symbols-outlined text-base text-red-500">picture_as_pdf</span>
+                            {pdf.fileName || "Energieausweis.pdf"}
+                          </a>
+                          <button
+                            onClick={() => deleteMedia(pdf.id)}
+                            className="w-5 h-5 bg-red-500 hover:bg-red-600 text-white rounded-md flex items-center justify-center opacity-0 group-hover/pdf:opacity-100 transition-opacity"
+                          >
+                            <span className="material-symbols-outlined text-xs">close</span>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             ) : !energyEditing && !property.energyCert ? (
               <div className="text-center py-8">
@@ -1086,7 +1114,6 @@ export default function PropertyDetailPage() {
           </div>
 
           {/* Expose details */}
-          <TextImport propertyId={property.id} onImported={fetchProperty} />
           <ExposeFields
             propertyId={property.id}
             initialRooms={(property.roomProgram as { name: string; area: string }[] | null) || []}
