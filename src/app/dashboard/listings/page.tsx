@@ -37,6 +37,40 @@ export default function ListingsPage() {
   const [listings, setListings] = useState<ListingItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("ALL");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [deleting, setDeleting] = useState(false);
+
+  function toggleSelect(id: string, e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+
+  function toggleAll() {
+    const deletable = filtered.filter((l) => l.status !== "ACTIVE");
+    if (selected.size === deletable.length) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(deletable.map((l) => l.id)));
+    }
+  }
+
+  async function deleteSelected() {
+    if (!confirm(`${selected.size} Inserat(e) wirklich löschen?`)) return;
+    setDeleting(true);
+    for (const id of selected) {
+      await fetch(`/api/listings/${id}`, { method: "DELETE" });
+    }
+    setSelected(new Set());
+    const res = await fetch("/api/listings");
+    const data = await res.json();
+    setListings(Array.isArray(data) ? data : []);
+    setDeleting(false);
+  }
 
   useEffect(() => {
     fetch("/api/listings")
@@ -113,12 +147,43 @@ export default function ListingsPage() {
           </Link>
         </div>
       ) : (
+        <>
+        {selected.size > 0 && (
+          <div className="mb-4 flex items-center justify-between bg-red-50 border border-red-200 rounded-xl px-5 py-3">
+            <div className="flex items-center gap-3">
+              <button onClick={toggleAll} className="text-xs font-bold text-red-600 hover:text-red-800">
+                {selected.size === filtered.filter((l) => l.status !== "ACTIVE").length ? "Alle abwählen" : "Alle wählen"}
+              </button>
+              <span className="text-sm font-bold text-red-700">{selected.size} ausgewählt</span>
+            </div>
+            <button
+              onClick={deleteSelected}
+              disabled={deleting}
+              className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-xs font-black uppercase tracking-[0.15em] transition-colors disabled:opacity-60 flex items-center gap-1.5"
+            >
+              <span className="material-symbols-outlined text-sm">delete</span>
+              {deleting ? "Wird gelöscht..." : "Löschen"}
+            </button>
+          </div>
+        )}
+
         <div className="space-y-4">
           {filtered.map((l) => (
+            <div key={l.id} className="flex items-center gap-3">
+              {l.status !== "ACTIVE" && (
+                <button
+                  onClick={(e) => toggleSelect(l.id, e)}
+                  className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
+                    selected.has(l.id) ? "bg-red-500 border-red-500 text-white" : "border-slate-300 hover:border-red-400"
+                  }`}
+                >
+                  {selected.has(l.id) && <span className="material-symbols-outlined text-xs">check</span>}
+                </button>
+              )}
+              {l.status === "ACTIVE" && <div className="w-5" />}
             <Link
-              key={l.id}
               href={`/dashboard/listings/${l.id}`}
-              className="block bg-white rounded-2xl border border-slate-200 p-6 hover:border-primary/30 hover:shadow-lg hover:shadow-primary/5 transition-all"
+              className="flex-1 block bg-white rounded-2xl border border-slate-200 p-6 hover:border-primary/30 hover:shadow-lg hover:shadow-primary/5 transition-all"
             >
               <div className="flex items-center justify-between">
                 <div className="flex-1 min-w-0">
@@ -173,8 +238,10 @@ export default function ListingsPage() {
                 </div>
               </div>
             </Link>
+            </div>
           ))}
         </div>
+        </>
       )}
     </>
   );

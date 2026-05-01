@@ -86,6 +86,8 @@ export default function PropertyDetailPage() {
   const [unitCreating, setUnitCreating] = useState(false);
   const [sellingMode, setSellingMode] = useState<SellingMode>("INDIVIDUAL");
   const [savingMode, setSavingMode] = useState(false);
+  const [modeProgress, setModeProgress] = useState("");
+  const [pendingMode, setPendingMode] = useState<SellingMode | null>(null);
   const [unitListingCreating, setUnitListingCreating] = useState<string | null>(null);
   const [energyEditing, setEnergyEditing] = useState(false);
   const [energySaving, setEnergySaving] = useState(false);
@@ -150,7 +152,14 @@ export default function PropertyDetailPage() {
     fetchProperty();
   }
 
-  async function saveSellingMode(mode: SellingMode) {
+  function requestSellingMode(mode: SellingMode) {
+    setPendingMode(mode);
+  }
+
+  async function confirmSellingMode() {
+    const mode = pendingMode;
+    if (!mode) return;
+    setPendingMode(null);
     setSellingMode(mode);
     setSavingMode(true);
     const existing = (property?.buildingInfo as Record<string, string>) || {};
@@ -159,8 +168,48 @@ export default function PropertyDetailPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ buildingInfo: { ...existing, _sellingMode: mode } }),
     });
+
+    if (!property) { setSavingMode(false); return; }
+
+    const unitsToCreate = property.units.filter((u) => !u.listings.length);
+    const needsPackage = (mode === "BUNDLE" || mode === "BOTH") && !property.listings.some((l) => l.status !== "CLOSED");
+    const needsIndividual = (mode === "INDIVIDUAL" || mode === "BOTH") && unitsToCreate.length > 0;
+    const totalListings = (needsPackage ? 1 : 0) + (needsIndividual ? unitsToCreate.length : 0);
+
+    if (totalListings === 0) {
+      setSavingMode(false);
+      fetchProperty();
+      return;
+    }
+
+    let created = 0;
+
+    // Auto-create package listing if BUNDLE or BOTH
+    if (needsPackage) {
+      setModeProgress(`Paket-Inserat wird erstellt (${++created}/${totalListings})...`);
+      await fetch("/api/listings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ propertyId: id }),
+      });
+    }
+
+    // Auto-create individual listings if INDIVIDUAL or BOTH
+    if (needsIndividual) {
+      for (const unit of unitsToCreate) {
+        setModeProgress(`Inserat für ${unit.unitLabel || "Wohnung"} wird erstellt (${++created}/${totalListings})...`);
+        await fetch("/api/listings", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ propertyId: unit.id }),
+        });
+      }
+    }
+
+    setModeProgress(created > 0 ? `✓ ${created} Inserat(e) erfolgreich erstellt` : "");
     setSavingMode(false);
     fetchProperty();
+    if (created > 0) setTimeout(() => setModeProgress(""), 5000);
   }
 
   async function createUnitListing(unitId: string) {
@@ -751,7 +800,10 @@ export default function PropertyDetailPage() {
                   </p>
                 </div>
                 {savingMode && (
-                  <div className="w-5 h-5 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+                  <div className="flex items-center gap-2">
+                    <div className="w-5 h-5 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+                    {modeProgress && <span className="text-xs text-primary font-bold">{modeProgress}</span>}
+                  </div>
                 )}
               </div>
 
@@ -763,7 +815,7 @@ export default function PropertyDetailPage() {
                 ]).map((opt) => (
                   <button
                     key={opt.value}
-                    onClick={() => saveSellingMode(opt.value)}
+                    onClick={() => requestSellingMode(opt.value)}
                     disabled={savingMode}
                     className={`p-4 rounded-xl border-2 transition-all text-left ${
                       sellingMode === opt.value
@@ -1150,34 +1202,68 @@ export default function PropertyDetailPage() {
               </p>
               <div className="space-y-2">
                 {(sellingMode === "BUNDLE" || sellingMode === "BOTH") && (
-                  <div className="flex items-center justify-between py-2 border-b border-slate-100">
+                  <div className="group/listing flex items-center justify-between py-2 border-b border-slate-100">
                     <div className="flex items-center gap-2">
                       <span className="material-symbols-outlined text-sm text-primary">inventory_2</span>
                       <span className="text-xs font-bold text-blueprint">Paket</span>
                     </div>
-                    {hasListing ? (
-                      <span className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full ${
-                        property.listings[0].status === "ACTIVE" ? "bg-emerald-50 text-emerald-600"
-                        : property.listings[0].status === "DRAFT" ? "bg-amber-50 text-amber-600"
-                        : "bg-slate-100 text-slate-500"
-                      }`}>{property.listings[0].status}</span>
-                    ) : (
-                      <span className="text-[10px] text-slate-400">—</span>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {hasListing ? (
+                        <>
+                          <span className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full ${
+                            property.listings[0].status === "ACTIVE" ? "bg-emerald-50 text-emerald-600"
+                            : property.listings[0].status === "DRAFT" ? "bg-amber-50 text-amber-600"
+                            : "bg-slate-100 text-slate-500"
+                          }`}>{property.listings[0].status}</span>
+                          {property.listings[0].status !== "ACTIVE" && (
+                            <button
+                              onClick={async () => {
+                                if (!confirm("Paket-Inserat wirklich löschen?")) return;
+                                await fetch(`/api/listings/${property.listings[0].id}`, { method: "DELETE" });
+                                fetchProperty();
+                              }}
+                              className="opacity-0 group-hover/listing:opacity-100 transition-opacity text-red-400 hover:text-red-600"
+                              title="Inserat löschen"
+                            >
+                              <span className="material-symbols-outlined text-sm">delete</span>
+                            </button>
+                          )}
+                        </>
+                      ) : (
+                        <span className="text-[10px] text-slate-400">—</span>
+                      )}
+                    </div>
                   </div>
                 )}
                 {(sellingMode === "INDIVIDUAL" || sellingMode === "BOTH") && property.units.map((unit) => (
-                  <div key={unit.id} className="flex items-center justify-between py-2">
+                  <div key={unit.id} className="group/listing flex items-center justify-between py-2">
                     <span className="text-xs font-bold text-blueprint">{unit.unitLabel || "WE"}</span>
-                    {unit.listings[0] ? (
-                      <span className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full ${
-                        unit.listings[0].status === "ACTIVE" ? "bg-emerald-50 text-emerald-600"
-                        : unit.listings[0].status === "DRAFT" ? "bg-amber-50 text-amber-600"
-                        : "bg-slate-100 text-slate-500"
-                      }`}>{unit.listings[0].status}</span>
-                    ) : (
-                      <span className="text-[10px] text-slate-400">—</span>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {unit.listings[0] ? (
+                        <>
+                          <span className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full ${
+                            unit.listings[0].status === "ACTIVE" ? "bg-emerald-50 text-emerald-600"
+                            : unit.listings[0].status === "DRAFT" ? "bg-amber-50 text-amber-600"
+                            : "bg-slate-100 text-slate-500"
+                          }`}>{unit.listings[0].status}</span>
+                          {unit.listings[0].status !== "ACTIVE" && (
+                            <button
+                              onClick={async () => {
+                                if (!confirm(`Inserat für ${unit.unitLabel} wirklich löschen?`)) return;
+                                await fetch(`/api/listings/${unit.listings[0].id}`, { method: "DELETE" });
+                                fetchProperty();
+                              }}
+                              className="opacity-0 group-hover/listing:opacity-100 transition-opacity text-red-400 hover:text-red-600"
+                              title="Inserat löschen"
+                            >
+                              <span className="material-symbols-outlined text-sm">delete</span>
+                            </button>
+                          )}
+                        </>
+                      ) : (
+                        <span className="text-[10px] text-slate-400">—</span>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -1347,6 +1433,54 @@ export default function PropertyDetailPage() {
                   {unitCreating ? "Wird erstellt..." : "Wohnung anlegen"}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Sales mode confirmation dialog */}
+      {pendingMode && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setPendingMode(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 p-8" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-xl font-black text-blueprint mb-2">
+              {pendingMode === "INDIVIDUAL" ? "Einzelverkauf" : pendingMode === "BUNDLE" ? "Paketverkauf" : "Einzel- & Paketverkauf"}
+            </h3>
+            <div className="bg-slate-50 rounded-xl p-4 mb-5 space-y-2 text-sm text-slate-600">
+              {pendingMode === "INDIVIDUAL" && (
+                <>
+                  <p>Jede Wohnung wird <strong>einzeln vermarktet</strong> mit eigenem Inserat, eigener Beschreibung und eigenem Preis.</p>
+                  <p>Es werden <strong>{property?.units.filter((u) => !u.listings.length).length || 0} Inserate</strong> automatisch erstellt — jeweils mit KI-Beschreibung und Preisempfehlung.</p>
+                  <p className="text-xs text-slate-400">Ideal wenn Sie verschiedene Käufer für die einzelnen Wohnungen suchen.</p>
+                </>
+              )}
+              {pendingMode === "BUNDLE" && (
+                <>
+                  <p>Alle Wohnungen werden <strong>als ein Paket</strong> angeboten. Ein Inserat für das gesamte Gebäude.</p>
+                  <p>Es wird <strong>1 Paket-Inserat</strong> automatisch erstellt — mit KI-Beschreibung und Preisempfehlung.</p>
+                  <p className="text-xs text-slate-400">Ideal für Investoren die das gesamte Objekt kaufen möchten.</p>
+                </>
+              )}
+              {pendingMode === "BOTH" && (
+                <>
+                  <p>Das Gebäude wird <strong>gleichzeitig als Paket und einzeln</strong> angeboten — maximale Reichweite.</p>
+                  <p>Es werden <strong>{(property?.units.filter((u) => !u.listings.length).length || 0) + (property?.listings.some((l) => l.status !== "CLOSED") ? 0 : 1)} Inserate</strong> automatisch erstellt — jeweils mit KI-Beschreibung und Preisempfehlung.</p>
+                  <p className="text-xs text-slate-400">Wer zuerst kauft: Ein Investor nimmt das Paket, oder einzelne Käufer kaufen die Wohnungen.</p>
+                </>
+              )}
+            </div>
+            <div className="flex items-center justify-end gap-3">
+              <button
+                onClick={() => setPendingMode(null)}
+                className="px-5 py-2.5 rounded-xl text-sm font-bold text-slate-500 hover:text-blueprint transition-colors"
+              >
+                Abbrechen
+              </button>
+              <button
+                onClick={confirmSellingMode}
+                className="bg-primary hover:bg-primary-dark text-white px-6 py-2.5 rounded-xl text-sm font-black uppercase tracking-[0.15em] transition-all hover:scale-[1.02] shadow-lg shadow-primary/25 flex items-center gap-2"
+              >
+                <span className="material-symbols-outlined text-lg">check</span>
+                Bestätigen & Inserate erstellen
+              </button>
             </div>
           </div>
         </div>

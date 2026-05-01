@@ -98,3 +98,37 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     return NextResponse.json({ error: "Aktualisierung fehlgeschlagen" }, { status: 500 });
   }
 }
+
+export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const user = await getRequiredUser();
+    const { id } = await params;
+    void req;
+
+    const listing = await prisma.listing.findFirst({
+      where: { id, property: { userId: user.id } },
+    });
+
+    if (!listing) {
+      return NextResponse.json({ error: "Inserat nicht gefunden" }, { status: 404 });
+    }
+
+    if (listing.status === "ACTIVE") {
+      return NextResponse.json({ error: "Aktive Inserate können nicht gelöscht werden. Bitte zuerst deaktivieren." }, { status: 400 });
+    }
+
+    // Delete related records first
+    await prisma.listingEvent.deleteMany({ where: { listingId: id } });
+    await prisma.portalStat.deleteMany({ where: { syndicationTarget: { listingId: id } } });
+    await prisma.syndicationJob.deleteMany({ where: { syndicationTarget: { listingId: id } } });
+    await prisma.syndicationTarget.deleteMany({ where: { listingId: id } });
+    await prisma.comparable.deleteMany({ where: { priceRecommendation: { listingId: id } } });
+    await prisma.priceRecommendation.deleteMany({ where: { listingId: id } });
+    await prisma.listing.delete({ where: { id } });
+
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    console.error("Delete listing error:", err);
+    return NextResponse.json({ error: "Löschen fehlgeschlagen" }, { status: 500 });
+  }
+}

@@ -12,6 +12,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
     const parent = await prisma.property.findFirst({
       where: { id, userId: user.id },
+      include: { energyCert: true, media: { where: { kind: "PHOTO" }, orderBy: { ordering: "asc" } } },
     });
 
     if (!parent) {
@@ -65,6 +66,41 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         yearBuilt: parent.yearBuilt,
       },
     });
+
+    // Auto-copy energy cert from parent
+    if (parent.energyCert) {
+      await prisma.energyCertificate.create({
+        data: {
+          propertyId: unit.id,
+          type: parent.energyCert.type,
+          validUntil: parent.energyCert.validUntil,
+          energyClass: parent.energyCert.energyClass,
+          energyValue: parent.energyCert.energyValue,
+          primarySource: parent.energyCert.primarySource,
+          pdfAssetId: parent.energyCert.pdfAssetId,
+        },
+      });
+    }
+
+    // Auto-share building photos to unit
+    if (parent.media.length > 0) {
+      for (let i = 0; i < parent.media.length; i++) {
+        const m = parent.media[i];
+        await prisma.mediaAsset.create({
+          data: {
+            propertyId: unit.id,
+            kind: m.kind,
+            storageKey: m.storageKey,
+            fileName: m.fileName,
+            mimeType: m.mimeType,
+            sizeBytes: m.sizeBytes,
+            width: m.width,
+            height: m.height,
+            ordering: i,
+          },
+        });
+      }
+    }
 
     return NextResponse.json(unit, { status: 201 });
   } catch (err) {
