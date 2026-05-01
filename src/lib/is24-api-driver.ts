@@ -338,7 +338,7 @@ function buildPayload(input: PublishInput): { key: string; data: Record<string, 
       buildingEnergyRatingType: certType,
       thermalCharacteristic: input.energyValue,
     };
-    // IS24 only accepts energyEfficiencyClass for Bedarfsausweis
+    // IS24 rejects energyEfficiencyClass for Verbrauchsausweis
     if (input.energyClass && certType === "ENERGY_REQUIRED") {
       cert.energyEfficiencyClass = input.energyClass.replace("+", "_PLUS");
     }
@@ -403,15 +403,19 @@ export class IS24ApiDriver implements PortalDriver {
     const realEstateId = extractId(createRes, createBody);
     console.log("[IS24-API] Real estate created:", realEstateId);
 
-    // 2. Upload photos (best-effort)
-    console.log(`[IS24-API] Uploading ${Math.min(input.photos.length, 15)} photos...`);
-    for (let i = 0; i < Math.min(input.photos.length, 15); i++) {
+    // 2. Upload photos + floor plans (best-effort)
+    const totalMedia = Math.min(input.photos.length, 20);
+    console.log(`[IS24-API] Uploading ${totalMedia} media files...`);
+    for (let i = 0; i < totalMedia; i++) {
       try {
-        console.log(`[IS24-API] Photo ${i + 1}/${input.photos.length}: uploading...`);
-        await this.uploadPhoto(realEstateId, input.photos[i], i === 0);
-        console.log(`[IS24-API] Photo ${i + 1}: done`);
+        let ref = input.photos[i];
+        const isFloorPlan = ref.startsWith("floorplan:");
+        if (isFloorPlan) ref = ref.slice("floorplan:".length);
+        console.log(`[IS24-API] ${isFloorPlan ? "Floorplan" : "Photo"} ${i + 1}/${totalMedia}: uploading...`);
+        await this.uploadPhoto(realEstateId, ref, i === 0 && !isFloorPlan, isFloorPlan);
+        console.log(`[IS24-API] ${i + 1}: done`);
       } catch (e) {
-        console.warn(`[IS24-API] Photo ${i + 1} skipped:`, e instanceof Error ? e.message : e);
+        console.warn(`[IS24-API] ${i + 1} skipped:`, e instanceof Error ? e.message : e);
       }
     }
 
@@ -422,9 +426,8 @@ export class IS24ApiDriver implements PortalDriver {
         publishChannel: { "@id": "10000" },
       },
     });
-    if (!pubRes.ok) {
-      console.warn("[IS24-API] Publish-to-channel returned", pubRes.status, "— listing exists but may not be searchable");
-    }
+    const pubBody = await pubRes.text();
+    console.log("[IS24-API] Publish-to-channel:", pubRes.status, pubBody.slice(0, 200));
 
     const domain = isSandbox()
       ? "www.sandbox-immobilienscout24.de"
@@ -442,7 +445,8 @@ export class IS24ApiDriver implements PortalDriver {
   private async uploadPhoto(
     realEstateId: string,
     photoRef: string,
-    titlePicture: boolean
+    titlePicture: boolean,
+    isFloorPlan = false
   ): Promise<void> {
     const { token, secret } = await obtainToken();
     const url = `${baseUrl()}/api/offer/v1.0/user/me/realestate/${realEstateId}/attachment`;
@@ -484,12 +488,17 @@ export class IS24ApiDriver implements PortalDriver {
     }
 
     const boundary = `----IS24${randomBytes(8).toString("hex")}`;
+    const isPdf = mime === "application/pdf";
     const meta = JSON.stringify({
-      "common.attachment": {
+      "common.attachment": isPdf ? {
+        "@xsi.type": "common:PDFDocument",
+        title: isFloorPlan ? "Grundriss" : "Dokument",
+        floorplan: isFloorPlan,
+      } : {
         "@xsi.type": "common:Picture",
-        title: titlePicture ? "Titelbild" : "Foto",
-        floorplan: false,
-        titlePicture,
+        title: isFloorPlan ? "Grundriss" : titlePicture ? "Titelbild" : "Foto",
+        floorplan: isFloorPlan,
+        titlePicture: titlePicture && !isFloorPlan,
       },
     });
 

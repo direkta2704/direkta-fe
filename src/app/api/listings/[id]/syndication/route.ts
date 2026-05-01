@@ -52,7 +52,7 @@ export async function POST(
         property: {
           include: {
             energyCert: true,
-            media: { where: { kind: "PHOTO" }, orderBy: { ordering: "asc" } },
+            media: { where: { kind: { in: ["PHOTO", "FLOORPLAN"] } }, orderBy: { ordering: "asc" } },
             user: { select: { name: true, email: true, phone: true } },
           },
         },
@@ -112,8 +112,10 @@ export async function POST(
         data: { status: "RUNNING", startedAt: new Date() },
       });
 
-      // Pass raw S3 keys — the driver downloads from S3 directly
-      const photoKeys = p.media.map((m) => m.storageKey);
+      // Pass raw S3 keys — tag floor plans so driver can distinguish
+      const photoKeys = p.media.map((m) =>
+        m.kind === "FLOORPLAN" ? `floorplan:${m.storageKey}` : m.storageKey
+      );
 
       // Split seller name into first/last
       const nameParts = (p.user?.name || "").split(" ");
