@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Image from "next/image";
-import ExposeFields from "./expose-fields";
+
 
 
 interface MediaItem {
@@ -90,6 +90,12 @@ export default function PropertyDetailPage() {
   const [pendingMode, setPendingMode] = useState<SellingMode | null>(null);
   const [unitListingCreating, setUnitListingCreating] = useState<string | null>(null);
   const [energyEditing, setEnergyEditing] = useState(false);
+  const [detailsEditing, setDetailsEditing] = useState(false);
+  const [editLivingArea, setEditLivingArea] = useState("");
+  const [editPlotArea, setEditPlotArea] = useState("");
+  const [editRooms, setEditRooms] = useState("");
+  const [editBathrooms, setEditBathrooms] = useState("");
+  const [editYearBuilt, setEditYearBuilt] = useState("");
   const [energySaving, setEnergySaving] = useState(false);
   const [energyPdfUploading, setEnergyPdfUploading] = useState(false);
   const [energyPdfName, setEnergyPdfName] = useState<string | null>(null);
@@ -121,6 +127,13 @@ export default function PropertyDetailPage() {
   }, [property?.buildingInfo]);
 
   useEffect(() => {
+    if (property) {
+      setEditLivingArea(String(property.livingArea));
+      setEditPlotArea(property.plotArea ? String(property.plotArea) : "");
+      setEditRooms(property.rooms ? String(property.rooms) : "");
+      setEditBathrooms(property.bathrooms ? String(property.bathrooms) : "");
+      setEditYearBuilt(property.yearBuilt ? String(property.yearBuilt) : "");
+    }
     if (property?.energyCert) {
       setEnergyForm({
         type: property.energyCert.type,
@@ -380,8 +393,8 @@ export default function PropertyDetailPage() {
                     onClick={() => router.push(`/dashboard/listings/${property.listings[0].id}`)}
                     className="bg-blueprint hover:bg-primary text-white px-5 py-3 rounded-xl text-sm font-black uppercase tracking-[0.18em] transition-colors flex items-center gap-2"
                   >
-                    <span className="material-symbols-outlined text-lg">edit</span>
-                    Bearbeiten
+                    <span className="material-symbols-outlined text-lg">description</span>
+                    Inserat bearbeiten
                   </button>
                 </>
               )}
@@ -889,26 +902,88 @@ export default function PropertyDetailPage() {
 
           {/* Property details */}
           <div className="bg-white rounded-2xl border border-slate-200 p-7">
-            <h2 className="text-lg font-black text-blueprint mb-5">Immobiliendetails</h2>
-            <div className="grid sm:grid-cols-2 gap-y-5 gap-x-8">
-              <Detail label="Immobilientyp" value={property.type} />
-              <Detail label="Wohnfläche" value={`${property.livingArea} m²`} />
-              {property.plotArea && <Detail label="Grundstück" value={`${property.plotArea} m²`} />}
-              {property.rooms && <Detail label="Zimmer" value={String(property.rooms)} />}
-              {property.bathrooms && <Detail label="Badezimmer" value={String(property.bathrooms)} />}
-              {property.yearBuilt && <Detail label="Baujahr" value={String(property.yearBuilt)} />}
-              {property.floor != null && <Detail label="Etage" value={String(property.floor)} />}
-              <Detail label="Zustand" value={CONDITION_DE[property.condition] || property.condition} />
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-lg font-black text-blueprint">Immobiliendetails</h2>
+              {!detailsEditing ? (
+                <button
+                  onClick={() => setDetailsEditing(true)}
+                  className="text-xs font-bold text-primary hover:text-primary-dark transition-colors flex items-center gap-1"
+                >
+                  <span className="material-symbols-outlined text-sm">edit</span>
+                  Bearbeiten
+                </button>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <button onClick={() => setDetailsEditing(false)} className="text-xs font-bold text-slate-400 hover:text-slate-600">Abbrechen</button>
+                  <button
+                    onClick={async () => {
+                      await fetch(`/api/properties/${id}`, {
+                        method: "PATCH",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          livingArea: parseFloat(editLivingArea) || property.livingArea,
+                          plotArea: editPlotArea ? parseFloat(editPlotArea) : property.plotArea,
+                          rooms: editRooms ? parseFloat(editRooms) : property.rooms,
+                          bathrooms: editBathrooms ? parseInt(editBathrooms) : property.bathrooms,
+                          yearBuilt: editYearBuilt ? parseInt(editYearBuilt) : property.yearBuilt,
+                        }),
+                      });
+                      setDetailsEditing(false);
+                      fetchProperty();
+                    }}
+                    className="bg-primary hover:bg-primary-dark text-white px-4 py-1.5 rounded-lg text-xs font-black uppercase tracking-[0.15em]"
+                  >
+                    Speichern
+                  </button>
+                </div>
+              )}
             </div>
-            {property.attributes && (property.attributes as string[]).length > 0 && (
-              <div className="mt-5 pt-5 border-t border-slate-100">
-                <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-3">Ausstattung</div>
-                <div className="flex flex-wrap gap-2">
-                  {(property.attributes as string[]).map((attr) => (
-                    <span key={attr} className="px-3 py-1 rounded-lg text-xs font-bold border border-primary/20 bg-primary/5 text-primary">{attr}</span>
-                  ))}
+            {detailsEditing ? (
+              <div className="grid sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 mb-1">Wohnfläche (m²)</label>
+                  <input type="number" value={editLivingArea} onChange={(e) => setEditLivingArea(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm text-blueprint outline-none focus:border-primary" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 mb-1">Grundstück (m²)</label>
+                  <input type="number" value={editPlotArea} onChange={(e) => setEditPlotArea(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm text-blueprint outline-none focus:border-primary" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 mb-1">Zimmer</label>
+                  <input type="number" value={editRooms} onChange={(e) => setEditRooms(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm text-blueprint outline-none focus:border-primary" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 mb-1">Badezimmer</label>
+                  <input type="number" value={editBathrooms} onChange={(e) => setEditBathrooms(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm text-blueprint outline-none focus:border-primary" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 mb-1">Baujahr</label>
+                  <input type="number" value={editYearBuilt} onChange={(e) => setEditYearBuilt(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm text-blueprint outline-none focus:border-primary" />
                 </div>
               </div>
+            ) : (
+              <>
+                <div className="grid sm:grid-cols-2 gap-y-5 gap-x-8">
+                  <Detail label="Immobilientyp" value={property.type} />
+                  <Detail label="Wohnfläche" value={`${property.livingArea} m²`} />
+                  {property.plotArea && <Detail label="Grundstück" value={`${property.plotArea} m²`} />}
+                  {property.rooms && <Detail label="Zimmer" value={String(property.rooms)} />}
+                  {property.bathrooms && <Detail label="Badezimmer" value={String(property.bathrooms)} />}
+                  {property.yearBuilt && <Detail label="Baujahr" value={String(property.yearBuilt)} />}
+                  {property.floor != null && <Detail label="Etage" value={String(property.floor)} />}
+                  <Detail label="Zustand" value={CONDITION_DE[property.condition] || property.condition} />
+                </div>
+                {property.attributes && (property.attributes as string[]).length > 0 && (
+                  <div className="mt-5 pt-5 border-t border-slate-100">
+                    <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-3">Ausstattung</div>
+                    <div className="flex flex-wrap gap-2">
+                      {(property.attributes as string[]).map((attr) => (
+                        <span key={attr} className="px-3 py-1 rounded-lg text-xs font-bold border border-primary/20 bg-primary/5 text-primary">{attr}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </div>
 
@@ -1165,13 +1240,6 @@ export default function PropertyDetailPage() {
             )}
           </div>
 
-          {/* Expose details */}
-          <ExposeFields
-            propertyId={property.id}
-            initialRooms={(property.roomProgram as { name: string; area: string }[] | null) || []}
-            initialSpecs={(property.specifications as Record<string, Record<string, string>> | null) || {}}
-            initialBuilding={(property.buildingInfo as Record<string, string> | null) || {}}
-          />
         </div>
 
         {/* Right column — sticky sidebar */}
