@@ -24,8 +24,11 @@ function layout(content: string) {
   <div style="background:white;border-radius:12px;padding:32px;border:1px solid #e7dfcd;">
     ${content}
   </div>
-  <div style="text-align:center;margin-top:20px;font-size:11px;color:#8A92A0;">
-    Direkta GmbH · www.direkta.de · Immobilie verkaufen. Direkt.
+  <div style="text-align:center;margin-top:20px;font-size:11px;color:#8A92A0;line-height:1.8;">
+    Direkta GmbH · www.direkta.de · Immobilie verkaufen. Direkt.<br>
+    <a href="${APP_URL}/datenschutz" style="color:#8A92A0;">Datenschutz</a> ·
+    <a href="${APP_URL}/impressum" style="color:#8A92A0;">Impressum</a> ·
+    <a href="${APP_URL}/api/account/unsubscribe" style="color:#8A92A0;">Abmelden</a>
   </div>
 </div>
 </body></html>`;
