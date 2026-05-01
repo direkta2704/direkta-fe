@@ -17,6 +17,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
         leads: { orderBy: { qualityScore: "desc" } },
         offers: { orderBy: { scoreComposite: "desc" } },
         events: { orderBy: { createdAt: "desc" }, take: 20 },
+        syndicationTargets: { select: { portal: true, status: true, externalUrl: true }, take: 1 },
+        _count: { select: { leads: true, offers: true } },
       },
     });
 

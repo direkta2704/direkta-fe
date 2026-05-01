@@ -36,6 +36,7 @@ interface Listing {
   descriptionLong: string | null;
   askingPrice: string | null;
   createdAt: string;
+  publishedAt: string | null;
   exposeHeadline: string | null;
   locationDescription: string | null;
   buildingDescription: string | null;
@@ -205,72 +206,110 @@ export default function ListingDetailPage() {
   const hasPrice = !!askingPrice && parseFloat(askingPrice) > 0;
   const canPublish = hasEnergy && hasMinPhotos && hasDescription && hasPrice;
   const rec = listing.priceRecommendation;
+  const is24 = (listing as unknown as { syndicationTargets?: { portal: string; status: string; externalUrl: string | null }[] }).syndicationTargets?.[0];
+  const counts = (listing as unknown as { _count?: { leads: number; offers: number } })._count;
+  const thumb = photos[0]?.storageKey;
+  const daysOnline = listing.publishedAt ? Math.floor((Date.now() - new Date(listing.publishedAt).getTime()) / 86400000) : 0;
+  const commission = listing.askingPrice ? Math.round(Number(listing.askingPrice) * 0.0357) : 0;
 
   return (
     <div className="max-w-4xl mx-auto">
-      <button
-        onClick={() => router.push("/dashboard/listings")}
-        className="flex items-center gap-1 text-slate-400 hover:text-blueprint text-sm font-bold mb-4 transition-colors"
-      >
-        <span className="material-symbols-outlined text-lg">arrow_back</span>
-        Zurück zu Inserate
-      </button>
-
-      <div className="flex items-start justify-between mb-8">
-        <div>
-          <div className="flex items-center gap-3 mb-2">
-            <h1 className="text-3xl font-black text-blueprint tracking-tight">Inserat bearbeiten</h1>
-            <span className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full ${
-              listing.status === "ACTIVE" ? "bg-emerald-50 text-emerald-600"
-              : listing.status === "DRAFT" ? "bg-amber-50 text-amber-600"
-              : "bg-slate-100 text-slate-500"
-            }`}>{listing.status}</span>
-          </div>
-          <p className="text-slate-500">
-            {listing.property.street} {listing.property.houseNumber}, {listing.property.postcode} {listing.property.city}
-          </p>
-        </div>
-        <a
-          href={`/expose/${id}`}
-          target="_blank"
-          className="bg-white border border-slate-200 hover:border-primary text-blueprint px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-[0.15em] transition-colors flex items-center gap-2 flex-shrink-0"
+      <div className="flex items-center justify-between mb-4">
+        <button
+          onClick={() => router.push("/dashboard/listings")}
+          className="flex items-center gap-1 text-slate-400 hover:text-blueprint text-sm font-bold transition-colors"
         >
-          <span className="material-symbols-outlined text-base text-primary">picture_as_pdf</span>
-          Expose Vorschau
-        </a>
+          <span className="material-symbols-outlined text-lg">arrow_back</span>
+          Zurück zu Inserate
+        </button>
+        <button
+          onClick={() => router.push(`/dashboard/properties/${listing.property.id}`)}
+          className="flex items-center gap-1 text-slate-400 hover:text-blueprint text-sm font-bold transition-colors"
+        >
+          <span className="material-symbols-outlined text-lg">home</span>
+          Zur Immobilie
+        </button>
       </div>
 
-      {listing.status === "ACTIVE" && (
-        <div className="mb-6 bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <span className="material-symbols-outlined text-emerald-600">public</span>
-            <div>
-              <p className="text-sm font-bold text-emerald-800">Inserat ist live</p>
-              <p className="text-xs text-emerald-600 truncate max-w-md">{typeof window !== "undefined" ? window.location.origin : ""}/immobilien/{listing.slug}</p>
+      {/* Header with photo + info + actions */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-6 mb-6">
+        <div className="flex gap-5">
+          {thumb ? (
+            <img src={thumb} alt="" className="w-28 h-20 rounded-xl object-cover flex-shrink-0" />
+          ) : (
+            <div className="w-28 h-20 rounded-xl bg-slate-100 flex items-center justify-center flex-shrink-0">
+              <span className="material-symbols-outlined text-3xl text-slate-300">home</span>
             </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <a
-              href={`/immobilien/${listing.slug}`}
-              target="_blank"
-              className="bg-white border border-emerald-200 text-emerald-700 px-3 py-2 rounded-lg text-xs font-black uppercase tracking-[0.15em] hover:bg-emerald-100 transition-colors flex items-center gap-1.5"
-            >
-              <span className="material-symbols-outlined text-sm">open_in_new</span>
-              Ansehen
-            </a>
-            <button
-              onClick={() => {
-                navigator.clipboard.writeText(`${window.location.origin}/immobilien/${listing.slug}`);
-                alert("Link kopiert!");
-              }}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-lg text-xs font-black uppercase tracking-[0.15em] transition-colors flex items-center gap-1.5"
-            >
-              <span className="material-symbols-outlined text-sm">link</span>
-              Link kopieren
-            </button>
+          )}
+          <div className="flex-1">
+            <div className="flex items-center gap-2 mb-1">
+              <span className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full ${
+                listing.status === "ACTIVE" ? "bg-emerald-50 text-emerald-600"
+                : listing.status === "DRAFT" ? "bg-amber-50 text-amber-600"
+                : listing.status === "RESERVED" ? "bg-violet-50 text-violet-600"
+                : "bg-slate-100 text-slate-500"
+              }`}>{listing.status}</span>
+              {is24?.status === "LIVE" && (
+                <span className="text-[10px] font-bold text-[#ff7500] bg-[#ff7500]/10 px-2 py-0.5 rounded">IS24 Live</span>
+              )}
+              {listing.publishedAt && (
+                <span className="text-[10px] text-slate-400">{daysOnline} Tage online</span>
+              )}
+            </div>
+            <h1 className="text-xl font-black text-blueprint">{listing.titleShort || `${listing.property.street} ${listing.property.houseNumber}`}</h1>
+            <p className="text-sm text-slate-500">{listing.property.street} {listing.property.houseNumber}, {listing.property.postcode} {listing.property.city}</p>
           </div>
         </div>
-      )}
+
+        {/* Stats + actions bar */}
+        <div className="flex items-center justify-between mt-5 pt-5 border-t border-slate-100">
+          <div className="flex items-center gap-6">
+            <div className="text-center">
+              <div className="text-lg font-black text-blueprint">{counts?.leads ?? 0}</div>
+              <div className="text-[9px] font-black uppercase tracking-widest text-slate-400">Anfragen</div>
+            </div>
+            <div className="text-center">
+              <div className="text-lg font-black text-blueprint">{counts?.offers ?? 0}</div>
+              <div className="text-[9px] font-black uppercase tracking-widest text-slate-400">Angebote</div>
+            </div>
+            {commission > 0 && (
+              <div className="text-center">
+                <div className="text-lg font-black text-emerald-600">€{commission.toLocaleString("de-DE")}</div>
+                <div className="text-[9px] font-black uppercase tracking-widest text-slate-400">gespart vs. Makler</div>
+              </div>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <a href={`/expose/${id}`} target="_blank" className="w-9 h-9 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 hover:text-blueprint transition-colors" title="Exposé Vorschau">
+              <span className="material-symbols-outlined text-lg">visibility</span>
+            </a>
+            <button onClick={() => window.open(`/api/listings/${id}/pdf`, "_blank")} className="w-9 h-9 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 hover:text-blueprint transition-colors" title="PDF herunterladen">
+              <span className="material-symbols-outlined text-lg">picture_as_pdf</span>
+            </button>
+            {listing.status === "ACTIVE" && (
+              <button onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/immobilien/${listing.slug}`); alert("Link kopiert!"); }} className="w-9 h-9 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 hover:text-blueprint transition-colors" title="Link kopieren">
+                <span className="material-symbols-outlined text-lg">share</span>
+              </button>
+            )}
+            {(listing.status === "WITHDRAWN" || listing.status === "PAUSED") && (
+              <button
+                onClick={async () => {
+                  const res = await fetch(`/api/listings/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "ACTIVE" }) });
+                  if (res.ok) { const d = await res.json(); setListing((p) => p ? { ...p, ...d } : p); }
+                }}
+                className="px-3 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-black uppercase tracking-[0.15em] flex items-center gap-1"
+              >
+                <span className="material-symbols-outlined text-sm">play_circle</span>
+                Reaktivieren
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Created date */}
+      <p className="text-[10px] text-slate-400 mb-6 text-right">Erstellt am {new Date(listing.createdAt).toLocaleDateString("de-DE")}</p>
+
 
       {listing.status === "RESERVED" && (
         <div className="mb-6 bg-amber-50 border border-amber-200 rounded-xl p-5">
