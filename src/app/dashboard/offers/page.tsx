@@ -81,6 +81,21 @@ export default function OffersPage() {
     setOffers((prev) => prev.map((o) => (o.id === id ? { ...o, status: "REJECTED" } : o)));
   }
 
+  const [counterOfferId, setCounterOfferId] = useState<string | null>(null);
+  const [counterAmount, setCounterAmount] = useState("");
+
+  async function handleCounter(id: string) {
+    if (!counterAmount) return;
+    await fetch(`/api/offers/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "COUNTERED", counterAmount: parseFloat(counterAmount) }),
+    });
+    setOffers((prev) => prev.map((o) => (o.id === id ? { ...o, status: "COUNTERED" } : o)));
+    setCounterOfferId(null);
+    setCounterAmount("");
+  }
+
   const activeOffers = offers.filter((o) => o.status === "SUBMITTED" || o.status === "UNDER_REVIEW");
   const compareOffers = offers.filter((o) => comparing.includes(o.id));
 
@@ -153,10 +168,32 @@ export default function OffersPage() {
                         </span>
                       </div>
                       <div className="text-2xl font-black text-blueprint">€{amt.toLocaleString("de-DE")}</div>
-                      <p className="text-xs text-slate-500 mt-1">
-                        von {offer.buyer.name} · {offer.buyer.email}
-                        {offer.desiredClosingAt && ` · Abschluss bis ${new Date(offer.desiredClosingAt).toLocaleDateString("de-DE")}`}
-                      </p>
+                      <div className="flex items-center gap-3 mt-2">
+                        <span className="text-xs text-slate-500">von <strong>{offer.buyer.name}</strong></span>
+                        {/* Contact buttons */}
+                        {offer.buyer.phone && (
+                          <a href={`tel:${offer.buyer.phone}`} className="w-6 h-6 rounded bg-emerald-50 text-emerald-600 flex items-center justify-center hover:bg-emerald-100" title="Anrufen">
+                            <span className="material-symbols-outlined text-xs">call</span>
+                          </a>
+                        )}
+                        <a href={`mailto:${offer.buyer.email}`} className="w-6 h-6 rounded bg-blue-50 text-blue-600 flex items-center justify-center hover:bg-blue-100" title="E-Mail">
+                          <span className="material-symbols-outlined text-xs">mail</span>
+                        </a>
+                        {offer.buyer.phone && (
+                          <a href={`https://wa.me/${offer.buyer.phone.replace(/[^0-9+]/g, "")}`} target="_blank" className="w-6 h-6 rounded bg-green-50 text-green-600 flex items-center justify-center hover:bg-green-100" title="WhatsApp">
+                            <span className="material-symbols-outlined text-xs">chat</span>
+                          </a>
+                        )}
+                        {/* Verification badges */}
+                        <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${offer.buyer.idVerifiedAt ? "bg-emerald-50 text-emerald-600" : "bg-red-50 text-red-500"}`}>
+                          {offer.buyer.idVerifiedAt ? "✓ ID verifiziert" : "✗ ID nicht verifiziert"}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-3 mt-1 text-[10px] text-slate-400">
+                        <span>Eingereicht {new Date(offer.createdAt).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
+                        {offer.desiredClosingAt && <span>· Abschluss bis {new Date(offer.desiredClosingAt).toLocaleDateString("de-DE")}</span>}
+                        <span>· {offer.listing.property.street} {offer.listing.property.houseNumber}, {offer.listing.property.city}</span>
+                      </div>
                     </div>
                     <div className="text-right">
                       <div className="text-4xl font-black text-primary">{offer.scoreComposite ?? "–"}</div>
@@ -191,6 +228,13 @@ export default function OffersPage() {
                           {accepting === offer.id ? "Wird angenommen..." : "Annehmen"}
                         </button>
                         <button
+                          onClick={() => setCounterOfferId(counterOfferId === offer.id ? null : offer.id)}
+                          className="bg-white border border-violet-200 hover:bg-violet-50 text-violet-600 px-4 py-2 rounded-lg text-xs font-black uppercase tracking-[0.15em] transition-colors flex items-center gap-1.5"
+                        >
+                          <span className="material-symbols-outlined text-sm">swap_horiz</span>
+                          Gegenangebot
+                        </button>
+                        <button
                           onClick={() => handleReject(offer.id)}
                           className="bg-white border border-red-200 hover:bg-red-50 text-red-600 px-4 py-2 rounded-lg text-xs font-black uppercase tracking-[0.15em] transition-colors flex items-center gap-1.5"
                         >
@@ -198,6 +242,27 @@ export default function OffersPage() {
                           Ablehnen
                         </button>
                       </>
+                    )}
+                    {/* Counter-offer input */}
+                    {counterOfferId === offer.id && (
+                      <div className="flex items-center gap-2 ml-2 pl-2 border-l border-slate-200">
+                        <span className="text-xs text-slate-400">€</span>
+                        <input
+                          type="number"
+                          value={counterAmount}
+                          onChange={(e) => setCounterAmount(e.target.value)}
+                          placeholder="Ihr Preis"
+                          className="w-32 px-3 py-2 rounded-lg border border-slate-200 text-sm text-blueprint outline-none focus:border-violet-400"
+                          autoFocus
+                        />
+                        <button
+                          onClick={() => handleCounter(offer.id)}
+                          disabled={!counterAmount}
+                          className="bg-violet-500 hover:bg-violet-600 text-white px-3 py-2 rounded-lg text-xs font-bold disabled:opacity-40"
+                        >
+                          Senden
+                        </button>
+                      </div>
                     )}
                     <button
                       onClick={() => toggleCompare(offer.id)}
@@ -279,6 +344,31 @@ export default function OffersPage() {
                   </a>
                 </div>
               )}
+
+              {/* Commission savings */}
+              {(() => {
+                const accepted = offers.find((o) => o.status === "ACCEPTED");
+                if (!accepted) return null;
+                const price = Number(accepted.amount);
+                const saved = Math.round(price * 0.0357);
+                return (
+                  <div className="bg-white rounded-xl p-5 mb-6 flex items-center justify-between">
+                    <div>
+                      <h3 className="font-black text-emerald-800 flex items-center gap-2">
+                        <span className="material-symbols-outlined">savings</span>
+                        Maklerkosten gespart
+                      </h3>
+                      <p className="text-xs text-emerald-700 mt-1">
+                        Bei einem traditionellen Makler (3,57%) hätten Sie Provision gezahlt.
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-2xl font-black text-emerald-600">€{saved.toLocaleString("de-DE")}</div>
+                      <div className="text-[10px] font-black uppercase tracking-widest text-emerald-500">gespart</div>
+                    </div>
+                  </div>
+                );
+              })()}
 
               <h2 className="text-lg font-black text-emerald-800 mb-2 flex items-center gap-2">
                 <span className="material-symbols-outlined">gavel</span>

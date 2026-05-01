@@ -106,6 +106,59 @@ export default async function DashboardPage() {
         </p>
       </div>
 
+      {/* Next action hint */}
+      {(() => {
+        if (openOffers > 0) return (
+          <Link href="/dashboard/offers" className="mb-6 block bg-emerald-50 border border-emerald-200 rounded-xl px-5 py-4 hover:bg-emerald-100 transition-colors">
+            <div className="flex items-center gap-3">
+              <span className="material-symbols-outlined text-emerald-600 text-xl">priority_high</span>
+              <div>
+                <p className="text-sm font-bold text-emerald-800">{openOffers} offene{openOffers > 1 ? "s" : ""} Angebot{openOffers > 1 ? "e" : ""} warten auf Ihre Antwort</p>
+                <p className="text-xs text-emerald-600">Klicken Sie hier um Angebote zu prüfen und zu entscheiden.</p>
+              </div>
+              <span className="material-symbols-outlined text-emerald-400 ml-auto">arrow_forward</span>
+            </div>
+          </Link>
+        );
+        if (leadsThisWeek > 0) return (
+          <Link href="/dashboard/leads" className="mb-6 block bg-blue-50 border border-blue-200 rounded-xl px-5 py-4 hover:bg-blue-100 transition-colors">
+            <div className="flex items-center gap-3">
+              <span className="material-symbols-outlined text-blue-600 text-xl">person_add</span>
+              <div>
+                <p className="text-sm font-bold text-blue-800">{leadsThisWeek} neue Interessent{leadsThisWeek > 1 ? "en" : ""} diese Woche</p>
+                <p className="text-xs text-blue-600">Kontaktieren Sie Ihre Interessenten und vereinbaren Sie Besichtigungen.</p>
+              </div>
+              <span className="material-symbols-outlined text-blue-400 ml-auto">arrow_forward</span>
+            </div>
+          </Link>
+        );
+        if (upcomingViewings > 0) return (
+          <Link href="/dashboard/viewings" className="mb-6 block bg-violet-50 border border-violet-200 rounded-xl px-5 py-4 hover:bg-violet-100 transition-colors">
+            <div className="flex items-center gap-3">
+              <span className="material-symbols-outlined text-violet-600 text-xl">calendar_today</span>
+              <div>
+                <p className="text-sm font-bold text-violet-800">{upcomingViewings} Besichtigung{upcomingViewings > 1 ? "en" : ""} stehen an</p>
+                <p className="text-xs text-violet-600">Bereiten Sie sich auf Ihre anstehenden Termine vor.</p>
+              </div>
+              <span className="material-symbols-outlined text-violet-400 ml-auto">arrow_forward</span>
+            </div>
+          </Link>
+        );
+        if (totalProperties === 0) return (
+          <Link href="/dashboard/expose-agent" className="mb-6 block bg-primary/5 border border-primary/20 rounded-xl px-5 py-4 hover:bg-primary/10 transition-colors">
+            <div className="flex items-center gap-3">
+              <span className="material-symbols-outlined text-primary text-xl">smart_toy</span>
+              <div>
+                <p className="text-sm font-bold text-blueprint">Starten Sie jetzt mit dem Exposé-Assistenten</p>
+                <p className="text-xs text-slate-500">Erstellen Sie Ihr erstes Inserat in wenigen Minuten — KI-gestützt.</p>
+              </div>
+              <span className="material-symbols-outlined text-primary/40 ml-auto">arrow_forward</span>
+            </div>
+          </Link>
+        );
+        return null;
+      })()}
+
       {/* Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-10">
         <StatCard icon="description" label="Aktive Inserate" value={String(activeListings)} color="primary" href="/dashboard/listings" />
@@ -120,10 +173,10 @@ export default async function DashboardPage() {
           <div className="bg-white rounded-2xl border border-slate-200 p-7">
             <h2 className="text-lg font-black text-blueprint mb-5">Schnellaktionen</h2>
             <div className="grid sm:grid-cols-2 gap-4">
-              <QuickAction icon="add_home" title="Immobilie hinzufügen" description="Starten Sie mit der Eingabe Ihrer Immobiliendaten" href="/dashboard/properties/new" />
+              <QuickAction icon="smart_toy" title="Exposé-Assistent" description="KI erstellt Ihr Inserat im Gespräch — schnell und einfach" href="/dashboard/expose-agent" highlight />
+              <QuickAction icon="add_home" title="Immobilie hinzufügen" description="Manuell alle Daten Schritt für Schritt eingeben" href="/dashboard/properties/new" />
+              <QuickAction icon="sync_alt" title="IS24 veröffentlichen" description="Inserate auf ImmobilienScout24 publizieren" href="/dashboard/syndication" />
               <QuickAction icon="description" title="Inserate verwalten" description={`${allListings} Inserat${allListings !== 1 ? "e" : ""} · ${activeListings} aktiv`} href="/dashboard/listings" />
-              <QuickAction icon="sync_alt" title="IS24 verbinden" description="Veröffentlichen Sie automatisch auf ImmobilienScout24" href="/dashboard/syndication" />
-              <QuickAction icon="finance" title="Preisschätzung" description="Erhalten Sie eine Bewertung Ihrer Immobilie" href="/dashboard/properties" />
             </div>
           </div>
 
@@ -294,10 +347,14 @@ function StatCard({ icon, label, value, color, href }: { icon: string; label: st
   );
 }
 
-function QuickAction({ icon, title, description, href }: { icon: string; title: string; description: string; href: string }) {
+function QuickAction({ icon, title, description, href, highlight }: { icon: string; title: string; description: string; href: string; highlight?: boolean }) {
   return (
-    <Link href={href} className="flex items-start gap-4 p-4 rounded-xl border border-slate-100 hover:border-primary/30 hover:bg-primary/[0.02] transition-all group">
-      <div className="w-10 h-10 rounded-xl bg-blueprint group-hover:bg-primary text-white flex items-center justify-center flex-shrink-0 transition-colors">
+    <Link href={href} className={`flex items-start gap-4 p-4 rounded-xl border transition-all group ${
+      highlight ? "border-primary/30 bg-primary/5 hover:bg-primary/10" : "border-slate-100 hover:border-primary/30 hover:bg-primary/[0.02]"
+    }`}>
+      <div className={`w-10 h-10 rounded-xl text-white flex items-center justify-center flex-shrink-0 transition-colors ${
+        highlight ? "bg-primary" : "bg-blueprint group-hover:bg-primary"
+      }`}>
         <span className="material-symbols-outlined text-xl">{icon}</span>
       </div>
       <div>
