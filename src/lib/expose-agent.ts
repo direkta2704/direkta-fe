@@ -79,8 +79,9 @@ export interface PhotoUpload {
   sizeBytes: number;
   width: number | null;
   height: number | null;
-  kind: "PHOTO" | "FLOORPLAN";
+  kind: "PHOTO" | "FLOORPLAN" | "ENERGY_PDF";
   classification?: PhotoClassification;
+  unitLabel?: string;
 }
 
 export interface PriceBand {
@@ -110,6 +111,16 @@ export interface RubricResult {
     photos: { ok: boolean; count?: number };
     priceInBand: { ok: boolean; reason?: string };
   };
+}
+
+export interface UnitData {
+  label: string;
+  livingArea: number | null;
+  rooms: number | null;
+  bathrooms: number | null;
+  floor: number | null;
+  features: string[];
+  askingPrice: number | null;
 }
 
 export interface WorkingMemory {
@@ -144,6 +155,11 @@ export interface WorkingMemory {
   lastRubric: RubricResult | null;
   assumptions: string[];
   handoffReady: boolean;
+  // Multi-unit support
+  unitCount: number | null;
+  units: UnitData[];
+  sellingMode: "INDIVIDUAL" | "BUNDLE" | "BOTH" | null;
+  hasFloorPlan: boolean;
 }
 
 export const INITIAL_MEMORY: WorkingMemory = {
@@ -178,6 +194,10 @@ export const INITIAL_MEMORY: WorkingMemory = {
   lastRubric: null,
   assumptions: [],
   handoffReady: false,
+  unitCount: null,
+  units: [],
+  sellingMode: null,
+  hasFloorPlan: false,
 };
 
 // ────────────────────────────────────────────────────────────────────────
@@ -1064,7 +1084,7 @@ interface PersistedTurn {
 }
 
 export function rebuildMemory(turns: PersistedTurn[]): WorkingMemory {
-  let memory: WorkingMemory = { ...INITIAL_MEMORY, attributes: [], uploads: [], assumptions: [] };
+  let memory: WorkingMemory = { ...INITIAL_MEMORY, attributes: [], uploads: [], assumptions: [], units: [] };
   for (const turn of turns) {
     if (turn.toolOutput && typeof turn.toolOutput === "object") {
       const patch = (turn.toolOutput as { memoryPatch?: MemoryPatch }).memoryPatch;
@@ -1097,6 +1117,8 @@ function applyPatch(memory: WorkingMemory, patch: MemoryPatch): WorkingMemory {
     } else if (k === "assumptions" && Array.isArray(v)) {
       const merged = new Set([...next.assumptions, ...(v as string[])]);
       next.assumptions = Array.from(merged);
+    } else if (k === "units" && Array.isArray(v)) {
+      next.units = v as UnitData[];
     } else {
       // @ts-expect-error generic patch
       next[k] = v;
@@ -1121,50 +1143,77 @@ function derivePhase(m: WorkingMemory): WorkingMemory["phase"] {
 // via JSON in the message body.
 // ────────────────────────────────────────────────────────────────────────
 
-const ORCHESTRATOR_SYSTEM_PROMPT = `Du bist der Direkta Exposé-Agent. Du führst deutsche Immobilieneigentümer in einem Gespräch durch die Erstellung eines GEG-konformen Inserats.
+const ORCHESTRATOR_SYSTEM_PROMPT = `Du bist der Direkta Exposé-Agent — ein intelligenter Assistent, der deutsche Immobilieneigentümer durch die Erstellung eines GEG-konformen Inserats führt.
 
-WICHTIGSTE REGEL — EINE FRAGE PRO NACHRICHT:
-Du darfst pro Nachricht NUR EINE einzige Frage stellen. Niemals zwei oder mehr Fragen in einer Nachricht.
-FALSCH: "Wie groß ist die Wohnung und wie viele Zimmer hat sie?"
-FALSCH: "Könnten Sie mir bitte die Wohnfläche, die Bäder, das Baujahr und den Zustand mitteilen?"
-RICHTIG: "Wie groß ist die Wohnfläche in Quadratmetern?"
-Frage nach EINEM Datenpunkt, warte auf die Antwort, dann frage den nächsten.
+═══ KERNPRINZIPIEN ═══
 
-WEITERE REGELN:
-- Sprich Deutsch in der Sie-Form, professionell und freundlich.
-- Sei kurz: 1–3 Sätze pro Nachricht.
-- Erfinde KEINE Immobilien-Eigenschaften.
-- Daten werden automatisch aus deiner Konversation extrahiert — du musst KEINE ###MEMORY### Blöcke schreiben.
-- Wenn du genug Informationen hast, RUFE TOOLS AUF (function calling), in dieser Reihenfolge:
-  1. address_validate (sobald komplette Adresse vorhanden)
-  2. pricing_recommend (sobald alle Pflichtfelder gesetzt)
-  3. listing_draft (nach pricing_recommend)
-  4. listing_review (nach listing_draft)
-  5. handoff_commit (nur wenn listing_review pass=true UND der Verkäufer bestätigt hat)
-- Wenn listing_review fehlschlägt: rufe listing_draft erneut auf, mit Hinweis auf die Fehler.
+1. SEI INTELLIGENT: Lies das Working Memory. Frage NIEMALS nach etwas, das dort schon steht.
+2. SEI EFFIZIENT: Wenn alle Daten vorhanden sind, handle sofort — rufe Tools auf, frage nicht "Soll ich...?"
+3. SEI FREUNDLICH: Deutsch, Sie-Form, kurz und klar.
+4. ERFINDE NICHTS: Beschreibe nur, was der Verkäufer gesagt hat.
 
-ABLAUF (frage Schritt für Schritt, EIN Feld pro Nachricht):
-1. Begrüßung → Immobilientyp (ETW/EFH/MFH/DHH/RH/Grundstück)
-2. Adresse (Straße + Hausnummer)
-3. PLZ + Stadt
-4. Wohnfläche (m²)
-5. Zimmeranzahl
-6. Badezimmer
-7. Baujahr
-8. Etage (nur bei ETW)
-9. Zustand
-10. Besondere Ausstattung (Balkon, Garten, Keller, etc.)
-11. Energieausweis: ja/nein → wenn ja: Typ, Klasse, Wert, Primärenergieträger (je einzeln fragen)
-12. Fotos: bitte um Upload (mind. 6)
-13. Pricing aufrufen, dem Verkäufer Preisband zeigen
-14. Draft + Review, Entwurf zeigen
-15. Bestätigung holen → handoff_commit
+═══ ZWEI MODI ═══
+
+MODUS A — BULK (Verkäufer gibt viele Daten auf einmal):
+1. Zeige eine ✓-Liste aller erkannten Daten
+2. Erkenne automatisch ob ein MFH mit Wohneinheiten beschrieben wird
+3. Liste nur was FEHLT (prüfe Working Memory!)
+4. Wenn nur Fotos/Grundriss fehlen → sage das direkt
+5. Wenn Pflichtfelder fehlen → frage nach dem ERSTEN fehlenden
+
+MODUS B — DIALOG (Verkäufer antwortet einzeln):
+Stelle pro Nachricht NUR EINE Frage. Reihenfolge:
+Typ → Adresse → PLZ/Stadt → Wohnfläche → Grundstück → Zimmer → Bäder → Baujahr → Zustand → Ausstattung → [MFH: Einheiten, Verkaufsart] → Energie → Fotos → Grundriss
+
+═══ AUTOMATISCHE TOOL-AUFRUFE ═══
+
+Rufe Tools SOFORT auf — frage NICHT erst um Erlaubnis:
+• address_validate → wenn Adresse komplett im Memory
+• pricing_recommend → wenn ALLE Pflichtfelder gesetzt (Typ, Adresse, Fläche, Zustand) UND ≥6 Fotos hochgeladen
+• listing_draft → SOFORT nach erfolgreichem pricing_recommend
+• listing_review → SOFORT nach listing_draft
+• handoff_commit → NUR wenn rubric bestanden UND Verkäufer "ja" sagt
+
+═══ NACH FOTOS/GRUNDRISS-UPLOAD ═══
+
+Wenn ≥6 Fotos im Memory UND alle Pflichtfelder gesetzt:
+→ Rufe SOFORT pricing_recommend auf
+→ Dann listing_draft
+→ Dann listing_review
+→ Zeige dem Verkäufer den Entwurf und frage nach Bestätigung
+
+═══ MEHRFAMILIENHAUS (MFH) ═══
+
+Wenn der Typ MFH ist:
+1. Erkenne Wohneinheiten aus der Beschreibung (z.B. "3 Wohnungen: 95m², 95m², 55m²")
+2. Frage nach Verkaufsart: Einzeln / Paket / Beides
+3. Nach den Gebäudefotos und Grundrissen, frage EINMAL:
+   "Haben Sie separate Fotos und Grundrisse für die einzelnen Wohnungen, oder sollen die Gebäudefotos für alle verwendet werden?"
+   → Bei "gleiche/selbe/nein" → Gebäudefotos für alle verwenden
+   → Bei "ja" → für jede Wohnung einzeln fragen
+
+═══ INTELLIGENZ ═══
+
+• "Weiß ich nicht" / "skip" → Pflichtfeld: Standardwert vorschlagen. Optional: überspringen.
+• "Gleiche wie oben" / "selbe" → vorherige Werte übernehmen
+• Plausibilität prüfen: 250m² + 3 Zimmer bei MFH? → nachfragen
+• Energieausweis-PDF nicht lesbar → manuelle Eingabe akzeptieren, weiter
+• Adresse nicht validierbar → akzeptieren, weiter
+• Pricing fehlgeschlagen → zeige fehlende Felder
+
+═══ UPLOAD-BUTTONS ═══
+
+Weise den Verkäufer auf die drei Buttons links unten hin:
+📷 Foto-Button — für Fotos (mind. 6)
+⚡ Energie-Button — für Energieausweis-PDF
+📐 Grundriss-Button — für Grundriss-PDF
+
+═══ REFERENZ ═══
 
 IMMOBILIENTYPEN: ETW, EFH, MFH, DHH, RH, GRUNDSTUECK
 ZUSTAND: ERSTBEZUG, NEUBAU, GEPFLEGT, RENOVIERUNGS_BEDUERFTIG, SANIERUNGS_BEDUERFTIG, ROHBAU
 ENERGIEKLASSEN: A+, A, B, C, D, E, F, G, H
-
-Wenn du eine Annahme triffst (z. B. "Bad" → 1 Bad), erwähne sie in deiner Antwort.`;
+VERKAUFSART: INDIVIDUAL (einzeln), BUNDLE (Paket), BOTH (beides)`;
 
 function buildMemoryContext(m: WorkingMemory): string {
   const missing = getMissingFields(m);
@@ -1182,7 +1231,15 @@ Etage: ${m.floor ?? "—"}
 Zustand: ${m.condition || "—"}
 Ausstattung: ${m.attributes.join(", ") || "—"}
 Energie: ${m.hasEnergyCert === null ? "—" : m.hasEnergyCert ? `${m.energyClass || "?"} (${m.energyValue || "?"} kWh, ${m.energySource || "?"})` : "kein Ausweis"}
-Fotos hochgeladen: ${m.uploads.filter((u) => u.kind === "PHOTO").length}
+Fotos hochgeladen: ${m.uploads.filter((u) => u.kind === "PHOTO" && !u.unitLabel).length} (Gebäude)${m.units.length > 0 ? m.units.map((u) => {
+    const unitPhotos = m.uploads.filter((p) => p.kind === "PHOTO" && p.unitLabel === u.label).length;
+    const unitPlans = m.uploads.filter((p) => p.kind === "FLOORPLAN" && p.unitLabel === u.label).length;
+    return ` | ${u.label}: ${unitPhotos} Fotos, ${unitPlans} Grundrisse`;
+  }).join("") : ""}
+Grundrisse hochgeladen: ${m.uploads.filter((u) => u.kind === "FLOORPLAN" && !u.unitLabel).length} (Gebäude)${m.type === "MFH" ? `
+Wohneinheiten: ${m.unitCount ?? "—"}
+Einheiten-Daten: ${m.units.length > 0 ? m.units.map((u) => `${u.label}: ${u.livingArea || "?"}m², ${u.rooms || "?"}Zi, ${u.bathrooms || "?"}Bad, ${u.floor != null ? "EG+" + u.floor : "?"}. OG`).join(" | ") : "—"}
+Verkaufsart: ${m.sellingMode || "—"}` : ""}
 Preisband: ${m.priceBand ? `${m.priceBand.low.toLocaleString("de")}–${m.priceBand.high.toLocaleString("de")} € (${m.priceBand.confidence})` : "—"}
 Wunschpreis: ${m.askingPrice ? `${m.askingPrice.toLocaleString("de")} €` : "—"}
 Entwurf vorhanden: ${m.draft ? "ja" : "nein"}
@@ -1271,6 +1328,27 @@ function normalizeUserPatch(data: Record<string, unknown>): Partial<WorkingMemor
   if (typeof data.askingPrice === "number") patch.askingPrice = data.askingPrice;
   if (typeof data.priceOverride === "boolean") patch.priceOverride = data.priceOverride;
   if (Array.isArray(data.assumptions)) patch.assumptions = data.assumptions.map(String);
+  if (typeof data.unitCount === "number") patch.unitCount = data.unitCount;
+  if (Array.isArray(data.units)) {
+    patch.units = data.units.map((u: Record<string, unknown>) => ({
+      label: String(u.label || ""),
+      livingArea: typeof u.livingArea === "number" ? u.livingArea : null,
+      rooms: typeof u.rooms === "number" ? u.rooms : null,
+      bathrooms: typeof u.bathrooms === "number" ? u.bathrooms : null,
+      floor: typeof u.floor === "number" ? u.floor : null,
+      features: Array.isArray(u.features) ? u.features.map(String) : [],
+      askingPrice: typeof u.askingPrice === "number" ? u.askingPrice : null,
+    }));
+  }
+  if (typeof data.sellingMode === "string") {
+    const modeMap: Record<string, string> = {
+      individual: "INDIVIDUAL", einzeln: "INDIVIDUAL",
+      bundle: "BUNDLE", paket: "BUNDLE",
+      both: "BOTH", beides: "BOTH",
+    };
+    patch.sellingMode = (modeMap[data.sellingMode.toLowerCase()] || data.sellingMode.toUpperCase()) as WorkingMemory["sellingMode"];
+  }
+  if (typeof data.hasFloorPlan === "boolean") patch.hasFloorPlan = data.hasFloorPlan;
   return patch;
 }
 
@@ -1352,6 +1430,10 @@ Erlaubte Felder (nur NEUE/GEÄNDERTE extrahieren):
 - energyValue: kWh/m²a (Zahl)
 - energySource: Gas|Öl|Fernwärme|Strom|etc.
 - assumptions: Array von getroffenen Annahmen
+- unitCount: Anzahl Wohneinheiten (Zahl, nur bei MFH)
+- units: Array von { label, livingArea, rooms, bathrooms, floor, features } — Daten einzelner Wohneinheiten
+- sellingMode: INDIVIDUAL|BUNDLE|BOTH — Verkaufsart (einzeln/Paket/beides)
+- hasFloorPlan: true wenn Grundriss vorhanden
 
 Antworte NUR mit JSON. Leeres Objekt {} wenn nichts Neues extrahiert wurde.`;
 

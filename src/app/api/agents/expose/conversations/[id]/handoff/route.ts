@@ -55,6 +55,12 @@ export async function POST(
       return NextResponse.json({ error: `Nur ${photoCount} Fotos vorhanden (Soll: ≥6)` }, { status: 412 });
     }
 
+    const citySlug = memory.city!.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+    const typeMap: Record<string, string> = {
+      ETW: "wohnung", EFH: "einfamilienhaus", MFH: "mehrfamilienhaus",
+      DHH: "doppelhaushaelfte", RH: "reihenhaus", GRUNDSTUECK: "grundstueck",
+    };
+
     // Create the Property record
     const property = await prisma.property.create({
       data: {
@@ -76,6 +82,97 @@ export async function POST(
         attributes: memory.attributes.length > 0 ? memory.attributes : undefined,
       },
     });
+
+    // Set selling mode and building info for MFH
+    if (memory.type === "MFH" && (memory.sellingMode || memory.units.length > 0)) {
+      await prisma.property.update({
+        where: { id: property.id },
+        data: {
+          buildingInfo: {
+            _sellingMode: memory.sellingMode || "BUNDLE",
+            unitCount: memory.unitCount || memory.units.length,
+          },
+        },
+      });
+
+      // Create child unit properties
+      for (const unit of memory.units) {
+        const unitProp = await prisma.property.create({
+          data: {
+            userId: user.id,
+            parentId: property.id,
+            unitLabel: unit.label,
+            type: "ETW",
+            street: memory.street!,
+            houseNumber: memory.houseNumber!,
+            postcode: memory.postcode!,
+            city: memory.city!,
+            lat: memory.lat,
+            lng: memory.lng,
+            livingArea: unit.livingArea || memory.livingArea!,
+            rooms: unit.rooms,
+            bathrooms: unit.bathrooms,
+            floor: unit.floor,
+            condition: memory.condition as "ERSTBEZUG" | "NEUBAU" | "GEPFLEGT" | "RENOVIERUNGS_BEDUERFTIG" | "SANIERUNGS_BEDUERFTIG" | "ROHBAU",
+            attributes: unit.features.length > 0 ? unit.features : memory.attributes,
+          },
+        });
+
+        // Copy energy cert to each unit
+        if (memory.hasEnergyCert && memory.energyClass) {
+          await prisma.energyCertificate.create({
+            data: {
+              propertyId: unitProp.id,
+              type: (memory.energyCertType === "BEDARF" ? "BEDARF" : "VERBRAUCH") as "VERBRAUCH" | "BEDARF",
+              validUntil: memory.energyValidUntil ? new Date(memory.energyValidUntil) : new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+              energyClass: memory.energyClass,
+              energyValue: memory.energyValue || 0,
+              primarySource: memory.energySource || "unbekannt",
+            },
+          });
+        }
+
+        // Assign unit-specific uploads, falling back to parent's shared uploads
+        const unitUploads = memory.uploads.filter(
+          (u) => (u.kind === "PHOTO" || u.kind === "FLOORPLAN") && u.unitLabel === unit.label
+        );
+        const sharedUploads = memory.uploads.filter(
+          (u) => (u.kind === "PHOTO" || u.kind === "FLOORPLAN") && !u.unitLabel
+        );
+        const uploadsForUnit = unitUploads.length > 0 ? unitUploads : sharedUploads;
+        for (let i = 0; i < uploadsForUnit.length; i++) {
+          const u = uploadsForUnit[i];
+          await prisma.mediaAsset.create({
+            data: {
+              propertyId: unitProp.id,
+              kind: u.kind as "PHOTO" | "FLOORPLAN",
+              storageKey: u.storageKey,
+              fileName: u.fileName,
+              mimeType: u.mimeType,
+              sizeBytes: u.sizeBytes,
+              width: u.width,
+              height: u.height,
+              ordering: i,
+            },
+          });
+        }
+
+        // Create listing for individual unit if selling INDIVIDUAL or BOTH
+        if (memory.sellingMode === "INDIVIDUAL" || memory.sellingMode === "BOTH") {
+          const unitSlug = `${citySlug}/wohnung-${Math.random().toString(36).slice(2, 6)}`;
+          await prisma.listing.create({
+            data: {
+              propertyId: unitProp.id,
+              slug: unitSlug,
+              titleShort: `${unit.label}, ${unit.rooms || "?"} Zimmer, ${unit.livingArea || "?"} m², ${memory.city}`,
+              descriptionLong: memory.draft!.descriptionLong,
+              askingPrice: unit.askingPrice ?? null,
+              status: "REVIEW",
+            },
+          });
+        }
+      }
+    }
 
     if (memory.hasEnergyCert && memory.energyClass) {
       await prisma.energyCertificate.create({
@@ -109,11 +206,6 @@ export async function POST(
     }
 
     // Create the Listing in REVIEW status (F-M5-08)
-    const citySlug = memory.city!.toLowerCase().replace(/[^a-z0-9]+/g, "-");
-    const typeMap: Record<string, string> = {
-      ETW: "wohnung", EFH: "einfamilienhaus", MFH: "mehrfamilienhaus",
-      DHH: "doppelhaushaelfte", RH: "reihenhaus", GRUNDSTUECK: "grundstueck",
-    };
     const slug = `${citySlug}/${typeMap[memory.type!] || memory.type!.toLowerCase()}-${Math.random().toString(36).slice(2, 6)}`;
 
     const listing = await prisma.listing.create({

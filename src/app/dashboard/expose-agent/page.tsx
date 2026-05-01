@@ -41,6 +41,7 @@ export default function ExposeAgentPage() {
   const chatEndRef = useRef<HTMLDivElement>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
   const energyInputRef = useRef<HTMLInputElement>(null);
+  const floorplanInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -108,11 +109,9 @@ export default function ExposeAgentPage() {
     setStarting(false);
   }
 
-  async function sendMessage(e: React.FormEvent) {
-    e.preventDefault();
-    if (!input.trim() || !conversationId || loading) return;
-    const userMessage = input.trim();
-    setInput("");
+  async function sendText(text: string) {
+    if (!text.trim() || !conversationId || loading) return;
+    const userMessage = text.trim();
     const optimisticIdx = turns.length;
     setTurns((prev) => [...prev, { role: "USER", content: userMessage }]);
     setLoading(true);
@@ -144,14 +143,23 @@ export default function ExposeAgentPage() {
     setLoading(false);
   }
 
+  function sendMessage(e: React.FormEvent) {
+    e.preventDefault();
+    if (!input.trim()) return;
+    const msg = input.trim();
+    setInput("");
+    sendText(msg);
+  }
+
   const upload = useCallback(
-    async (file: File, kind: "PHOTO" | "FLOORPLAN" | "ENERGY_PDF") => {
+    async (file: File, kind: "PHOTO" | "FLOORPLAN" | "ENERGY_PDF", unitLabel?: string) => {
       if (!conversationId) return;
       setUploading(true);
       try {
         const fd = new FormData();
         fd.append("file", file);
         fd.append("kind", kind);
+        if (unitLabel) fd.append("unitLabel", unitLabel);
         const res = await fetch(`/api/agents/expose/conversations/${conversationId}/upload`, {
           method: "POST",
           body: fd,
@@ -164,6 +172,12 @@ export default function ExposeAgentPage() {
           ...prev,
           { role: "SYSTEM", content: `📎 ${label} hochgeladen: ${file.name}${data.message ? ` — ${data.message}` : ""}` },
         ]);
+        // Auto-continue when enough photos + all fields ready
+        if (data.autoContinue) {
+          setTimeout(() => {
+            sendText(`${data.photoCount} Fotos hochgeladen. Bitte Preis berechnen und Entwurf erstellen.`);
+          }, 500);
+        }
       } catch (err) {
         alert(err instanceof Error ? err.message : "Upload fehlgeschlagen");
       }
@@ -176,9 +190,7 @@ export default function ExposeAgentPage() {
     async (files: FileList) => {
       for (const file of Array.from(files)) {
         const isImage = file.type.startsWith("image/");
-        const isPdf = file.type === "application/pdf";
-        if (isPdf) await upload(file, "ENERGY_PDF");
-        else if (isImage) await upload(file, "PHOTO");
+        if (isImage) await upload(file, "PHOTO");
       }
     },
     [upload],
@@ -479,7 +491,16 @@ export default function ExposeAgentPage() {
               className="w-12 h-12 bg-slate-100 hover:bg-slate-200 text-blueprint rounded-xl flex items-center justify-center transition-colors disabled:opacity-40"
               title="Energieausweis hochladen"
             >
-              <span className="material-symbols-outlined">picture_as_pdf</span>
+              <span className="material-symbols-outlined text-lg">electric_bolt</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => floorplanInputRef.current?.click()}
+              disabled={uploading || loading}
+              className="w-12 h-12 bg-slate-100 hover:bg-slate-200 text-blueprint rounded-xl flex items-center justify-center transition-colors disabled:opacity-40"
+              title="Grundriss hochladen"
+            >
+              <span className="material-symbols-outlined text-lg">floor</span>
             </button>
             <input
               ref={photoInputRef}
@@ -499,6 +520,16 @@ export default function ExposeAgentPage() {
               hidden
               onChange={(e) => {
                 if (e.target.files?.[0]) upload(e.target.files[0], "ENERGY_PDF");
+                e.target.value = "";
+              }}
+            />
+            <input
+              ref={floorplanInputRef}
+              type="file"
+              accept="application/pdf,image/jpeg,image/png"
+              hidden
+              onChange={(e) => {
+                if (e.target.files?.[0]) upload(e.target.files[0], "FLOORPLAN");
                 e.target.value = "";
               }}
             />

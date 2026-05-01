@@ -74,6 +74,7 @@ export default function ListingDetailPage() {
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [error, setError] = useState("");
+  const [saved, setSaved] = useState(false);
 
   const [titleShort, setTitleShort] = useState("");
   const [descriptionLong, setDescriptionLong] = useState("");
@@ -139,6 +140,7 @@ export default function ListingDetailPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       setListing((prev) => (prev ? { ...prev, ...data } : prev));
+      router.push(`/dashboard/properties/${listing?.property.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Speichern fehlgeschlagen");
     }
@@ -337,6 +339,12 @@ export default function ListingDetailPage() {
         <div className="mb-6 px-4 py-3 rounded-xl bg-amber-50 border border-amber-200 text-sm text-amber-700 font-medium flex items-center gap-2">
           <span className="material-symbols-outlined text-amber-600">info</span>
           Zahlung abgebrochen. Ihr Inserat bleibt als Entwurf gespeichert.
+        </div>
+      )}
+      {saved && (
+        <div className="mb-6 px-4 py-3 rounded-xl bg-emerald-50 border border-emerald-200 text-sm text-emerald-700 font-medium flex items-center gap-2">
+          <span className="material-symbols-outlined text-emerald-600">check_circle</span>
+          Änderungen gespeichert.
         </div>
       )}
       {error && (

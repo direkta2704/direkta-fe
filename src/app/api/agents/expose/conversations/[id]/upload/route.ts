@@ -46,22 +46,45 @@ export async function POST(
     const formData = await req.formData();
     const file = formData.get("file") as File | null;
     const kindRaw = (formData.get("kind") as string) || "PHOTO";
-    const kind: "PHOTO" | "FLOORPLAN" | "ENERGY_PDF" =
-      kindRaw === "ENERGY_PDF" ? "ENERGY_PDF" : kindRaw === "FLOORPLAN" ? "FLOORPLAN" : "PHOTO";
+    const unitLabel = (formData.get("unitLabel") as string) || undefined;
 
     if (!file) return NextResponse.json({ error: "Keine Datei" }, { status: 400 });
-
-    const allowed = kind === "ENERGY_PDF"
-      ? ["application/pdf", "image/jpeg", "image/png"]
-      : ["image/jpeg", "image/png", "image/webp"];
-    if (!allowed.includes(file.type)) {
-      return NextResponse.json({ error: kind === "ENERGY_PDF" ? "Erlaubt: PDF, JPG, PNG" : "Nur Bilddateien erlaubt" }, { status: 400 });
-    }
     if (file.size > 25 * 1024 * 1024) {
       return NextResponse.json({ error: "Datei zu groß (max. 25 MB)" }, { status: 400 });
     }
 
     const memory = rebuildMemory(conversation.turns);
+
+    // Smart PDF type detection
+    let kind: "PHOTO" | "FLOORPLAN" | "ENERGY_PDF" = "PHOTO";
+    if (file.type.startsWith("image/") && kindRaw === "PHOTO") {
+      kind = "PHOTO";
+    } else if (file.type === "application/pdf" || kindRaw === "ENERGY_PDF" || kindRaw === "FLOORPLAN") {
+      if (kindRaw === "FLOORPLAN") {
+        kind = "FLOORPLAN";
+      } else {
+        // Auto-detect: is this a floor plan or energy certificate?
+        const fn = file.name.toLowerCase();
+        const floorPlanKeywords = ["grundriss", "floor", "plan", "erdgeschoss", "obergeschoss", "dachgeschoss", "eg", "og", "dg", "var", "endzustand", "layout"];
+        const isFloorPlanName = floorPlanKeywords.some((kw) => fn.includes(kw));
+        const hasEnergyCert = !!(memory.hasEnergyCert && memory.energyClass && memory.energyValue);
+
+        if (isFloorPlanName) {
+          kind = "FLOORPLAN";
+        } else if (hasEnergyCert) {
+          kind = "FLOORPLAN";
+        } else {
+          kind = "ENERGY_PDF";
+        }
+      }
+    }
+
+    const allowed = kind === "PHOTO"
+      ? ["image/jpeg", "image/png", "image/webp"]
+      : ["application/pdf", "image/jpeg", "image/png"];
+    if (!allowed.includes(file.type)) {
+      return NextResponse.json({ error: kind === "PHOTO" ? "Nur Bilddateien erlaubt" : "Erlaubt: PDF, JPG, PNG" }, { status: 400 });
+    }
     if (kind === "PHOTO") {
       const existing = memory.uploads.filter((u) => u.kind === "PHOTO").length;
       if (existing >= 30) return NextResponse.json({ error: "Maximal 30 Fotos" }, { status: 400 });
@@ -110,6 +133,7 @@ export async function POST(
       width: width ?? null,
       height: height ?? null,
       kind,
+      ...(unitLabel && { unitLabel }),
     };
 
     // For non-ENERGY_PDF: just record the upload in memory via a SYSTEM turn
@@ -174,7 +198,16 @@ export async function POST(
         include: { turns: { orderBy: { createdAt: "asc" } } },
       });
       const newMem = rebuildMemory(refreshed?.turns ?? []);
-      return NextResponse.json({ ok: true, upload, memory: newMem });
+      const photoCount = newMem.uploads.filter((u) => u.kind === "PHOTO" && !u.unitLabel).length;
+      const hasMinPhotos = photoCount >= 6;
+      const allFieldsReady = !!(newMem.type && newMem.street && newMem.houseNumber && newMem.postcode && newMem.city && newMem.livingArea && newMem.condition);
+      return NextResponse.json({
+        ok: true,
+        upload,
+        memory: newMem,
+        autoContinue: hasMinPhotos && allFieldsReady,
+        photoCount,
+      });
     }
 
     // Energieausweis path: try text extraction, fall back to vision on the
