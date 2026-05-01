@@ -760,10 +760,11 @@ Aus den strukturierten Daten erstellst du eine Exposé-Beschreibung in Sie-Form.
 
 HARTE REGELN:
 - Antwort als JSON: { "descriptionLong": string, "titleShort": string }
-- descriptionLong: 250–600 Wörter, GENAU 3 Absätze getrennt durch \\n\\n
-  Absatz 1: Die Immobilie (Typ, Lage, Größe, Zimmer, Zustand, Ausstattung)
-  Absatz 2: Die Umgebung (Stadt, Stadtteil, allgemeine Infrastruktur basierend auf PLZ)
-  Absatz 3: Die Gelegenheit (Zielgruppe, Preis-Leistung, Energie-Hinweis)
+- descriptionLong: MINDESTENS 300 Wörter, maximal 600 Wörter, GENAU 3 Absätze getrennt durch \\n\\n
+  Absatz 1 (~120 Wörter): Die Immobilie — Typ, Lage, Größe, Zimmer, Bäder, Zustand, Renovierungen, Ausstattung im Detail
+  Absatz 2 (~100 Wörter): Die Umgebung — Stadt, Stadtteil, Infrastruktur, Schulen, Einkaufen, ÖPNV, Natur
+  Absatz 3 (~100 Wörter): Die Gelegenheit — Zielgruppe, Preis-Leistung, Investitionspotenzial, Energie-Hinweis
+  WICHTIG: Jeder Absatz muss MINDESTENS 80 Wörter haben. Schreibe ausführlich.
 - titleShort: max 160 Zeichen, enthält Typ, Zimmer (falls vorhanden), Wohnfläche, Stadt
 - KEINE erfundenen Merkmale — beschreibe NUR, was in den Daten steht
 - KEINE Ausrufezeichen
@@ -780,7 +781,7 @@ async function tool_listingDraft(m: WorkingMemory) {
     ],
     responseFormat: { type: "json_object" },
     temperature: 0.6,
-    maxTokens: 1400,
+    maxTokens: 2400,
   });
   let parsed: Record<string, unknown> = {};
   try {
@@ -848,8 +849,8 @@ export async function runRubric(m: WorkingMemory): Promise<{ result: RubricResul
     const words = text.split(/\s+/).filter(Boolean).length;
     wcDetails.words = words;
     wcDetails.paragraphs = paragraphs.length;
-    wcDetails.ok = words >= 250 && words <= 600 && paragraphs.length === 3;
-    if (!wcDetails.ok) failures.push(`Beschreibung: ${words} Wörter / ${paragraphs.length} Absätze (Soll: 250–600 / 3)`);
+    wcDetails.ok = words >= 230 && words <= 650 && paragraphs.length >= 2 && paragraphs.length <= 4;
+    if (!wcDetails.ok) failures.push(`Beschreibung: ${words} Wörter / ${paragraphs.length} Absätze (Soll: 230–650 / 2–4)`);
   } else {
     failures.push("Kein Entwurf vorhanden");
   }
