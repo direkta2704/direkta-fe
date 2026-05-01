@@ -1,0 +1,95 @@
+========================================
+SCENARIO A — Whole MFH (Bundle)
+========================================
+
+1. Property type?        → Mehrfamilienhaus
+2. Address?              → Marktstraße 12
+3. Postcode + city?      → 76571 Gaggenau
+4. Living area?          → 250
+5. Rooms?                → 8
+6. Bathrooms?            → 3
+7. Year built?           → 1999
+8. Condition?            → Gepflegt
+9. Features?             → Keller, Stellplatz, Garten, Fußbodenheizung, Smart Home
+10. Plot area?           → 450
+11. Floors?              → 2
+12. Parking spaces?      → 16 (10 Außenstellplätze + 6 Tiefgaragenstellplätze)
+13. Apartments?          → 3
+14. Bedrooms?            → 5
+15. Balconies/terraces?  → 0
+16. Basement rooms?      → 3
+17. Elevator?            → Nein
+18. Rooms per apartment? → 3, 3, 2
+19. Energy cert?         → Ja
+18. Cert type?           → Verbrauchsausweis
+19. Energy class?        → B
+20. Energy value?        → 70,2
+21. Energy source?       → Gas
+22. Photos?              → Upload 6+ images from public/uploads/cmojjb6jj0027j0iw38kjgdtl/
+23. Price?               → 525000
+
+
+========================================
+SCENARIO B1 — Apartment 1 (large, upper)
+========================================
+
+1. Property type?        → Eigentumswohnung
+2. Address?              → Marktstraße 12
+3. Postcode + city?      → 76571 Gaggenau
+4. Living area?          → 95
+5. Rooms?                → 3
+6. Bathrooms?            → 1
+7. Year built?           → 1999
+8. Floor?                → 1
+9. Condition?            → Gepflegt
+10. Features?            → Keller, Stellplatz, Fußbodenheizung, Smart Home, Abstellkammer
+11. Bedrooms?            → 2
+12. Balconies/terraces?  → 0
+13. Basement rooms?      → 1
+14. Energy cert?         → Ja, Verbrauchsausweis, B, 70,2 kWh, Gas
+15. Photos?              → Upload 6+ images
+16. Price?               → 195000
+
+
+========================================
+SCENARIO B2 — Apartment 2 (large, lower + garden)
+========================================
+
+1. Property type?        → Eigentumswohnung
+2. Address?              → Marktstraße 12
+3. Postcode + city?      → 76571 Gaggenau
+4. Living area?          → 95
+5. Rooms?                → 3
+6. Bathrooms?            → 1
+7. Year built?           → 1999
+8. Floor?                → 0
+9. Condition?            → Gepflegt
+10. Features?            → Keller, Stellplatz, Garten, Fußbodenheizung, Smart Home, Abstellkammer
+11. Bedrooms?            → 2
+12. Balconies/terraces?  → 0
+13. Basement rooms?      → 1
+14. Energy cert?         → Ja, Verbrauchsausweis, B, 70,2 kWh, Gas
+15. Photos?              → Upload 6+ images
+16. Price?               → 199000
+
+
+========================================
+SCENARIO B3 — Apartment 3 (small, lower + garden)
+========================================
+
+1. Property type?        → Eigentumswohnung
+2. Address?              → Marktstraße 12
+3. Postcode + city?      → 76571 Gaggenau
+4. Living area?          → 55
+5. Rooms?                → 2
+6. Bathrooms?            → 1
+7. Year built?           → 1999
+8. Floor?                → 0
+9. Condition?            → Gepflegt
+10. Features?            → Keller, Stellplatz, Garten, Fußbodenheizung, Smart Home
+11. Bedrooms?            → 1
+12. Balconies/terraces?  → 0
+13. Basement rooms?      → 1
+14. Energy cert?         → Ja, Verbrauchsausweis, B, 70,2 kWh, Gas
+15. Photos?              → Upload 6+ images
+16. Price?               → 145000

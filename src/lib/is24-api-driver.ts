@@ -304,7 +304,9 @@ function buildPayload(input: PublishInput): { key: string; data: Record<string, 
   }
 
   // Basic fields
+  const isHouseType = ["EFH", "MFH", "DHH", "RH"].includes(input.propertyType);
   if (input.plotArea) data.plotArea = input.plotArea;
+  else if (isHouseType) data.plotArea = input.livingArea;
   if (input.floor != null) data.floor = input.floor;
   if (input.yearBuilt) data.constructionYear = input.yearBuilt;
   if (input.bathrooms) data.numberOfBathRooms = input.bathrooms;
