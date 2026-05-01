@@ -564,6 +564,48 @@ export default function ListingDetailPage() {
           </div>
         </div>
 
+        {/* Status management */}
+        {listing.status === "ACTIVE" && (
+          <div className="bg-white rounded-2xl border border-slate-200 p-7">
+            <h2 className="text-lg font-black text-blueprint mb-4">Status ändern</h2>
+            <div className="flex flex-wrap gap-3">
+              <button
+                onClick={async () => {
+                  if (!confirm("Inserat pausieren? Es wird nicht mehr öffentlich sichtbar sein.")) return;
+                  const res = await fetch(`/api/listings/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "PAUSED" }) });
+                  if (res.ok) { const d = await res.json(); setListing((p) => p ? { ...p, ...d } : p); }
+                }}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-amber-200 bg-amber-50 text-amber-700 text-xs font-black uppercase tracking-[0.15em] hover:bg-amber-100 transition-colors"
+              >
+                <span className="material-symbols-outlined text-sm">pause_circle</span>
+                Pausieren
+              </button>
+              <button
+                onClick={async () => {
+                  if (!confirm("Inserat als reserviert markieren? Bei Paket- und Einzelverkauf werden die zugehörigen Inserate automatisch zurückgezogen.")) return;
+                  const res = await fetch(`/api/listings/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "RESERVED" }) });
+                  if (res.ok) { const d = await res.json(); setListing((p) => p ? { ...p, ...d } : p); }
+                }}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-blue-200 bg-blue-50 text-blue-700 text-xs font-black uppercase tracking-[0.15em] hover:bg-blue-100 transition-colors"
+              >
+                <span className="material-symbols-outlined text-sm">bookmark</span>
+                Reservieren
+              </button>
+              <button
+                onClick={async () => {
+                  if (!confirm("Inserat zurückziehen? Es wird endgültig deaktiviert.")) return;
+                  const res = await fetch(`/api/listings/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "WITHDRAWN" }) });
+                  if (res.ok) { const d = await res.json(); setListing((p) => p ? { ...p, ...d } : p); }
+                }}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-red-200 bg-red-50 text-red-700 text-xs font-black uppercase tracking-[0.15em] hover:bg-red-100 transition-colors"
+              >
+                <span className="material-symbols-outlined text-sm">cancel</span>
+                Zurückziehen
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Actions */}
         <div className="flex items-center justify-between pt-4 pb-8">
           <button

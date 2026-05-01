@@ -20,7 +20,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
           orderBy: { unitLabel: "asc" },
           include: {
             media: { orderBy: { ordering: "asc" } },
-            listings: { select: { id: true, status: true, slug: true }, take: 1 },
+            listings: { select: { id: true, status: true, slug: true, askingPrice: true }, take: 1 },
             energyCert: { select: { id: true } },
           },
         },

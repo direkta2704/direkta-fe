@@ -23,7 +23,7 @@ interface UnitSummary {
   bathrooms: number | null;
   floor: number | null;
   media: MediaItem[];
-  listings: { id: string; status: string; slug: string }[];
+  listings: { id: string; status: string; slug: string; askingPrice?: string | null }[];
   energyCert: { id: string } | null;
 }
 
@@ -1192,6 +1192,32 @@ export default function PropertyDetailPage() {
               )}
             </div>
           </div>
+
+          {/* Price consistency warning */}
+          {hasUnits && sellingMode === "BOTH" && (() => {
+            const packagePrice = property.listings[0]?.askingPrice ? Number(property.listings[0].askingPrice) : 0;
+            const individualTotal = property.units.reduce((sum, u) => {
+              const unitPrice = u.listings[0]?.askingPrice ? Number(u.listings[0].askingPrice) : 0;
+              return sum + unitPrice;
+            }, 0);
+            if (packagePrice > 0 && individualTotal > 0 && individualTotal <= packagePrice) {
+              return (
+                <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5 mb-0">
+                  <div className="flex items-start gap-3">
+                    <span className="material-symbols-outlined text-amber-600 text-lg mt-0.5">warning</span>
+                    <div>
+                      <p className="text-sm font-bold text-amber-800">Preiswarnung</p>
+                      <p className="text-xs text-amber-700 mt-1">
+                        Einzelverkauf gesamt (€{individualTotal.toLocaleString("de-DE")}) ≤ Paketpreis (€{packagePrice.toLocaleString("de-DE")}).
+                        Der Einzelverkauf sollte in Summe mehr ergeben als der Paketpreis, sonst gibt es keinen Anreiz für Einzelkäufer.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+            return null;
+          })()}
 
           {/* Unit listings overview for MFH */}
           {hasUnits && property.units.length > 0 && (

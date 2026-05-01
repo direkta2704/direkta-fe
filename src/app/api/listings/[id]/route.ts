@@ -90,6 +90,71 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
           actorUserId: user.id,
         },
       });
+
+      // Auto-withdraw: when one selling path closes, withdraw the other
+      console.log("[AUTO-WITHDRAW] Status changed to:", body.status, "for listing:", id);
+      if (body.status === "RESERVED" || body.status === "CLOSED") {
+        console.log("[AUTO-WITHDRAW] Checking auto-withdraw logic...");
+        const property = await prisma.property.findUnique({
+          where: { id: existing.propertyId },
+          include: { parent: true },
+        });
+
+        if (property) {
+          const isChildUnit = !!property.parentId;
+          const parentId = isChildUnit ? property.parentId! : property.id;
+
+          // Get the selling mode
+          const parentProp = isChildUnit
+            ? await prisma.property.findUnique({ where: { id: parentId } })
+            : property;
+          const buildingInfo = parentProp?.buildingInfo as Record<string, string> | null;
+          const sellingMode = buildingInfo?._sellingMode;
+
+          if (sellingMode === "BOTH") {
+            if (!isChildUnit) {
+              // PACKAGE listing was reserved/closed → withdraw all individual unit listings
+              const units = await prisma.property.findMany({ where: { parentId: parentId } });
+              for (const unit of units) {
+                await prisma.listing.updateMany({
+                  where: { propertyId: unit.id, status: { in: ["ACTIVE", "DRAFT", "REVIEW"] } },
+                  data: { status: "WITHDRAWN", closedAt: new Date() },
+                });
+              }
+              await prisma.listingEvent.create({
+                data: {
+                  listingId: id,
+                  type: "AUTO_WITHDRAW",
+                  payload: { reason: "Paketverkauf abgeschlossen — Einzelinserate zurückgezogen" },
+                  actorUserId: user.id,
+                },
+              });
+            } else {
+              // Individual unit listing reserved/closed → check if ALL units are reserved/closed
+              const siblings = await prisma.property.findMany({
+                where: { parentId },
+                include: { listings: { where: { status: { notIn: ["WITHDRAWN", "CLOSED", "RESERVED"] } } } },
+              });
+              const allUnitsSold = siblings.every((s) => s.listings.length === 0);
+              if (allUnitsSold) {
+                // All individual units sold → withdraw the package listing
+                await prisma.listing.updateMany({
+                  where: { propertyId: parentId, status: { in: ["ACTIVE", "DRAFT", "REVIEW"] } },
+                  data: { status: "WITHDRAWN", closedAt: new Date() },
+                });
+                await prisma.listingEvent.create({
+                  data: {
+                    listingId: id,
+                    type: "AUTO_WITHDRAW",
+                    payload: { reason: "Alle Wohnungen verkauft — Paketinserat zurückgezogen" },
+                    actorUserId: user.id,
+                  },
+                });
+              }
+            }
+          }
+        }
+      }
     }
 
     return NextResponse.json(listing);
