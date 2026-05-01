@@ -15,7 +15,7 @@ interface ListingForSync {
   id: string;
   status: string;
   titleShort: string | null;
-  property: { street: string; houseNumber: string; city: string };
+  property: { street: string; houseNumber: string; city: string; media?: { storageKey: string }[] };
 }
 
 interface SyndicationTarget {
@@ -55,7 +55,7 @@ export default function SyndicationPage() {
       fetch("/api/listings").then((r) => r.json()),
     ]);
     setCredentials(Array.isArray(creds) ? creds : []);
-    const activeListings = Array.isArray(listData) ? listData.filter((l: ListingForSync) => l.status === "ACTIVE") : [];
+    const activeListings = Array.isArray(listData) ? listData.filter((l: ListingForSync) => ["ACTIVE", "DRAFT", "REVIEW"].includes(l.status)) : [];
     setListings(activeListings);
 
     // Fetch syndication status for each listing
@@ -248,9 +248,22 @@ export default function SyndicationPage() {
                     return (
                       <div key={l.id} className="bg-white rounded-2xl border border-slate-200 p-6">
                         <div className="flex items-center justify-between mb-4">
-                          <div>
-                            <h3 className="font-black text-blueprint">{l.titleShort || `${l.property.street} ${l.property.houseNumber}`}</h3>
-                            <p className="text-xs text-slate-500">{l.property.city}</p>
+                          <div className="flex items-center gap-4">
+                            {l.property.media?.[0] ? (
+                              <img
+                                src={l.property.media[0].storageKey}
+                                alt=""
+                                className="w-16 h-12 rounded-lg object-cover flex-shrink-0"
+                              />
+                            ) : (
+                              <div className="w-16 h-12 rounded-lg bg-slate-100 flex items-center justify-center flex-shrink-0">
+                                <span className="material-symbols-outlined text-slate-300 text-xl">home</span>
+                              </div>
+                            )}
+                            <div>
+                              <h3 className="font-black text-blueprint">{l.titleShort || `${l.property.street} ${l.property.houseNumber}`}</h3>
+                              <p className="text-xs text-slate-500">{l.property.city}</p>
+                            </div>
                           </div>
                           <div className="flex items-center gap-3">
                             {!is24Target || is24Target.status === "NONE" || is24Target.status === "WITHDRAWN" ? (

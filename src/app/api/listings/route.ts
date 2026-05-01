@@ -26,9 +26,11 @@ export async function GET() {
       where: { property: { userId: user.id } },
       include: {
         property: {
-          select: { id: true, street: true, houseNumber: true, city: true, postcode: true, type: true, livingArea: true, rooms: true },
+          select: {
+            id: true, street: true, houseNumber: true, city: true, postcode: true, type: true, livingArea: true, rooms: true,
+            media: { where: { kind: "PHOTO" }, orderBy: { ordering: "asc" }, take: 1, select: { storageKey: true } },
+          },
         },
-        media: { where: { kind: "PHOTO" }, orderBy: { ordering: "asc" }, take: 1 },
         _count: { select: { leads: true, offers: true } },
       },
       orderBy: { createdAt: "desc" },
