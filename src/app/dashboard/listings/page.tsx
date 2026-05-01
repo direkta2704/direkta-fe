@@ -104,6 +104,7 @@ export default function ListingsPage() {
           { key: "ACTIVE", label: "Aktiv" },
           { key: "PAUSED", label: "Pausiert" },
           { key: "CLOSED", label: "Abgeschlossen" },
+          { key: "WITHDRAWN", label: "Zurückgezogen" },
         ].map((tab) => (
           <button
             key={tab.key}
@@ -204,6 +205,17 @@ export default function ListingsPage() {
                   </p>
                 </div>
                 <div className="flex items-center gap-6 ml-6">
+                  <button
+                    onClick={(e) => {
+                      e.preventDefault();
+                      window.open(`/api/listings/${l.id}/pdf`, "_blank");
+                    }}
+                    className="flex items-center gap-1.5 text-xs font-bold text-slate-400 hover:text-primary transition-colors"
+                    title="Exposé PDF herunterladen"
+                  >
+                    <span className="material-symbols-outlined text-base">picture_as_pdf</span>
+                    PDF
+                  </button>
                   {l.status === "ACTIVE" && (
                     <button
                       onClick={(e) => {
