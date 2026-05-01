@@ -95,7 +95,7 @@ export default function OfferForm({
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form onSubmit={handleSubmit} onKeyDown={(e) => { if (e.key === "Enter" && (e.target as HTMLElement).tagName !== "TEXTAREA") e.preventDefault(); }} className="space-y-4">
         <div className="grid grid-cols-2 gap-4">
           <div className="col-span-2">
             <label className="block text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 mb-1.5">Name *</label>
