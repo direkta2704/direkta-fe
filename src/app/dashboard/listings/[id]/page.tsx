@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import ExposeSection from "./expose-section";
 import { trackEvent, EVENTS } from "@/lib/posthog";
@@ -75,6 +75,7 @@ export default function ListingDetailPage() {
   const [publishing, setPublishing] = useState(false);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
+  const exposeSaveRef = useRef<(() => Promise<void>) | null>(null);
 
   const [titleShort, setTitleShort] = useState("");
   const [descriptionLong, setDescriptionLong] = useState("");
@@ -140,7 +141,10 @@ export default function ListingDetailPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       setListing((prev) => (prev ? { ...prev, ...data } : prev));
-      router.push(`/dashboard/properties/${listing?.property.id}`);
+      // Also save expose section (contact details, highlights, etc.)
+      if (exposeSaveRef.current) await exposeSaveRef.current();
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Speichern fehlgeschlagen");
     }
@@ -544,6 +548,7 @@ export default function ListingDetailPage() {
         {/* Expose content */}
         <ExposeSection
           listingId={id}
+          onSaveRef={exposeSaveRef}
           initial={{
             exposeHeadline: listing.exposeHeadline || null,
             locationDescription: listing.locationDescription || null,

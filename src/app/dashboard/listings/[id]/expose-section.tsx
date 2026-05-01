@@ -11,9 +11,10 @@ interface Props {
     highlights: string[] | null;
     sellerContact: { name?: string; phone?: string; email?: string; company?: string } | null;
   };
+  onSaveRef?: React.MutableRefObject<(() => Promise<void>) | null>;
 }
 
-export default function ExposeSection({ listingId, initial }: Props) {
+export default function ExposeSection({ listingId, initial, onSaveRef }: Props) {
   const [headline, setHeadline] = useState(initial.exposeHeadline || "");
   const [location, setLocation] = useState(initial.locationDescription || "");
   const [building, setBuilding] = useState(initial.buildingDescription || "");
@@ -22,6 +23,9 @@ export default function ExposeSection({ listingId, initial }: Props) {
   const [generating, setGenerating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+
+  // Expose save function to parent via ref
+  if (onSaveRef) onSaveRef.current = save;
 
   async function generate() {
     setGenerating(true);

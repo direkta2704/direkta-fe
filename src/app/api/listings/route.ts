@@ -50,6 +50,8 @@ export async function POST(req: Request) {
     const user = await getRequiredUser();
     const body = await req.json();
 
+    const fullUser = await prisma.user.findUnique({ where: { id: user.id }, select: { name: true, email: true, phone: true } });
+
     const property = await prisma.property.findFirst({
       where: { id: body.propertyId, userId: user.id },
       include: { energyCert: true },
@@ -76,6 +78,12 @@ export async function POST(req: Request) {
         titleShort: autoTitle.slice(0, 160),
         descriptionLong: body.descriptionLong || null,
         askingPrice: body.askingPrice || null,
+        sellerContact: {
+          name: fullUser?.name || "",
+          email: fullUser?.email || "",
+          phone: fullUser?.phone || "",
+          company: "",
+        },
       },
     });
 
