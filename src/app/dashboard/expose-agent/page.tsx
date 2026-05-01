@@ -38,6 +38,7 @@ export default function ExposeAgentPage() {
   const [editingTurnId, setEditingTurnId] = useState<string | null>(null);
   const [editingTurnContent, setEditingTurnContent] = useState("");
   const [resuming, setResuming] = useState(true);
+  const [isRecording, setIsRecording] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
   const energyInputRef = useRef<HTMLInputElement>(null);
@@ -149,6 +150,31 @@ export default function ExposeAgentPage() {
     const msg = input.trim();
     setInput("");
     sendText(msg);
+  }
+
+  function toggleVoiceInput() {
+    if (!("webkitSpeechRecognition" in window) && !("SpeechRecognition" in window)) {
+      alert("Ihr Browser unterstützt keine Spracheingabe. Bitte verwenden Sie Chrome.");
+      return;
+    }
+    if (isRecording) {
+      setIsRecording(false);
+      return;
+    }
+    const SpeechRecognition = (window as unknown as Record<string, unknown>).SpeechRecognition || (window as unknown as Record<string, unknown>).webkitSpeechRecognition;
+    const recognition = new (SpeechRecognition as new () => SpeechRecognition)();
+    recognition.lang = "de-DE";
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.onstart = () => setIsRecording(true);
+    recognition.onresult = (event: SpeechRecognitionEvent) => {
+      const transcript = event.results[0][0].transcript;
+      setInput((prev) => prev ? prev + " " + transcript : transcript);
+      setIsRecording(false);
+    };
+    recognition.onerror = () => setIsRecording(false);
+    recognition.onend = () => setIsRecording(false);
+    recognition.start();
   }
 
   const upload = useCallback(
@@ -396,9 +422,13 @@ export default function ExposeAgentPage() {
         <div className="flex-1 overflow-y-auto space-y-4 pb-4">
           {turns.map((turn, i) => {
             if (turn.role === "SYSTEM") {
+              const isPhotoUpload = turn.content.includes("Foto") && turn.content.includes("hochgeladen");
               return (
                 <div key={i} className="flex justify-center">
-                  <div className="bg-slate-100 text-slate-600 rounded-full px-4 py-1.5 text-xs font-bold">
+                  <div className="bg-slate-100 text-slate-600 rounded-full px-4 py-1.5 text-xs font-bold flex items-center gap-2">
+                    {isPhotoUpload && <span className="material-symbols-outlined text-emerald-500 text-sm">check_circle</span>}
+                    {turn.content.includes("Grundriss") && <span className="material-symbols-outlined text-blue-500 text-sm">floor</span>}
+                    {turn.content.includes("Energieausweis") && <span className="material-symbols-outlined text-amber-500 text-sm">electric_bolt</span>}
                     {turn.content}
                   </div>
                 </div>
@@ -537,11 +567,31 @@ export default function ExposeAgentPage() {
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Ihre Antwort eingeben..."
+              placeholder={
+                !memory?.type ? "z.B. Mehrfamilienhaus, Marktstraße 12, 76571 Gaggenau, 250 m²..." :
+                !memory?.street ? "z.B. Marktstraße 12" :
+                !memory?.livingArea ? "z.B. 250" :
+                !memory?.condition ? "z.B. Gepflegt" :
+                photoCount < 6 ? "Fotos mit dem 📷-Button links hochladen oder Nachricht eingeben..." :
+                "Ihre Antwort eingeben..."
+              }
               disabled={loading}
               className="flex-1 px-5 py-3.5 rounded-xl border border-slate-200 text-sm text-blueprint placeholder:text-slate-400 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all disabled:opacity-60"
               autoFocus
             />
+            <button
+              type="button"
+              onClick={toggleVoiceInput}
+              disabled={loading}
+              className={`w-12 h-12 rounded-xl flex items-center justify-center transition-colors ${
+                isRecording
+                  ? "bg-red-500 hover:bg-red-600 text-white animate-pulse"
+                  : "bg-slate-100 hover:bg-slate-200 text-blueprint disabled:opacity-40"
+              }`}
+              title={isRecording ? "Aufnahme stoppen" : "Spracheingabe"}
+            >
+              <span className="material-symbols-outlined">{isRecording ? "stop" : "mic"}</span>
+            </button>
             <button
               type="submit"
               disabled={loading || !input.trim()}
@@ -579,30 +629,32 @@ export default function ExposeAgentPage() {
           </div>
 
           {memory && (
-            <div className="space-y-2 pt-4 border-t border-slate-100">
+            <div className="space-y-1.5 pt-4 border-t border-slate-100">
               <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-2">Erfasste Daten</div>
               {memory.type && <MemoryItem label="Typ" value={memory.type} />}
               {memory.street && <MemoryItem label="Adresse" value={`${memory.street} ${memory.houseNumber || ""}`} />}
               {memory.city && <MemoryItem label="Ort" value={`${memory.postcode || ""} ${memory.city}`} />}
-              {memory.addressValidated && <MemoryItem label="Geo" value="✓ validiert" />}
-              {memory.livingArea && <MemoryItem label="Fläche" value={`${memory.livingArea} m²`} />}
+              {memory.livingArea && <MemoryItem label="Wohnfläche" value={`${memory.livingArea} m²`} />}
+              {memory.plotArea && <MemoryItem label="Grundstück" value={`${memory.plotArea} m²`} />}
               {memory.rooms && <MemoryItem label="Zimmer" value={String(memory.rooms)} />}
+              {memory.bathrooms && <MemoryItem label="Bäder" value={String(memory.bathrooms)} />}
+              {memory.yearBuilt && <MemoryItem label="Baujahr" value={String(memory.yearBuilt)} />}
+              {memory.floor != null && <MemoryItem label="Etage" value={String(memory.floor)} />}
               {memory.condition && <MemoryItem label="Zustand" value={memory.condition} />}
-              {memory.energyClass && <MemoryItem label="Energie" value={memory.energyClass} />}
+              {memory.attributes.length > 0 && <MemoryItem label="Ausstattung" value={memory.attributes.join(", ")} />}
+              {memory.unitCount && <MemoryItem label="Einheiten" value={`${memory.unitCount} WE`} />}
+              {memory.sellingMode && <MemoryItem label="Verkauf" value={memory.sellingMode === "BOTH" ? "Beides" : memory.sellingMode === "BUNDLE" ? "Paket" : "Einzeln"} />}
+              {memory.hasEnergyCert !== null && <MemoryItem label="Energieausweis" value={memory.hasEnergyCert ? "Ja" : "Nein"} />}
+              {memory.energyCertType && <MemoryItem label="Ausweis-Typ" value={memory.energyCertType} />}
+              {memory.energyClass && <MemoryItem label="Klasse" value={memory.energyClass} />}
+              {memory.energyValue && <MemoryItem label="Verbrauch" value={`${memory.energyValue} kWh`} />}
+              {memory.energySource && <MemoryItem label="Energieträger" value={memory.energySource} />}
               <MemoryItem label="Fotos" value={`${photoCount} / 6`} />
-              {memory.priceBand && (
-                <MemoryItem
-                  label="Preis"
-                  value={`${(memory.priceBand.low / 1000).toFixed(0)}–${(memory.priceBand.high / 1000).toFixed(0)} k€`}
-                />
-              )}
+              {memory.hasFloorPlan && <MemoryItem label="Grundriss" value="✓" />}
+              {memory.priceBand && <MemoryItem label="Preisband" value={`€${(memory.priceBand.low / 1000).toFixed(0)}k–${(memory.priceBand.high / 1000).toFixed(0)}k`} />}
+              {memory.askingPrice && <MemoryItem label="Wunschpreis" value={`€${memory.askingPrice.toLocaleString("de-DE")}`} />}
               {memory.draft && <MemoryItem label="Entwurf" value="✓ vorhanden" />}
-              {memory.lastRubric && (
-                <MemoryItem
-                  label="Quality"
-                  value={memory.lastRubric.passed ? "✓ bestanden" : `✗ ${memory.lastRubric.failures.length}`}
-                />
-              )}
+              {memory.lastRubric && <MemoryItem label="Qualität" value={memory.lastRubric.passed ? "✓ bestanden" : `✗ ${memory.lastRubric.failures.length} Fehler`} />}
             </div>
           )}
 
