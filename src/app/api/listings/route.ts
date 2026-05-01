@@ -34,6 +34,7 @@ export async function GET() {
             media: { where: { kind: "PHOTO" }, orderBy: { ordering: "asc" }, take: 1, select: { storageKey: true } },
           },
         },
+        syndicationTargets: { select: { portal: true, status: true, externalUrl: true }, take: 1 },
         _count: { select: { leads: true, offers: true } },
       },
       orderBy: { createdAt: "desc" },
