@@ -142,6 +142,36 @@ export default function PropertiesPage() {
                       <span className="material-symbols-outlined text-base">edit</span>
                       Bearbeiten
                     </button>
+                    {p.listings.length > 0 && (
+                      <button
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          const listing = p.listings[0];
+                          const newStatus = listing.status === "ACTIVE" ? "PAUSED" : "ACTIVE";
+                          const res = await fetch(`/api/listings/${listing.id}`, {
+                            method: "PATCH",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ status: newStatus }),
+                          });
+                          if (res.ok) {
+                            setProperties((prev) =>
+                              prev.map((prop) =>
+                                prop.id === p.id
+                                  ? { ...prop, listings: [{ ...listing, status: newStatus }] }
+                                  : prop
+                              )
+                            );
+                          }
+                          setMenuOpen(null);
+                        }}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-600 hover:bg-slate-50 transition-colors"
+                      >
+                        <span className="material-symbols-outlined text-base">
+                          {p.listings[0].status === "ACTIVE" ? "pause_circle" : "play_circle"}
+                        </span>
+                        {p.listings[0].status === "ACTIVE" ? "Deaktivieren" : "Aktivieren"}
+                      </button>
+                    )}
                     <div className="border-t border-slate-100 my-1" />
                     <button
                       onClick={() => {
