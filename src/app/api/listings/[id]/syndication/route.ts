@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getRequiredUser } from "@/lib/session";
 import { getDriver } from "@/lib/portal-driver";
+import { isCircuitOpen, recordSuccess, recordFailure } from "@/lib/circuit-breaker";
 
 export const dynamic = "force-dynamic";
 
@@ -102,6 +103,13 @@ export async function POST(
       },
     });
 
+    // Circuit breaker check
+    if (isCircuitOpen(portal)) {
+      return NextResponse.json({
+        error: "Portal-Synchronisation ist vorübergehend pausiert (zu viele Fehler). Bitte versuchen Sie es in 15 Minuten erneut.",
+      }, { status: 503 });
+    }
+
     // Execute the job (in MVP, synchronous; production would use a queue)
     try {
       const driver = getDriver(portal);
@@ -164,6 +172,7 @@ export async function POST(
         where: { id: job.id },
         data: { status: "SUCCESS", finishedAt: new Date() },
       });
+      recordSuccess(portal);
 
       // Create initial stats
       await prisma.portalStat.create({
@@ -196,6 +205,7 @@ export async function POST(
         where: { id: job.id },
         data: { status: "FAILED", finishedAt: new Date(), lastError: String(err) },
       });
+      recordFailure(portal);
 
       await prisma.syndicationTarget.update({
         where: { id: target.id },

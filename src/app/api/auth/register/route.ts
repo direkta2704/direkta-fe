@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
+import { createVerificationToken } from "@/lib/auth-tokens";
+import { sendVerificationEmail } from "@/lib/email";
 
 export const dynamic = "force-dynamic";
 
@@ -39,6 +41,14 @@ export async function POST(req: Request) {
         passwordHash,
       },
     });
+
+    // Send verification email
+    try {
+      const token = await createVerificationToken(email, "verify-email");
+      await sendVerificationEmail(email, token);
+    } catch (e) {
+      console.warn("Verification email failed:", e);
+    }
 
     return NextResponse.json(
       { id: user.id, email: user.email, name: user.name },

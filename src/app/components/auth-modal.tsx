@@ -102,6 +102,7 @@ function SignInView({
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -126,6 +127,30 @@ function SignInView({
     window.location.href = "/dashboard";
   }
 
+  async function handleMagicLink() {
+    if (!email) { setError("Bitte E-Mail eingeben"); return; }
+    setLoading(true); setError("");
+    await fetch("/api/auth/request-magic-link", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+    });
+    setLoading(false);
+    setSuccess("Anmeldelink wurde an Ihre E-Mail gesendet.");
+  }
+
+  async function handlePasswordReset() {
+    if (!email) { setError("Bitte E-Mail eingeben"); return; }
+    setLoading(true); setError("");
+    await fetch("/api/auth/request-reset", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+    });
+    setLoading(false);
+    setSuccess("Link zum Zurücksetzen wurde an Ihre E-Mail gesendet.");
+  }
+
   return (
     <>
       <h2
@@ -141,6 +166,11 @@ function SignInView({
       {error && (
         <div className="mb-5 px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-600 font-medium">
           {error}
+        </div>
+      )}
+      {success && (
+        <div className="mb-5 px-4 py-3 rounded-xl bg-emerald-50 border border-emerald-200 text-sm text-emerald-600 font-medium">
+          {success}
         </div>
       )}
 
@@ -166,6 +196,7 @@ function SignInView({
             </label>
             <button
               type="button"
+              onClick={handlePasswordReset}
               className="text-[10px] font-bold text-primary hover:text-primary-dark transition-colors"
             >
               Passwort vergessen?
@@ -188,6 +219,16 @@ function SignInView({
           className="w-full bg-primary hover:bg-primary-dark text-white py-3.5 rounded-xl font-black text-sm uppercase tracking-[0.18em] transition-all duration-300 hover:scale-[1.02] shadow-lg shadow-primary/25 disabled:opacity-60 disabled:hover:scale-100"
         >
           {loading ? "Wird angemeldet..." : "Login"}
+        </button>
+
+        <button
+          type="button"
+          onClick={handleMagicLink}
+          disabled={loading}
+          className="w-full py-3 rounded-xl border border-slate-200 hover:border-primary/30 text-sm font-bold text-blueprint hover:text-primary transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
+        >
+          <span className="material-symbols-outlined text-lg">mail</span>
+          Anmeldelink per E-Mail
         </button>
       </form>
 

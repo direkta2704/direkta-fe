@@ -173,3 +173,80 @@ export async function sendBuyerEnquiryConfirmation(to: string, data: {
     attachments,
   });
 }
+
+export async function sendVerificationEmail(to: string, token: string) {
+  const url = `${APP_URL}/api/auth/verify-email?token=${token}`;
+  await transporter.sendMail({
+    from: FROM, to,
+    subject: "Direkta — E-Mail bestätigen",
+    html: layout(`
+      <h2 style="margin:0 0 12px;font-size:18px;color:#0F1B2E;">E-Mail-Adresse bestätigen</h2>
+      <p style="color:#4A5568;font-size:14px;line-height:1.6;">Bitte bestätigen Sie Ihre E-Mail-Adresse, um Ihr Konto zu aktivieren und Inserate veröffentlichen zu können.</p>
+      ${btn(url, "E-Mail bestätigen")}
+      <p style="color:#8A92A0;font-size:12px;margin-top:16px;">Dieser Link ist 30 Minuten gültig.</p>
+    `),
+  });
+}
+
+export async function sendPasswordResetEmail(to: string, token: string) {
+  const url = `${APP_URL}/api/auth/reset-password?token=${token}`;
+  await transporter.sendMail({
+    from: FROM, to,
+    subject: "Direkta — Passwort zurücksetzen",
+    html: layout(`
+      <h2 style="margin:0 0 12px;font-size:18px;color:#0F1B2E;">Passwort zurücksetzen</h2>
+      <p style="color:#4A5568;font-size:14px;line-height:1.6;">Sie haben eine Passwort-Zurücksetzung angefordert. Klicken Sie auf den Button, um ein neues Passwort zu setzen.</p>
+      ${btn(url, "Neues Passwort setzen")}
+      <p style="color:#8A92A0;font-size:12px;margin-top:16px;">Dieser Link ist 30 Minuten gültig. Falls Sie diese Anfrage nicht gestellt haben, ignorieren Sie diese E-Mail.</p>
+    `),
+  });
+}
+
+export async function sendMagicLinkEmail(to: string, token: string) {
+  const url = `${APP_URL}/api/auth/magic-link?token=${token}`;
+  await transporter.sendMail({
+    from: FROM, to,
+    subject: "Direkta — Anmeldung per Link",
+    html: layout(`
+      <h2 style="margin:0 0 12px;font-size:18px;color:#0F1B2E;">Anmelden bei Direkta</h2>
+      <p style="color:#4A5568;font-size:14px;line-height:1.6;">Klicken Sie auf den Button, um sich ohne Passwort anzumelden.</p>
+      ${btn(url, "Jetzt anmelden")}
+      <p style="color:#8A92A0;font-size:12px;margin-top:16px;">Dieser Link ist 30 Minuten gültig und kann nur einmal verwendet werden.</p>
+    `),
+  });
+}
+
+export async function sendBuyerQualificationEmail(to: string, data: {
+  buyerName: string;
+  propertyAddress: string;
+  listingId: string;
+}) {
+  const url = `${APP_URL}/api/public/qualify?listingId=${data.listingId}&email=${encodeURIComponent(to)}`;
+  await transporter.sendMail({
+    from: FROM, to,
+    subject: `Direkta — Ihre Anfrage für ${data.propertyAddress}`,
+    html: layout(`
+      <h2 style="margin:0 0 12px;font-size:18px;color:#0F1B2E;">Vielen Dank für Ihre Anfrage</h2>
+      <p style="color:#4A5568;font-size:14px;line-height:1.6;">
+        Hallo ${data.buyerName},<br><br>
+        vielen Dank für Ihr Interesse an der Immobilie <strong>${data.propertyAddress}</strong>.
+        Um Ihnen schnellstmöglich weiterhelfen zu können, bitten wir Sie um drei kurze Angaben:
+      </p>
+      <div style="background:#f7f3ea;border-radius:8px;padding:16px;margin:16px 0;">
+        <p style="color:#0F1B2E;font-size:13px;font-weight:700;margin:0 0 8px;">1. Wie hoch ist Ihr Budget?</p>
+        <p style="color:#0F1B2E;font-size:13px;font-weight:700;margin:0 0 8px;">2. Wie ist Ihr Finanzierungsstatus?</p>
+        <p style="color:#4A5568;font-size:12px;margin:0 0 4px;">□ Barzahlung / Eigenkapital</p>
+        <p style="color:#4A5568;font-size:12px;margin:0 0 4px;">□ Finanzierung vorab genehmigt</p>
+        <p style="color:#4A5568;font-size:12px;margin:0 0 4px;">□ Finanzierung in Bearbeitung</p>
+        <p style="color:#4A5568;font-size:12px;margin:0 0 8px;">□ Noch keine Finanzierung</p>
+        <p style="color:#0F1B2E;font-size:13px;font-weight:700;margin:0;">3. Wann möchten Sie kaufen?</p>
+        <p style="color:#4A5568;font-size:12px;margin:4px 0 0;">□ Sofort  □ Innerhalb 3 Monate  □ Innerhalb 6 Monate  □ Später</p>
+      </div>
+      ${btn(url, "Jetzt beantworten")}
+      <p style="color:#8A92A0;font-size:12px;margin-top:16px;">
+        Oder antworten Sie einfach auf diese E-Mail mit Ihren Angaben.
+        Ihre Daten werden nur an den Eigentümer weitergeleitet.
+      </p>
+    `),
+  });
+}

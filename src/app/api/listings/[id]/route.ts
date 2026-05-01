@@ -56,7 +56,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         },
       });
 
+      // Check email verification
+      const seller = await prisma.user.findUnique({ where: { id: user.id }, select: { emailVerified: true } });
       const violations: string[] = [];
+      if (!seller?.emailVerified) violations.push("E-Mail-Adresse nicht bestätigt — bitte prüfen Sie Ihr Postfach");
       if (!property?.energyCert) violations.push("Energieausweis fehlt");
       if ((property?._count.media || 0) < 6) violations.push(`Mindestens 6 Fotos erforderlich (aktuell: ${property?._count.media || 0})`);
       if (!existing.descriptionLong && !body.descriptionLong) violations.push("Beschreibung fehlt");

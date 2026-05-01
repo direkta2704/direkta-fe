@@ -8,6 +8,9 @@ export default async function DashboardPage() {
   const userId = session?.user?.id;
   const firstName = session?.user?.name?.split(" ")[0] || "";
 
+  const currentUser = await prisma.user.findUnique({ where: { id: userId! }, select: { emailVerified: true, email: true } });
+  const emailVerified = !!currentUser?.emailVerified;
+
   // Fetch all dashboard data in parallel
   const [
     properties,
@@ -105,6 +108,25 @@ export default async function DashboardPage() {
           Hier ist der aktuelle Stand Ihrer Immobilien.
         </p>
       </div>
+
+      {/* Email verification banner */}
+      {!emailVerified && (
+        <div className="mb-6 bg-amber-50 border border-amber-200 rounded-xl px-5 py-4">
+          <div className="flex items-center gap-3">
+            <span className="material-symbols-outlined text-amber-600 text-xl">mail</span>
+            <div className="flex-1">
+              <p className="text-sm font-bold text-amber-800">E-Mail-Adresse nicht bestätigt</p>
+              <p className="text-xs text-amber-600">Bitte klicken Sie auf den Link in der Bestätigungsmail an {currentUser?.email}. Ohne Bestätigung können Sie keine Inserate veröffentlichen.</p>
+            </div>
+            <a
+              href={`/api/auth/resend-verification?email=${encodeURIComponent(currentUser?.email || "")}`}
+              className="bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-lg text-xs font-black uppercase tracking-[0.15em] transition-colors flex-shrink-0"
+            >
+              Erneut senden
+            </a>
+          </div>
+        </div>
+      )}
 
       {/* Next action hint */}
       {(() => {

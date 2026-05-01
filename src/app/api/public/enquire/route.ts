@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { calculateLeadScore } from "@/lib/lead-scoring";
-import { sendNewLeadEmail, sendBuyerEnquiryConfirmation } from "@/lib/email";
+import { sendNewLeadEmail, sendBuyerEnquiryConfirmation, sendBuyerQualificationEmail } from "@/lib/email";
 import { generateExposePdf } from "@/lib/pdf-generate";
 
 export const dynamic = "force-dynamic";
@@ -104,6 +104,16 @@ export async function POST(req: Request) {
           }).catch((e) => console.error("Buyer email fallback failed:", e));
         }
       })();
+    }
+
+    // Send qualification email to buyer (3 structured questions — F-M3-04)
+    if (property) {
+      const addr = `${property.street} ${property.houseNumber}, ${property.city}`;
+      sendBuyerQualificationEmail(email, {
+        buyerName: name || "Interessent",
+        propertyAddress: addr,
+        listingId,
+      }).catch((err) => console.error("Qualification email failed:", err));
     }
 
     // Log event
