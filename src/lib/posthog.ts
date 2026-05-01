@@ -6,6 +6,7 @@ const POSTHOG_HOST = process.env.NEXT_PUBLIC_POSTHOG_HOST || "https://eu.i.posth
 let initialized = false;
 
 export function initPostHog() {
+  console.log("[PostHog] init called, key:", POSTHOG_KEY ? POSTHOG_KEY.slice(0, 12) + "..." : "MISSING", "host:", POSTHOG_HOST);
   if (initialized || !POSTHOG_KEY || typeof window === "undefined") return;
 
   posthog.init(POSTHOG_KEY, {
@@ -19,6 +20,13 @@ export function initPostHog() {
   });
 
   initialized = true;
+  console.log("[PostHog] initialized successfully");
+  posthog.capture("$pageview");
+
+  // Expose for debugging
+  if (typeof window !== "undefined") {
+    (window as unknown as Record<string, unknown>).__posthog = posthog;
+  }
 }
 
 export function identifyUser(userId: string, email: string, name?: string) {
