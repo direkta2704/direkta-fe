@@ -726,7 +726,8 @@ async function tool_energyExtract(input: { rawText?: string; pdfBytes?: Buffer }
 
 function tool_pricingRecommend(m: WorkingMemory) {
   if (!isReadyForDraft(m)) {
-    return { ok: false, error: "Pflichtfelder fehlen für Preisberechnung" };
+    const missing = getMissingFields(m);
+    return { ok: false, error: `Pflichtfelder fehlen: ${missing.join(", ")}. Bitte diese Felder zuerst beim Verkäufer erfragen.` };
   }
   const result = calculatePricing({
     type: m.type!,
@@ -1297,6 +1298,7 @@ export interface AgentTurnResult {
 }
 
 async function extractMemoryFromMessage(
+  agentQuestion: string,
   userMessage: string,
   currentMemory: WorkingMemory,
   agentRunId: string,
@@ -1306,11 +1308,22 @@ async function extractMemoryFromMessage(
     .map(([k, v]) => `${k}: ${v}`)
     .join(", ");
 
-  const prompt = `Extrahiere Immobiliendaten aus der Nutzernachricht. Gib NUR ein JSON-Objekt zurück.
+  const prompt = `Extrahiere Immobiliendaten aus dem Dialog. Der Agent hat eine Frage gestellt und der Nutzer hat geantwortet. Gib NUR ein JSON-Objekt zurück.
 
 Bereits bekannt: ${known || "nichts"}
 
-Nutzernachricht: "${userMessage}"
+Agent fragte: "${agentQuestion}"
+Nutzer antwortete: "${userMessage}"
+
+WICHTIG: Die Antwort des Nutzers bezieht sich auf die Frage des Agenten. Beispiele:
+- Agent: "Wie groß ist die Wohnfläche?" → Nutzer: "250" → { "livingArea": 250 }
+- Agent: "Wie viele Zimmer?" → Nutzer: "8" → { "rooms": 8 }
+- Agent: "Baujahr?" → Nutzer: "1999" → { "yearBuilt": 1999 }
+- Agent: "Zustand?" → Nutzer: "Gepflegt" → { "condition": "GEPFLEGT" }
+- Agent: "Energieausweis?" → Nutzer: "Ja" → { "hasEnergyCert": true }
+- Agent: "Typ?" → Nutzer: "Verbrauchsausweis" → { "energyCertType": "VERBRAUCH" }
+- Agent: "Energieklasse?" → Nutzer: "B" → { "energyClass": "B" }
+- Agent: "Primärenergieträger?" → Nutzer: "Gas" → { "energySource": "Gas" }
 
 WICHTIGE REGELN:
 - Überschreibe KEINE bereits bekannten Felder, es sei denn der Nutzer korrigiert sie explizit.
@@ -1516,7 +1529,9 @@ export async function runAgentTurn(
 
   // Dual-pass extraction: dedicated LLM call to reliably extract data
   if (userMessage && agentMessage && costCentsTotal < MAX_COST_CENTS) {
-    const ext = await extractMemoryFromMessage(userMessage, workingMemory, ctx.agentRunId);
+    // Find the last agent message from history to give the extraction context
+    const lastAgentMsg = [...history].reverse().find(m => m.role === "assistant")?.content || "";
+    const ext = await extractMemoryFromMessage(lastAgentMsg, userMessage, workingMemory, ctx.agentRunId);
     costCentsThisTurn += ext.costCents;
     costCentsTotal += ext.costCents;
     if (ext.patch) {
