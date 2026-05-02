@@ -274,7 +274,7 @@ export async function POST(
 
       // Load up to 6 photo bytes for the PDF
       const photoBytes: { bytes: Uint8Array; mimeType: string }[] = [];
-      for (const u of memory.uploads.filter((u) => u.kind === "PHOTO").slice(0, 6)) {
+      for (const u of memory.uploads.filter((u) => u.kind === "PHOTO")) {
         try {
           if (u.storageKey.startsWith("/uploads/")) {
             const local = path.join(process.cwd(), "public", u.storageKey.replace(/^\/+/, ""));
@@ -303,6 +303,33 @@ export async function POST(
         }
       }
 
+      // Load floor plans for PDF
+      const floorPlanBytes: { bytes: Uint8Array; mimeType: string }[] = [];
+      for (const u of memory.uploads.filter((u) => u.kind === "FLOORPLAN")) {
+        try {
+          if (u.storageKey.startsWith("/uploads/")) {
+            const local = path.join(process.cwd(), "public", u.storageKey.replace(/^\/+/, ""));
+            const buf = await readFile(local);
+            floorPlanBytes.push({ bytes: new Uint8Array(buf), mimeType: u.mimeType });
+          } else {
+            const key = u.storageKey.replace(/^https?:\/\/[^/]+\//, "").replace(/^\/+/, "");
+            const obj = await getFromS3(key);
+            if (obj) {
+              const reader = obj.body.getReader();
+              const chunks: Uint8Array[] = [];
+              while (true) { const { done, value } = await reader.read(); if (done) break; if (value) chunks.push(value); }
+              const total = chunks.reduce((n, c) => n + c.length, 0);
+              const merged = new Uint8Array(total);
+              let off = 0;
+              for (const c of chunks) { merged.set(c, off); off += c.length; }
+              floorPlanBytes.push({ bytes: merged, mimeType: u.mimeType });
+            }
+          }
+        } catch (e) {
+          console.error("Failed to load floor plan for PDF:", u.fileName, e);
+        }
+      }
+
       const pdfBuffer = await generateExposePdf({
         titleShort: memory.draft.titleShort,
         descriptionLong: memory.draft.descriptionLong,
@@ -328,6 +355,7 @@ export async function POST(
           : null,
         attributes: memory.attributes,
         photos: photoBytes,
+        floorPlans: floorPlanBytes,
         generatedAt: new Date().toLocaleDateString("de-DE"),
       });
 

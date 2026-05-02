@@ -537,26 +537,35 @@ export default async function ExposePage({ params }: { params: Promise<{ id: str
         </section>
 
         {/* ═══ PHOTO PAGES ═══ */}
-        {photos.length > 2 && (
-          <section className="page">
-            <div className="page-inner">
-              <PageHeader address={`${p.street} ${p.houseNumber} · ${p.city}`} />
-              <div className="section-head">
-                <div className="meta-row"><span className="section-num">— Impressionen</span></div>
-                <h1>Bildergalerie</h1>
-                <div className="section-rule" />
+        {/* Photo gallery — all remaining photos, 6 per page */}
+        {photos.length > 2 && (() => {
+          const remaining = photos.slice(2);
+          const perPage = 6;
+          const pages = [];
+          for (let i = 0; i < remaining.length; i += perPage) {
+            pages.push(remaining.slice(i, i + perPage));
+          }
+          return pages.map((pagePhotos, pageIdx) => (
+            <section key={`gallery-${pageIdx}`} className="page">
+              <div className="page-inner">
+                <PageHeader address={`${p.street} ${p.houseNumber} · ${p.city}`} />
+                <div className="section-head">
+                  <div className="meta-row"><span className="section-num">— Impressionen{pages.length > 1 ? ` (${pageIdx + 1}/${pages.length})` : ""}</span></div>
+                  <h1>Bildergalerie</h1>
+                  <div className="section-rule" />
+                </div>
+                <div className="photo-grid">
+                  {pagePhotos.map((ph) => (
+                    <div key={ph.id} className="photo-cell">
+                      <img src={ph.storageKey} alt="" />
+                    </div>
+                  ))}
+                </div>
               </div>
-              <div className="photo-grid">
-                {photos.slice(2, 8).map((ph) => (
-                  <div key={ph.id} className="photo-cell">
-                    <img src={ph.storageKey} alt="" />
-                  </div>
-                ))}
-              </div>
-            </div>
-            <PageFooter section="Impressionen" page={0} total={getPageCount(listing, photos, floorplans)} />
-          </section>
-        )}
+              <PageFooter section="Impressionen" page={0} total={getPageCount(listing, photos, floorplans)} />
+            </section>
+          ));
+        })()}
 
         {/* ═══ CONTACT & LEGAL ═══ */}
         <section className="page">

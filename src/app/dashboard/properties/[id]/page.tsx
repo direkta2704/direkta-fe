@@ -374,14 +374,6 @@ export default function PropertyDetailPage() {
               ) : (
                 <>
                   <a
-                    href={`/expose/${property.listings[0].id}`}
-                    target="_blank"
-                    className="bg-white border border-slate-200 hover:border-primary text-blueprint px-5 py-3 rounded-xl text-sm font-black uppercase tracking-[0.18em] transition-colors flex items-center gap-2"
-                  >
-                    <span className="material-symbols-outlined text-lg text-primary">visibility</span>
-                    Exposé Vorschau
-                  </a>
-                  <a
                     href={`/expose/${property.listings[0].id}?print=1`}
                     target="_blank"
                     className="bg-white border border-slate-200 hover:border-primary text-blueprint px-5 py-3 rounded-xl text-sm font-black uppercase tracking-[0.18em] transition-colors flex items-center gap-2"
