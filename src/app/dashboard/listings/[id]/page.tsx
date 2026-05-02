@@ -83,16 +83,21 @@ export default function ListingDetailPage() {
   const [askingPrice, setAskingPrice] = useState("");
 
   useEffect(() => {
-    fetch(`/api/listings/${id}`)
-      .then((r) => r.json())
-      .then((data) => {
-        setListing(data);
-        setTitleShort(data.titleShort || "");
-        setDescriptionLong(data.descriptionLong || "");
-        setAskingPrice(data.askingPrice || "");
-      })
-      .finally(() => setLoading(false));
-  }, [id]);
+    async function load() {
+      // If payment just completed, verify and activate the listing
+      if (paymentStatus === "success") {
+        await fetch(`/api/listings/${id}/verify-payment`, { method: "POST" }).catch(() => {});
+      }
+      const res = await fetch(`/api/listings/${id}`);
+      const data = await res.json();
+      setListing(data);
+      setTitleShort(data.titleShort || "");
+      setDescriptionLong(data.descriptionLong || "");
+      setAskingPrice(data.askingPrice || "");
+      setLoading(false);
+    }
+    load();
+  }, [id, paymentStatus]);
 
   async function handleGenerate() {
     setGenerating(true);

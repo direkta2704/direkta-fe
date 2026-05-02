@@ -1011,9 +1011,9 @@ export default function PropertyDetailPage() {
                   <Detail label="Primärenergieträger" value={property.energyCert.primarySource} />
                   <Detail label="Gültig bis" value={new Date(property.energyCert.validUntil).toLocaleDateString("de-DE")} />
                 </div>
-                {property.media.filter((m) => m.kind === "ENERGY_PDF").length > 0 && (
-                  <div className="pt-3 border-t border-slate-100">
-                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 mb-2">Dokument</p>
+                <div className="pt-3 border-t border-slate-100">
+                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 mb-2">PDF-Dokument</p>
+                {property.media.filter((m) => m.kind === "ENERGY_PDF").length > 0 ? (
                     <div className="flex flex-wrap gap-2">
                       {property.media.filter((m) => m.kind === "ENERGY_PDF").map((pdf) => (
                         <div key={pdf.id} className="group/pdf relative inline-flex items-center gap-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl px-4 py-2.5 transition-colors">
@@ -1035,8 +1035,25 @@ export default function PropertyDetailPage() {
                         </div>
                       ))}
                     </div>
+                ) : (
+                  <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-dashed border-amber-300 bg-amber-50">
+                    <span className="material-symbols-outlined text-amber-500">warning</span>
+                    <span className="text-sm text-amber-700">Kein PDF hochgeladen — für die Veröffentlichung empfohlen</span>
+                    <label className="ml-auto cursor-pointer bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-colors">
+                      Hochladen
+                      <input type="file" accept=".pdf" hidden onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        const form = new FormData();
+                        form.append("file", file);
+                        form.append("kind", "ENERGY_PDF");
+                        await fetch(`/api/properties/${id}/media`, { method: "POST", body: form });
+                        fetchProperty();
+                      }} />
+                    </label>
                   </div>
                 )}
+                </div>
               </div>
             ) : !energyEditing && !property.energyCert ? (
               <div className="text-center py-8">
