@@ -58,7 +58,7 @@ SCENARIO B1 — Apartment 1 (large, upper)
 11. Bedrooms?            → 2
 12. Balconies/terraces?  → 0
 13. Basement rooms?      → 1
-14. Energy cert?         → Ja, Verbrauchsausweis, B, 70,2 kWh, Gas
+14. Energy cert         → Ja, Verbrauchsausweis, B, 70,2 kWh, Gas
 15. Photos?              → Upload 6+ images
 16. Floor plan?          → Upload if available
 17. Price?               → 195000
