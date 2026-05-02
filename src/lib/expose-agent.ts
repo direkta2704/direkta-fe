@@ -1595,11 +1595,12 @@ const ORCHESTRATOR_SYSTEM_PROMPT = `Du bist der Direkta Exposé-Agent — ein in
 ═══ ZWEI MODI ═══
 
 MODUS A — BULK (Verkäufer gibt viele Daten auf einmal):
-1. Zeige eine ✓-Liste aller erkannten Daten
-2. Erkenne automatisch ob ein MFH mit Wohneinheiten beschrieben wird
-3. Liste nur was FEHLT (prüfe Working Memory!)
-4. Wenn nur Fotos/Grundriss fehlen → sage das direkt
+1. Zeige eine ✓-Liste ALLER erkannten Daten — Typ, Adresse, Fläche, Zimmer, Bäder, Baujahr, Zustand, Ausstattung, Energie, Preis
+2. Bei MFH: zeige auch alle erkannten Einheiten mit Größe/Zimmer/Etage UND die Verkaufsart
+3. Liste nur was FEHLT (prüfe Working Memory!) — typischerweise: Fotos, Grundriss
+4. Wenn nur Fotos/Grundriss fehlen → sage das direkt, weise auf die Buttons hin
 5. Wenn Pflichtfelder fehlen → frage nach dem ERSTEN fehlenden
+6. FRAGE NIEMALS nach Daten die bereits im Working Memory stehen!
 
 MODUS B — DIALOG (Verkäufer antwortet einzeln):
 Stelle pro Nachricht NUR EINE Frage. Reihenfolge:
@@ -1689,6 +1690,17 @@ PHASE C — VERKAUFSSTRATEGIE:
 
 PHASE D — WEITER WIE GEWOHNT:
 Wenn alle Einheiten + Verkaufsart erfasst → pricing_recommend → listing_draft → listing_review → handoff
+
+MFH NACH BULK-EINGABE:
+Wenn der Verkäufer alle Gebäudedaten + Einheiten + Energie + Preis auf einmal gibt:
+1. Zeige eine ✓-Liste ALLER erkannten Daten (Gebäude UND Einheiten)
+2. Liste NUR was fehlt — typischerweise: Fotos + Grundriss
+3. Frage nach Gebäudefotos zuerst (Außenansicht, Treppenhaus)
+4. Dann frage für JEDE Wohnung einzeln:
+   "Haben Sie separate Fotos für [WE-Label]? Laden Sie sie jetzt hoch."
+   "Haben Sie einen Grundriss für [WE-Label]?"
+5. Wenn Verkaufsart noch fehlt, frage: "Einzelverkauf, Paketverkauf, oder beides?"
+6. Wenn alles da → Pipeline starten
 
 MFH-INTELLIGENZ:
 • Vererbung: Baujahr, Zustand, Energieausweis vom Gebäude gelten automatisch für alle Einheiten
@@ -1988,15 +2000,15 @@ Bereits bekannt: ${known || "nichts"}
 Agent fragte: "${agentQuestion}"
 Nutzer antwortete: "${userMessage}"
 
-WICHTIG: Die Antwort des Nutzers bezieht sich auf die Frage des Agenten. Beispiele:
-- Agent: "Wie groß ist die Wohnfläche?" → Nutzer: "250" → { "livingArea": 250 }
-- Agent: "Wie viele Zimmer?" → Nutzer: "8" → { "rooms": 8 }
-- Agent: "Baujahr?" → Nutzer: "1999" → { "yearBuilt": 1999 }
+WICHTIG: Extrahiere ALLE erkennbaren Daten aus der Antwort. Bei Bulk-Eingaben mit vielen Daten, extrahiere ALLES auf einmal.
+
+Beispiele für einzelne Antworten:
+- Agent: "Wohnfläche?" → Nutzer: "250" → { "livingArea": 250 }
 - Agent: "Zustand?" → Nutzer: "Gepflegt" → { "condition": "GEPFLEGT" }
-- Agent: "Energieausweis?" → Nutzer: "Ja" → { "hasEnergyCert": true }
-- Agent: "Typ?" → Nutzer: "Verbrauchsausweis" → { "energyCertType": "VERBRAUCH" }
-- Agent: "Energieklasse?" → Nutzer: "B" → { "energyClass": "B" }
-- Agent: "Primärenergieträger?" → Nutzer: "Gas" → { "energySource": "Gas" }
+
+Beispiel für Bulk-Eingabe:
+- Nutzer: "MFH, Marktstraße 12, 76571 Gaggenau, 250m², 8 Zimmer, 3 Bäder, Bj 1999, gepflegt. 3 Wohnungen: WE1 95m² 3Zi EG, WE2 55m² 2Zi 1.OG. Verkauf: beides. Energie: Verbrauch B 70kWh Gas. Preis: 525000"
+→ { "type":"MFH", "street":"Marktstraße", "houseNumber":"12", "postcode":"76571", "city":"Gaggenau", "livingArea":250, "rooms":8, "bathrooms":3, "yearBuilt":1999, "condition":"GEPFLEGT", "unitCount":3, "units":[{"label":"WE1","livingArea":95,"rooms":3,"floor":0},{"label":"WE2","livingArea":55,"rooms":2,"floor":1}], "sellingMode":"BOTH", "hasEnergyCert":true, "energyCertType":"VERBRAUCH", "energyClass":"B", "energyValue":70, "energySource":"Gas", "askingPrice":525000 }
 
 WICHTIGE REGELN:
 - Überschreibe KEINE bereits bekannten Felder, es sei denn der Nutzer korrigiert sie explizit.
@@ -2037,10 +2049,12 @@ Erlaubte Felder (nur NEUE/GEÄNDERTE extrahieren):
 Antworte NUR mit JSON. Leeres Objekt {} wenn nichts Neues extrahiert wurde.`;
 
   try {
+    // Scale maxTokens with input length: bulk pastes with MFH units need more output space
+    const extractMaxTokens = userMessage.length > 300 ? 800 : 400;
     const llm = await callLlm({
       messages: [{ role: "user", content: prompt }],
       temperature: 0.0,
-      maxTokens: 400,
+      maxTokens: extractMaxTokens,
       responseFormat: { type: "json_object" },
     });
 
@@ -2101,6 +2115,54 @@ export async function runAgentTurn(
         toolOutput: asJson({ memoryPatch: { costCompressed: true } }),
       },
     });
+  }
+
+  // Mechanical handoff: when rubric passed and seller confirms, trigger handoff
+  // directly. Don't let the LLM choose between re-drafting and committing.
+  if (
+    userMessage &&
+    workingMemory.lastRubric?.passed &&
+    workingMemory.draft &&
+    isReadyForHandoff(workingMemory)
+  ) {
+    const msg = userMessage.trim().toLowerCase();
+    const confirmPhrases = /\bja\b|erstellen|veröffentlichen|fertig|weiter|machen|los|bestätig/i;
+    if (confirmPhrases.test(msg)) {
+      const handoffTr = await executeTool("handoff_commit", {}, workingMemory, turnNumber);
+      toolStepsExecuted++;
+      costCentsThisTurn += handoffTr.costCents;
+      costCentsTotal += handoffTr.costCents;
+      if (handoffTr.memoryPatch) workingMemory = applyPatch(workingMemory, handoffTr.memoryPatch);
+
+      await prisma.agentStep.create({
+        data: {
+          agentRunId: ctx.agentRunId,
+          ordinal: await nextStepOrdinal(ctx.agentRunId),
+          toolName: "handoff_commit",
+          input: asJson({ mechanical: true }),
+          output: asJson({ ...handoffTr.output, memoryPatch: handoffTr.memoryPatch }),
+          latencyMs: handoffTr.latencyMs,
+          ok: handoffTr.ok,
+        },
+      });
+
+      await prisma.conversationTurn.create({
+        data: {
+          conversationId: ctx.conversationId,
+          role: "TOOL",
+          content: "handoff_commit",
+          toolName: "handoff_commit",
+          toolInput: asJson({}),
+          toolOutput: asJson({ ...handoffTr.output, memoryPatch: handoffTr.memoryPatch }),
+          latencyMs: handoffTr.latencyMs,
+        },
+      });
+
+      if (handoffTr.triggerHandoff) {
+        agentMessage = "Ihr Inserat ist erstellt! So geht es weiter:\n1. Prüfen Sie das Exposé auf der nächsten Seite\n2. Laden Sie die PDF herunter und teilen Sie sie mit Interessenten\n3. Aktivieren Sie das Inserat, wenn Sie bereit sind\n4. Optional: Auf ImmobilienScout24 freischalten unter Portal-Sync";
+        return { agentMessage, memory: workingMemory, toolStepsExecuted, costCentsThisTurn, costCentsTotal, finished: true, abortedReason };
+      }
+    }
   }
 
   // Mechanical price A/B/C detection: when last rubric failed on price-in-band

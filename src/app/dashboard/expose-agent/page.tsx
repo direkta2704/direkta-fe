@@ -267,9 +267,7 @@ export default function ExposeAgentPage() {
         const label = `📷 ${keys.length} Foto${keys.length > 1 ? "s" : ""}${targetInfo} hochgeladen`;
         const content = keys.length > 0 ? `__PHOTOS__${JSON.stringify(keys)}__${label}` : label;
         setTurns((prev) => [...prev, { role: "SYSTEM", content }]);
-        if (lastData?.autoContinue) {
-          setTimeout(() => sendText(`${lastData.photoCount} Fotos hochgeladen. Bitte Preis berechnen und Entwurf erstellen.`), 500);
-        } else if (keys.length > 0) {
+        if (keys.length > 0) {
           setTimeout(() => sendText(`${keys.length} Fotos${targetInfo} hochgeladen.`), 800);
         }
       } catch (err) {
