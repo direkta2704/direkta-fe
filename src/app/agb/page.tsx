@@ -8,7 +8,23 @@ export const metadata: Metadata = {
 export default function AGBPage() {
   return (
     <LegalLayout title="Allgemeine Geschäftsbedingungen (AGB)" lastUpdated="28. April 2026">
-      <h2>§ 1 Geltungsbereich</h2>
+      <div className="not-prose bg-slate-50 rounded-xl p-6 mb-10 border border-slate-200">
+        <h3 className="text-sm font-black text-blueprint mb-3 uppercase tracking-widest">Inhaltsverzeichnis</h3>
+        <ol className="grid sm:grid-cols-2 gap-1 text-sm">
+          <li><a href="#s1" className="text-primary hover:underline">§ 1 Geltungsbereich</a></li>
+          <li><a href="#s2" className="text-primary hover:underline">§ 2 Leistungsbeschreibung</a></li>
+          <li><a href="#s3" className="text-primary hover:underline">§ 3 Registrierung und Konto</a></li>
+          <li><a href="#s4" className="text-primary hover:underline">§ 4 Preise und Zahlung</a></li>
+          <li><a href="#s5" className="text-primary hover:underline">§ 5 Pflichten des Verkäufers</a></li>
+          <li><a href="#s6" className="text-primary hover:underline">§ 6 Haftung</a></li>
+          <li><a href="#s7" className="text-primary hover:underline">§ 7 Datenschutz</a></li>
+          <li><a href="#s8" className="text-primary hover:underline">§ 8 Laufzeit und Kündigung</a></li>
+          <li><a href="#s9" className="text-primary hover:underline">§ 9 Änderungen der AGB</a></li>
+          <li><a href="#s10" className="text-primary hover:underline">§ 10 Schlussbestimmungen</a></li>
+        </ol>
+      </div>
+
+      <h2 id="s1">§ 1 Geltungsbereich</h2>
       <p>
         Diese Allgemeinen Geschäftsbedingungen gelten für die Nutzung der Plattform Direkta
         (nachfolgend &quot;Plattform&quot;), betrieben von der Direkta GmbH, Musterstraße 1,
@@ -20,7 +36,7 @@ export default function AGBPage() {
         Immobilienmakler auf.
       </p>
 
-      <h2>§ 2 Leistungsbeschreibung</h2>
+      <h2 id="s2">§ 2 Leistungsbeschreibung</h2>
       <p>Direkta bietet folgende Leistungen:</p>
       <ul>
         <li>Erstellung eines professionellen Immobilieninsperats (Exposé) mittels KI-Unterstützung</li>
@@ -35,7 +51,7 @@ export default function AGBPage() {
         Verkäufer ist der rechtliche Autor seines Inserats und für dessen Richtigkeit verantwortlich.
       </p>
 
-      <h2>§ 3 Registrierung und Konto</h2>
+      <h2 id="s3">§ 3 Registrierung und Konto</h2>
       <p>
         Zur Nutzung der Plattform als Verkäufer ist eine Registrierung erforderlich. Der Nutzer
         versichert, dass alle bei der Registrierung angegebenen Daten wahrheitsgemäß und vollständig
@@ -46,7 +62,7 @@ export default function AGBPage() {
         alle Aktivitäten, die über sein Konto erfolgen.
       </p>
 
-      <h2>§ 4 Preise und Zahlungsbedingungen</h2>
+      <h2 id="s4">§ 4 Preise und Zahlungsbedingungen</h2>
 
       <h3>4.1 Direkta Flat</h3>
       <p>
@@ -68,7 +84,7 @@ export default function AGBPage() {
         zusätzlich die Nutzungsbedingungen von Stripe.
       </p>
 
-      <h2>§ 5 Pflichten des Verkäufers</h2>
+      <h2 id="s5">§ 5 Pflichten des Verkäufers</h2>
       <p>Der Verkäufer verpflichtet sich:</p>
       <ul>
         <li>Nur wahrheitsgemäße Angaben zu seiner Immobilie zu machen</li>
@@ -79,7 +95,7 @@ export default function AGBPage() {
         <li>Direkta über den Verkaufsabschluss zu informieren (bei Erfolgsgebühr)</li>
       </ul>
 
-      <h2>§ 6 Haftung</h2>
+      <h2 id="s6">§ 6 Haftung</h2>
       <p>
         Direkta haftet unbeschränkt für Schäden aus der Verletzung des Lebens, des Körpers
         oder der Gesundheit sowie für vorsätzlich oder grob fahrlässig verursachte Schäden.
@@ -94,13 +110,13 @@ export default function AGBPage() {
         Beschreibungen oder Bewertungen. Diese dienen ausschließlich als unverbindliche Orientierung.
       </p>
 
-      <h2>§ 7 Datenschutz</h2>
+      <h2 id="s7">§ 7 Datenschutz</h2>
       <p>
         Die Verarbeitung personenbezogener Daten erfolgt gemäß unserer{" "}
         <a href="/datenschutz">Datenschutzerklärung</a>.
       </p>
 
-      <h2>§ 8 Laufzeit und Kündigung</h2>
+      <h2 id="s8">§ 8 Laufzeit und Kündigung</h2>
       <p>
         Der Vertrag wird auf unbestimmte Zeit geschlossen. Beide Parteien können den Vertrag
         jederzeit mit einer Frist von 14 Tagen zum Monatsende kündigen. Das Recht zur
@@ -111,14 +127,14 @@ export default function AGBPage() {
         gemäß Art. 20 DSGVO vor der Löschung exportieren.
       </p>
 
-      <h2>§ 9 Änderungen der AGB</h2>
+      <h2 id="s9">§ 9 Änderungen der AGB</h2>
       <p>
         Direkta behält sich vor, diese AGB mit angemessener Ankündigungsfrist zu ändern.
         Der Nutzer wird über Änderungen per E-Mail informiert. Widerspricht der Nutzer nicht
         innerhalb von 30 Tagen, gelten die geänderten AGB als akzeptiert.
       </p>
 
-      <h2>§ 10 Schlussbestimmungen</h2>
+      <h2 id="s10">§ 10 Schlussbestimmungen</h2>
       <p>
         Es gilt das Recht der Bundesrepublik Deutschland. Gerichtsstand ist Berlin, sofern
         der Nutzer Kaufmann ist oder keinen allgemeinen Gerichtsstand in Deutschland hat.

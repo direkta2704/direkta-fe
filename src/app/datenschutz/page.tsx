@@ -8,14 +8,30 @@ export const metadata: Metadata = {
 export default function DatenschutzPage() {
   return (
     <LegalLayout title="Datenschutzerklärung" lastUpdated="28. April 2026">
-      <h2>1. Verantwortlicher</h2>
+      {/* Table of contents */}
+      <div className="not-prose bg-slate-50 rounded-xl p-6 mb-10 border border-slate-200">
+        <h3 className="text-sm font-black text-blueprint mb-3 uppercase tracking-widest">Inhaltsverzeichnis</h3>
+        <ol className="grid sm:grid-cols-2 gap-1 text-sm">
+          <li><a href="#verantwortlicher" className="text-primary hover:underline">1. Verantwortlicher</a></li>
+          <li><a href="#erhebung" className="text-primary hover:underline">2. Erhebung personenbezogener Daten</a></li>
+          <li><a href="#weitergabe" className="text-primary hover:underline">3. Weitergabe von Daten</a></li>
+          <li><a href="#auftragsverarbeiter" className="text-primary hover:underline">4. Auftragsverarbeiter</a></li>
+          <li><a href="#cookies" className="text-primary hover:underline">5. Cookies</a></li>
+          <li><a href="#rechte" className="text-primary hover:underline">6. Ihre Rechte</a></li>
+          <li><a href="#sicherheit" className="text-primary hover:underline">7. Datensicherheit</a></li>
+          <li><a href="#residenz" className="text-primary hover:underline">8. Datenresidenz</a></li>
+          <li><a href="#beschwerde" className="text-primary hover:underline">9. Beschwerderecht</a></li>
+        </ol>
+      </div>
+
+      <h2 id="verantwortlicher">1. Verantwortlicher</h2>
       <p>
         Verantwortlich für die Datenverarbeitung auf dieser Website ist:<br />
         Direkta GmbH, Musterstraße 1, 10115 Berlin<br />
         E-Mail: datenschutz@direkta.de
       </p>
 
-      <h2>2. Erhebung und Speicherung personenbezogener Daten</h2>
+      <h2 id="erhebung">2. Erhebung und Speicherung personenbezogener Daten</h2>
 
       <h3>2.1 Beim Besuch der Website</h3>
       <p>
@@ -62,7 +78,7 @@ export default function DatenschutzPage() {
       </p>
       <p>Rechtsgrundlage: Art. 6 Abs. 1 lit. f DSGVO (berechtigtes Interesse).</p>
 
-      <h2>3. Weitergabe von Daten</h2>
+      <h2 id="weitergabe">3. Weitergabe von Daten</h2>
       <p>Eine Übermittlung Ihrer persönlichen Daten an Dritte erfolgt nur:</p>
       <ul>
         <li>wenn Sie ausdrücklich eingewilligt haben (Art. 6 Abs. 1 lit. a DSGVO)</li>
@@ -73,7 +89,7 @@ export default function DatenschutzPage() {
         Käuferanfragen werden nicht verkauft, syndiziert oder für Werbezwecke verwendet.
       </p>
 
-      <h2>4. Auftragsverarbeiter</h2>
+      <h2 id="auftragsverarbeiter">4. Auftragsverarbeiter</h2>
       <p>Wir setzen folgende Dienstleister als Auftragsverarbeiter ein:</p>
       <ul>
         <li><strong>Amazon Web Services (AWS)</strong> — Hosting und Datenbank (EU-Region Frankfurt)</li>
@@ -86,7 +102,7 @@ export default function DatenschutzPage() {
         Art. 28 DSGVO geschlossen. Alle Daten werden in der EU verarbeitet und gespeichert.
       </p>
 
-      <h2>5. Cookies</h2>
+      <h2 id="cookies">5. Cookies</h2>
       <p>
         Unsere Website verwendet Cookies. Bei Cookies handelt es sich um kleine Textdateien,
         die Ihr Browser automatisch erstellt und auf Ihrem Gerät speichert.
@@ -108,7 +124,7 @@ export default function DatenschutzPage() {
         Bildschirmrand ändern.
       </p>
 
-      <h2>6. Ihre Rechte</h2>
+      <h2 id="rechte">6. Ihre Rechte</h2>
       <p>Sie haben gegenüber uns folgende Rechte hinsichtlich Ihrer personenbezogenen Daten:</p>
       <ul>
         <li><strong>Auskunftsrecht</strong> (Art. 15 DSGVO)</li>
@@ -136,20 +152,20 @@ export default function DatenschutzPage() {
         (Art. 17 DSGVO).
       </p>
 
-      <h2>7. Datensicherheit</h2>
+      <h2 id="sicherheit">7. Datensicherheit</h2>
       <p>
         Wir verwenden innerhalb des Website-Besuchs das verbreitete TLS-Verfahren (Transport
         Layer Security) in Verbindung mit der jeweils höchsten Verschlüsselungsstufe. Passwörter
         werden mit bcrypt gehasht gespeichert. Alle Datenbanken sind verschlüsselt (Encryption at Rest).
       </p>
 
-      <h2>8. Datenresidenz</h2>
+      <h2 id="residenz">8. Datenresidenz</h2>
       <p>
         Alle personenbezogenen Daten werden ausschließlich in der Europäischen Union (AWS Region
         Frankfurt, eu-central-1) gespeichert und verarbeitet.
       </p>
 
-      <h2>9. Beschwerderecht</h2>
+      <h2 id="beschwerde">9. Beschwerderecht</h2>
       <p>
         Sie haben das Recht, sich bei einer Datenschutz-Aufsichtsbehörde über die Verarbeitung
         Ihrer personenbezogenen Daten zu beschweren. Zuständige Aufsichtsbehörde:<br />
