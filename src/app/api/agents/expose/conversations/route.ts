@@ -24,6 +24,12 @@ export async function POST(req: Request) {
     const user = await getRequiredUser();
     void req;
 
+    // Close any existing ACTIVE conversations for this user
+    await prisma.conversation.updateMany({
+      where: { userId: user.id, agentKind: "EXPOSE", status: "ACTIVE" },
+      data: { status: "COMPLETED", closedAt: new Date() },
+    });
+
     const conversation = await prisma.conversation.create({
       data: {
         userId: user.id,

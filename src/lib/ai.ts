@@ -62,7 +62,7 @@ function buildPropertyContext(p: PropertyInput): string {
   return lines.join("\n");
 }
 
-const SYSTEM_PROMPT = `Du bist ein professioneller Immobilientexter für den deutschen Markt. Du erstellst hochwertige Exposé-Beschreibungen für Immobilieninserate.
+const SYSTEM_PROMPT = `Du bist ein professioneller Immobilientexter für den deutschen Markt. Du erstellst hochwertige Exposé-Inhalte für Immobilieninserate.
 
 Regeln:
 - Schreibe auf Deutsch in der Sie-Form (formal)
@@ -70,18 +70,29 @@ Regeln:
 - KEINE erfundenen Merkmale — beschreibe NUR, was in den Daten steht
 - KEINE übertriebenen Superlative ("einmalig", "konkurrenzlos", "atemberaubend")
 - Verwende KEINE Ausrufezeichen
-- Beende die Beschreibung mit einem Energieausweis-Hinweis
+- Beende die Langbeschreibung mit einem Energieausweis-Hinweis
 
-Aufbau der Langbeschreibung (250–600 Wörter, 3 Absätze):
-1. Die Immobilie: Typ, Lage, Größe, Zimmer, Zustand, besondere Merkmale
-2. Die Umgebung: Stadtteil, Infrastruktur, Anbindung (allgemein basierend auf PLZ/Stadt)
-3. Die Gelegenheit: Für wen eignet sich diese Immobilie, Preis-Leistung
+Du erstellst 5 Texte:
 
-Kurzbeschreibung: Max. 160 Zeichen, enthält Typ, Zimmer, Fläche und Stadt. Keine Ausrufezeichen.`;
+1. titleShort: Max. 160 Zeichen, enthält Typ, Zimmer, Fläche und Stadt.
+
+2. descriptionLong: 250–600 Wörter, 3 Absätze (getrennt durch \\n\\n):
+   - Absatz 1: Die Immobilie — Typ, Lage, Größe, Zimmer, Zustand, besondere Merkmale
+   - Absatz 2: Die Umgebung — Stadtteil, Infrastruktur, Anbindung
+   - Absatz 3: Die Gelegenheit — Für wen geeignet, Preis-Leistung, Energiehinweis
+
+3. locationDescription: 80–150 Wörter über die Lage. Beschreibe Mikrolage (Wohncharakter, Versorgung, Schulen) und Erreichbarkeit (ÖPNV, Autobahn, Flughäfen). Basierend auf PLZ/Stadt — allgemeine aber plausible Angaben.
+
+4. buildingDescription: 60–120 Wörter über das Gebäude. Bautyp, Baujahr, Zustand, Anzahl Etagen/Einheiten, Energiestandard. Nur aus den gegebenen Daten ableiten.
+
+5. highlights: Array mit 4–6 kurzen Verkaufsargumenten (je max. 60 Zeichen). Z.B. "Fußbodenheizung in allen Räumen", "Energieklasse B", "Ruhige Wohnlage". Nur aus den Daten ableitbar.`;
 
 export async function generateListingTexts(property: PropertyInput): Promise<{
   descriptionLong: string;
   titleShort: string;
+  locationDescription: string;
+  buildingDescription: string;
+  highlights: string[];
 }> {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
@@ -110,8 +121,11 @@ ${propertyContext}
 
 Antworte im folgenden JSON-Format (nur JSON, kein Markdown):
 {
-  "descriptionLong": "Die Langbeschreibung (250-600 Wörter, 3 Absätze, getrennt durch \\n\\n)",
-  "titleShort": "Die Kurzbeschreibung (max. 160 Zeichen)"
+  "titleShort": "Kurzbeschreibung (max. 160 Zeichen)",
+  "descriptionLong": "Langbeschreibung (250-600 Wörter, 3 Absätze, getrennt durch \\n\\n)",
+  "locationDescription": "Lagebeschreibung (80-150 Wörter, Mikrolage + Erreichbarkeit)",
+  "buildingDescription": "Gebäudebeschreibung (60-120 Wörter)",
+  "highlights": ["Highlight 1", "Highlight 2", "Highlight 3", "Highlight 4"]
 }`,
         },
       ],
@@ -147,5 +161,8 @@ Antworte im folgenden JSON-Format (nur JSON, kein Markdown):
   return {
     descriptionLong: parsed.descriptionLong,
     titleShort: parsed.titleShort,
+    locationDescription: parsed.locationDescription || "",
+    buildingDescription: parsed.buildingDescription || "",
+    highlights: Array.isArray(parsed.highlights) ? parsed.highlights : [],
   };
 }

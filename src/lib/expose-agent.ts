@@ -19,6 +19,13 @@ function asJson<T>(v: T): Prisma.InputJsonValue {
 export const MAX_TURNS = 60;
 export const MAX_COST_CENTS = 200;           // ≈ €2 per run
 export const MAX_TOOL_ITERATIONS_PER_TURN = 6;
+const MAX_ADDRESS_VALIDATION_ATTEMPTS = 3;
+
+// Cost guard for mechanically-chained tool calls.
+// Reused by all chained tools (address_validate, listing_review, future chains).
+function canAffordChainedTool(costCentsTotal: number, estimatedCost: number): boolean {
+  return costCentsTotal + estimatedCost <= MAX_COST_CENTS;
+}
 
 const ORCHESTRATOR_MODEL = process.env.EXPOSE_AGENT_MODEL || "openai/gpt-4o-mini";
 const DRAFT_MODEL = process.env.EXPOSE_AGENT_DRAFT_MODEL || "openai/gpt-4o";
@@ -98,6 +105,11 @@ export interface PriceBand {
 export interface DraftResult {
   titleShort: string;
   descriptionLong: string;
+  locationDescription?: string;
+  buildingDescription?: string;
+  highlights?: string[];
+  exposeHeadline?: string;
+  exposeSubheadline?: string;
 }
 
 export interface RubricResult {
@@ -160,6 +172,74 @@ export interface WorkingMemory {
   units: UnitData[];
   sellingMode: "INDIVIDUAL" | "BUNDLE" | "BOTH" | null;
   hasFloorPlan: boolean;
+  costCompressed: boolean;
+  beliefs: Partial<BeliefStore>;
+  currentUnit: string | null;
+  addressValidationAttempts: number;
+  // Expose enrichment
+  sellerContact: { name?: string; company?: string; phone?: string; email?: string } | null;
+  roomProgram: { name: string; area: number }[];
+}
+
+export type FieldSource = "user" | "ocr" | "photo" | "inferred" | "default";
+
+export interface FieldBelief<T> {
+  value: T | null;
+  confidence: number;
+  source: FieldSource;
+  lastConfirmedTurn: number | null;
+  conflictsWith?: Array<{ source: FieldSource; value: T; turn: number }>;
+}
+
+// BeliefStore tracks per-field confidence, source, and conflicts for
+// SCALAR PROPERTY FACTS — fields that describe the physical property
+// and can come from multiple sources (user, OCR, photo analysis).
+//
+// EXCLUDED from belief tracking (documented reasons):
+// - uploads: media collection, not a property fact
+// - units: nested per-unit structure, needs unit-level beliefs (PR2c)
+// - sellingMode: operational decision by seller, not a discoverable fact
+// - roomProgram: collection of room entries, not a scalar belief
+// - sellerContact: contact info, not a property characteristic
+// - currentUnit: ephemeral session state
+// - priceBand, draft, lastRubric: pipeline outputs, not user inputs
+// - askingPrice, priceOverride: pricing decisions, not property facts
+// - costCompressed, handoffReady: system/derived state
+export interface BeliefStore {
+  type: FieldBelief<string>;
+  street: FieldBelief<string>;
+  houseNumber: FieldBelief<string>;
+  postcode: FieldBelief<string>;
+  city: FieldBelief<string>;
+  livingArea: FieldBelief<number>;
+  condition: FieldBelief<string>;
+  rooms: FieldBelief<number>;
+  yearBuilt: FieldBelief<number>;
+  bathrooms: FieldBelief<number>;
+  floor: FieldBelief<number>;
+  plotArea: FieldBelief<number>;
+  hasEnergyCert: FieldBelief<boolean>;
+  energyCertType: FieldBelief<string>;
+  energyClass: FieldBelief<string>;
+  energyValue: FieldBelief<number>;
+  energySource: FieldBelief<string>;
+  energyValidUntil: FieldBelief<string>;
+  attributes: FieldBelief<string[]>;
+}
+
+export type BeliefValueType<K extends keyof BeliefStore> =
+  BeliefStore[K] extends FieldBelief<infer V> ? V : never;
+
+// Defined in PR2a for testing; production reads switch to this in PR2b.
+export function getValue<K extends keyof BeliefStore>(
+  wm: WorkingMemory,
+  field: K,
+): BeliefValueType<K> | null {
+  const belief = wm.beliefs?.[field];
+  if (belief?.value !== undefined && belief.value !== null) {
+    return belief.value as BeliefValueType<K>;
+  }
+  return (wm as unknown as Record<string, unknown>)[field as string] as BeliefValueType<K> | null;
 }
 
 export const INITIAL_MEMORY: WorkingMemory = {
@@ -198,6 +278,12 @@ export const INITIAL_MEMORY: WorkingMemory = {
   units: [],
   sellingMode: null,
   hasFloorPlan: false,
+  costCompressed: false,
+  beliefs: {},
+  currentUnit: null,
+  addressValidationAttempts: 0,
+  sellerContact: null,
+  roomProgram: [],
 };
 
 // ────────────────────────────────────────────────────────────────────────
@@ -226,6 +312,141 @@ export function isReadyForDraft(m: WorkingMemory): boolean {
 
 export function isReadyForHandoff(m: WorkingMemory): boolean {
   return isReadyForDraft(m) && !!m.draft && !!m.lastRubric?.passed;
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// nextQuestion() — priority-driven question picker
+// ────────────────────────────────────────────────────────────────────────
+
+export interface QuestionResult {
+  action: "ask" | "upload_photos" | "trigger_pricing" | "trigger_draft" | "wait_confirm";
+  field?: string;
+  prompt?: string;
+  priority: number;
+}
+
+type ConversationalGroup = "identity" | "core" | "details" | "energy" | "media";
+
+interface FieldSpec {
+  field: string;
+  group: ConversationalGroup;
+  blocksPricing: boolean;
+  blocksPublish: boolean;
+  infoValue: number;
+  optional: boolean;
+  isFilled: (wm: WorkingMemory) => boolean;
+  prompt: string;
+}
+
+// Group order is derived from the maximum priority of each group's fields.
+// Groups whose members have higher max priority are asked first.
+// This ensures blocksPublish/blocksPricing fields (energy, media) are
+// not deferred behind nice-to-have details.
+// Computed once at module load; result: identity(7) → core(7) → energy(2.9) → media(2.5) → details(0.9)
+function computeGroupOrder(specs: FieldSpec[]): Record<ConversationalGroup, number> {
+  const maxPri: Record<string, number> = {};
+  for (const s of specs) {
+    const p = (s.blocksPricing ? 4 : 0) + (s.blocksPublish ? 2 : 0) + s.infoValue;
+    if (!maxPri[s.group] || p > maxPri[s.group]) maxPri[s.group] = p;
+  }
+  const groups = Object.entries(maxPri).sort((a, b) => b[1] - a[1]);
+  const order: Record<string, number> = {};
+  groups.forEach(([g], i) => { order[g] = i; });
+  return order as Record<ConversationalGroup, number>;
+}
+
+const FIELD_PRIORITY: FieldSpec[] = [
+  // ── identity: can't do anything without these ──
+  { field: "type",        group: "identity", blocksPricing: true,  blocksPublish: true,  infoValue: 1,   optional: false, isFilled: wm => !!wm.type,        prompt: "Was für eine Immobilie möchten Sie verkaufen? (Wohnung, Haus, Mehrfamilienhaus, …)" },
+  { field: "street",      group: "identity", blocksPricing: true,  blocksPublish: true,  infoValue: 1,   optional: false, isFilled: wm => !!wm.street,      prompt: "In welcher Straße liegt die Immobilie?" },
+  { field: "houseNumber", group: "identity", blocksPricing: true,  blocksPublish: true,  infoValue: 1,   optional: false, isFilled: wm => !!wm.houseNumber, prompt: "Welche Hausnummer?" },
+  { field: "postcode",    group: "identity", blocksPricing: true,  blocksPublish: true,  infoValue: 1,   optional: false, isFilled: wm => !!wm.postcode,    prompt: "Wie lautet die Postleitzahl?" },
+  { field: "city",        group: "identity", blocksPricing: true,  blocksPublish: true,  infoValue: 1,   optional: false, isFilled: wm => !!wm.city,        prompt: "In welcher Stadt?" },
+  // ── core: mandatory for pricing pipeline ──
+  { field: "livingArea",  group: "core",     blocksPricing: true,  blocksPublish: true,  infoValue: 1,   optional: false, isFilled: wm => !!wm.livingArea,  prompt: "Wie groß ist die Wohnfläche in m²?" },
+  { field: "condition",   group: "core",     blocksPricing: true,  blocksPublish: true,  infoValue: 0.8, optional: false, isFilled: wm => !!wm.condition,   prompt: "In welchem Zustand ist die Immobilie? (Gepflegt, Erstbezug, Renovierungsbedürftig, …)" },
+  // ── details: improve listing quality, asked before energy/media ──
+  { field: "rooms",       group: "details",  blocksPricing: false, blocksPublish: false, infoValue: 0.8, optional: true,  isFilled: wm => wm.rooms != null, prompt: "Wie viele Zimmer hat die Immobilie?" },
+  { field: "yearBuilt",   group: "details",  blocksPricing: false, blocksPublish: false, infoValue: 0.7, optional: true,  isFilled: wm => wm.yearBuilt != null, prompt: "Wann wurde das Gebäude gebaut (Baujahr)?" },
+  { field: "bathrooms",   group: "details",  blocksPricing: false, blocksPublish: false, infoValue: 0.5, optional: true,  isFilled: wm => wm.bathrooms != null, prompt: "Wie viele Badezimmer?" },
+  { field: "floor",       group: "details",  blocksPricing: false, blocksPublish: false, infoValue: 0.4, optional: true,  isFilled: wm => wm.type === "EFH" || wm.type === "MFH" || wm.floor != null, prompt: "In welchem Stockwerk liegt die Wohnung?" },
+  { field: "plotArea",    group: "details",  blocksPricing: false, blocksPublish: false, infoValue: 0.4, optional: true,  isFilled: wm => wm.type === "ETW" || wm.plotArea != null, prompt: "Wie groß ist das Grundstück in m²?" },
+  { field: "attributes",  group: "details",  blocksPricing: false, blocksPublish: false, infoValue: 0.6, optional: true,  isFilled: wm => wm.attributes.length > 0, prompt: "Welche Ausstattung hat die Immobilie? (Balkon, Keller, Garten, Stellplatz, …)" },
+  { field: "unitCount",   group: "details",  blocksPricing: false, blocksPublish: false, infoValue: 0.9, optional: false, isFilled: wm => wm.type !== "MFH" || wm.unitCount != null, prompt: "Wie viele Wohneinheiten hat das Gebäude?" },
+  { field: "units",       group: "details",  blocksPricing: false, blocksPublish: false, infoValue: 0.9, optional: false, isFilled: wm => wm.type !== "MFH" || wm.units.length > 0, prompt: "Bitte beschreiben Sie die einzelnen Wohnungen (Größe, Zimmer, Stockwerk)." },
+  { field: "sellingMode", group: "details",  blocksPricing: false, blocksPublish: false, infoValue: 0.8, optional: false, isFilled: wm => wm.type !== "MFH" || wm.sellingMode != null, prompt: "Wie möchten Sie verkaufen? Einzeln, als Paket, oder beides?" },
+  // ── energy: GEG legally required ──
+  { field: "hasEnergyCert", group: "energy", blocksPricing: false, blocksPublish: true,  infoValue: 0.9, optional: false, isFilled: wm => wm.hasEnergyCert !== null, prompt: "Haben Sie einen Energieausweis für die Immobilie?" },
+  { field: "energyClass",  group: "energy", blocksPricing: false, blocksPublish: true,  infoValue: 0.5, optional: false, isFilled: wm => !wm.hasEnergyCert || !!wm.energyClass, prompt: "Welche Energieklasse steht im Ausweis?" },
+  { field: "energyValue",  group: "energy", blocksPricing: false, blocksPublish: true,  infoValue: 0.5, optional: false, isFilled: wm => !wm.hasEnergyCert || wm.energyValue != null, prompt: "Wie hoch ist der Energieverbrauch in kWh/(m²·a)?" },
+  { field: "energySource", group: "energy", blocksPricing: false, blocksPublish: true,  infoValue: 0.5, optional: false, isFilled: wm => !wm.hasEnergyCert || !!wm.energySource, prompt: "Was ist der wesentliche Energieträger? (Gas, Öl, Fernwärme, …)" },
+  // ── media: uploads + enrichment, last group ──
+  { field: "photos",        group: "media", blocksPricing: false, blocksPublish: true,  infoValue: 0.5, optional: false, isFilled: wm => wm.uploads.filter(u => u.kind === "PHOTO").length >= 6, prompt: "Bitte laden Sie mindestens 6 Fotos hoch. Nutzen Sie den 📷-Button links unten." },
+  { field: "floorPlan",     group: "media", blocksPricing: false, blocksPublish: false, infoValue: 0.6, optional: true,  isFilled: wm => wm.hasFloorPlan || wm.uploads.some(u => u.kind === "FLOORPLAN"), prompt: "Haben Sie einen Grundriss? Nutzen Sie den 📐-Button." },
+  { field: "roomProgram",   group: "media", blocksPricing: false, blocksPublish: false, infoValue: 0.3, optional: true,  isFilled: wm => wm.roomProgram.length > 0, prompt: "Möchten Sie die einzelnen Räume mit Größe angeben? Z.B. Wohnzimmer 25m², Küche 12m²" },
+  { field: "sellerContact", group: "media", blocksPricing: false, blocksPublish: false, infoValue: 0.3, optional: true,  isFilled: wm => !!(wm.sellerContact?.name || wm.sellerContact?.company || wm.sellerContact?.phone || wm.sellerContact?.email), prompt: "Welche Kontaktdaten sollen im Exposé stehen? (Name, Telefon, E-Mail)" },
+];
+
+const GROUP_ORDER = computeGroupOrder(FIELD_PRIORITY);
+
+export function nextQuestion(wm: WorkingMemory): QuestionResult {
+  const photoCount = wm.uploads.filter(u => u.kind === "PHOTO").length;
+  const ready = isReadyForDraft(wm);
+
+  if (ready && photoCount >= 6 && !wm.priceBand) return { action: "trigger_pricing", priority: 100 };
+  if (wm.priceBand && !wm.draft) return { action: "trigger_draft", priority: 100 };
+  if (wm.draft && wm.lastRubric?.passed) return { action: "wait_confirm", priority: 100 };
+
+  const candidates: { field: string; group: ConversationalGroup; prompt: string; priority: number; tiebreaker: number }[] = [];
+  for (let i = 0; i < FIELD_PRIORITY.length; i++) {
+    const spec = FIELD_PRIORITY[i];
+    if (spec.isFilled(wm)) continue;
+    if (wm.costCompressed && spec.optional) continue;
+    const priority = (spec.blocksPricing ? 4 : 0) + (spec.blocksPublish ? 2 : 0) + spec.infoValue;
+    candidates.push({ field: spec.field, group: spec.group, prompt: spec.prompt, priority, tiebreaker: i });
+  }
+  if (candidates.length === 0) return { action: "trigger_pricing", priority: 0 };
+
+  // Sort: group order first (derived from max member priority — groups
+  // with higher-priority fields are completed first), then priority
+  // descending within group, then tiebreaker for ties.
+  candidates.sort((a, b) =>
+    GROUP_ORDER[a.group] - GROUP_ORDER[b.group] ||
+    b.priority - a.priority ||
+    a.tiebreaker - b.tiebreaker
+  );
+
+  const best = candidates[0];
+  return { action: best.field === "photos" ? "upload_photos" : "ask", field: best.field, prompt: best.prompt, priority: best.priority };
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// completenessScore() — weighted progress percentage
+// ────────────────────────────────────────────────────────────────────────
+
+export function completenessScore(wm: WorkingMemory): number {
+  const weights: [boolean, number][] = [
+    [!!wm.type, 8],
+    [!!(wm.street && wm.houseNumber && wm.postcode && wm.city), 12],
+    [!!wm.livingArea, 8],
+    [wm.rooms != null, 4],
+    [wm.bathrooms != null, 2],
+    [wm.yearBuilt != null, 4],
+    [!!wm.condition, 6],
+    [wm.hasEnergyCert !== null && (wm.hasEnergyCert === false || !!(wm.energyClass && wm.energyValue && wm.energySource)), 10],
+    [wm.uploads.filter(u => u.kind === "PHOTO").length >= 6, 20],
+    [wm.uploads.some(u => u.kind === "FLOORPLAN") || wm.hasFloorPlan, 6],
+    [!!wm.priceBand, 10],
+    [!!wm.draft, 10],
+  ];
+  const photoCount = wm.uploads.filter(u => u.kind === "PHOTO").length;
+  const photoPartial = Math.min(photoCount / 6, 1) * 20;
+  let score = 0;
+  for (const [filled, weight] of weights) {
+    if (weight === 20) { score += photoPartial; continue; } // photos: partial credit
+    if (filled) score += weight;
+  }
+  return Math.round(score);
 }
 
 const PROPERTY_TYPE_DE: Record<string, string> = {
@@ -776,50 +997,117 @@ function tool_pricingRecommend(m: WorkingMemory) {
   return { ok: true, band };
 }
 
-const DRAFT_SYSTEM_PROMPT = `Du bist ein professioneller Immobilientexter für den deutschen Markt.
-Aus den strukturierten Daten erstellst du eine Exposé-Beschreibung in Sie-Form.
+// Split into two calls: description gets dedicated token budget (300-500 words),
+// metadata fields use the description as context for consistency.
+// Industry standard: 300–500 words (bodenrichtwerte-deutschland.de, 2026).
+// Single-call approach produced 170 ± 14 words because token budget was split 7 ways.
 
-HARTE REGELN:
-- Antwort als JSON: { "descriptionLong": string, "titleShort": string }
-- descriptionLong: MINDESTENS 300 Wörter, maximal 600 Wörter, GENAU 3 Absätze getrennt durch \\n\\n
-  Absatz 1 (~120 Wörter): Die Immobilie — Typ, Lage, Größe, Zimmer, Bäder, Zustand, Renovierungen, Ausstattung im Detail
-  Absatz 2 (~100 Wörter): Die Umgebung — Stadt, Stadtteil, Infrastruktur, Schulen, Einkaufen, ÖPNV, Natur
-  Absatz 3 (~100 Wörter): Die Gelegenheit — Zielgruppe, Preis-Leistung, Investitionspotenzial, Energie-Hinweis
-  WICHTIG: Jeder Absatz muss MINDESTENS 80 Wörter haben. Schreibe ausführlich.
-- titleShort: max 160 Zeichen, enthält Typ, Zimmer (falls vorhanden), Wohnfläche, Stadt
+const DRAFT_DESCRIPTION_PROMPT = `Du bist ein professioneller Immobilientexter für den deutschen Markt.
+Erstelle eine Exposé-Beschreibung in Sie-Form.
+
+Antwort als JSON: { "descriptionLong": string }
+
+descriptionLong: MINDESTENS 300 Wörter, maximal 500 Wörter, GENAU 3 Absätze getrennt durch \\n\\n
+  Absatz 1 (~120 Wörter): Die Immobilie — Typ, Lage, Größe, Zimmer, Bäder, Zustand, besondere Ausstattung, Renovierungen. Beschreibe die Raumaufteilung und den Schnitt detailliert.
+  Absatz 2 (~100 Wörter): Die Umgebung — Stadt, Stadtteil, Infrastruktur, Nahversorgung, Schulen, ÖPNV, Natur, Freizeitangebote. Allgemein aber plausibel basierend auf PLZ/Stadt.
+  Absatz 3 (~100 Wörter): Die Gelegenheit — Zielgruppe, Preis-Leistung, Investitionspotenzial, Energie-Hinweis mit konkreten Werten.
+  WICHTIG: Jeder Absatz muss MINDESTENS 80 Wörter haben. Schreibe ausführlich und detailliert.
+
+REGELN:
 - KEINE erfundenen Merkmale — beschreibe NUR, was in den Daten steht
 - KEINE Ausrufezeichen
-- KEINE Superlative wie "einmalig", "konkurrenzlos", "atemberaubend", "traumhaft", "perfekt"
-- Beende den 3. Absatz mit dem Standard-Energieausweis-Hinweis (falls Energiedaten vorhanden)`;
+- KEINE Superlative: "einmalig", "konkurrenzlos", "atemberaubend", "traumhaft", "perfekt"
+- Beende den 3. Absatz mit dem Standard-Energieausweis-Hinweis (falls Energiedaten vorhanden)
+- NEGIERE NIEMALS bestätigte Daten ("Wohnfläche nicht spezifiziert" wenn Wohnfläche vorhanden ist)`;
+
+const DRAFT_METADATA_PROMPT = `Du bist ein professioneller Immobilientexter für den deutschen Markt.
+Basierend auf den Immobiliendaten UND der bereits erstellten Beschreibung, erstelle die ergänzenden Exposé-Felder.
+
+Antwort als JSON:
+{
+  "titleShort": string,
+  "locationDescription": string,
+  "buildingDescription": string,
+  "highlights": string[],
+  "exposeHeadline": string,
+  "exposeSubheadline": string
+}
+
+FELDER:
+- titleShort: max 160 Zeichen. Enthält Typ, Zimmer, Wohnfläche, Stadt.
+- locationDescription: 80–150 Wörter. Mikrolage + Erreichbarkeit. Basiert auf PLZ/Stadt.
+- buildingDescription: 60–120 Wörter. Gebäudetyp, Baujahr, Zustand, Energiestandard.
+- highlights: 4–6 kurze Stichpunkte (je max 60 Zeichen). Verkaufsargumente aus den Daten.
+- exposeHeadline: 3–8 Wörter, poetisch. Für die Titelseite des Exposé-PDFs.
+- exposeSubheadline: 5–15 Wörter. Ergänzender Untertitel.
+
+REGELN:
+- KEINE erfundenen Merkmale
+- KEINE Ausrufezeichen
+- KEINE Superlative`;
 
 async function tool_listingDraft(m: WorkingMemory) {
   const ctx = summarizeProperty(m);
-  const result = await callLlm({
+  let totalCost = 0;
+
+  // Call 1: Description only — dedicated token budget for 300-500 words
+  const descResult = await callLlm({
     model: DRAFT_MODEL,
     messages: [
-      { role: "system", content: DRAFT_SYSTEM_PROMPT },
-      { role: "user", content: `Erstelle Exposé-Texte basierend auf:\n${ctx}` },
+      { role: "system", content: DRAFT_DESCRIPTION_PROMPT },
+      { role: "user", content: `Erstelle die Exposé-Beschreibung für:\n${ctx}` },
     ],
     responseFormat: { type: "json_object" },
     temperature: 0.6,
-    maxTokens: 2400,
+    maxTokens: 2000,
   });
-  let parsed: Record<string, unknown> = {};
+  totalCost += descResult.usage.costCents;
+
+  let descParsed: Record<string, unknown> = {};
   try {
-    parsed = JSON.parse(result.message.content || "{}");
+    descParsed = JSON.parse(descResult.message.content || "{}");
   } catch {
-    return { ok: false, error: "Entwurf konnte nicht geparst werden", costCents: result.usage.costCents };
+    return { ok: false, error: "Beschreibung konnte nicht geparst werden", costCents: totalCost };
   }
-  if (typeof parsed.descriptionLong !== "string" || typeof parsed.titleShort !== "string") {
-    return { ok: false, error: "Entwurf unvollständig", costCents: result.usage.costCents };
+  if (typeof descParsed.descriptionLong !== "string") {
+    return { ok: false, error: "Beschreibung fehlt im Entwurf", costCents: totalCost };
   }
-  let titleShort = parsed.titleShort;
+  const descriptionLong = descParsed.descriptionLong as string;
+
+  // Call 2: Metadata fields — uses description as context for consistency
+  const metaResult = await callLlm({
+    model: DRAFT_MODEL,
+    messages: [
+      { role: "system", content: DRAFT_METADATA_PROMPT },
+      { role: "user", content: `Immobiliendaten:\n${ctx}\n\nBereits erstellte Beschreibung:\n${descriptionLong}` },
+    ],
+    responseFormat: { type: "json_object" },
+    temperature: 0.5,
+    maxTokens: 1200,
+  });
+  totalCost += metaResult.usage.costCents;
+
+  let metaParsed: Record<string, unknown> = {};
+  try {
+    metaParsed = JSON.parse(metaResult.message.content || "{}");
+  } catch {
+    // Metadata parse failure is non-fatal — we have the description
+    metaParsed = {};
+  }
+
+  let titleShort = typeof metaParsed.titleShort === "string" ? metaParsed.titleShort : `${m.type}, ${m.rooms || "?"} Zimmer, ${m.livingArea || "?"} m², ${m.city}`;
   if (titleShort.length > 160) titleShort = titleShort.slice(0, 157) + "...";
-  return {
-    ok: true,
-    draft: { descriptionLong: parsed.descriptionLong, titleShort } as DraftResult,
-    costCents: result.usage.costCents,
+
+  const draft: DraftResult = {
+    descriptionLong,
+    titleShort,
+    locationDescription: typeof metaParsed.locationDescription === "string" ? metaParsed.locationDescription : undefined,
+    buildingDescription: typeof metaParsed.buildingDescription === "string" ? metaParsed.buildingDescription : undefined,
+    highlights: Array.isArray(metaParsed.highlights) ? (metaParsed.highlights as string[]) : undefined,
+    exposeHeadline: typeof metaParsed.exposeHeadline === "string" ? metaParsed.exposeHeadline : undefined,
+    exposeSubheadline: typeof metaParsed.exposeSubheadline === "string" ? metaParsed.exposeSubheadline : undefined,
   };
+  return { ok: true, draft, costCents: totalCost };
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -870,8 +1158,18 @@ export async function runRubric(m: WorkingMemory): Promise<{ result: RubricResul
     const words = text.split(/\s+/).filter(Boolean).length;
     wcDetails.words = words;
     wcDetails.paragraphs = paragraphs.length;
-    wcDetails.ok = words >= 230 && words <= 650 && paragraphs.length >= 2 && paragraphs.length <= 4;
-    if (!wcDetails.ok) failures.push(`Beschreibung: ${words} Wörter / ${paragraphs.length} Absätze (Soll: 230–650 / 2–4)`);
+    // Tiered threshold based on source-data richness.
+    // "thin-data": ETW under 100m² with fewer than 5 attributes. These properties
+    // have ~18 verifiable facts; honest descriptions top out at ~200 words.
+    // 180 is P25 of honest-output ceiling (200w) for thin-data ETW per 3-sample
+    // diagnostic on cmoofls1n0001j0g8hvara4z6.
+    // "standard": everything else. 230 = P25 of split-generator distribution.
+    // To be raised to 230 for thin-data once gather-more-material loop ships
+    // (Path 1, ticketed for post-launch).
+    const isThinData = m.type === "ETW" && (m.livingArea || 0) < 100 && m.attributes.length < 5;
+    const minWords = isThinData ? 180 : 230;
+    wcDetails.ok = words >= minWords && words <= 600 && paragraphs.length >= 2 && paragraphs.length <= 4;
+    if (!wcDetails.ok) failures.push(`Beschreibung: ${words} Wörter / ${paragraphs.length} Absätze (Soll: ${minWords}–600 / 2–4)`);
   } else {
     failures.push("Kein Entwurf vorhanden");
   }
@@ -895,15 +1193,20 @@ export async function runRubric(m: WorkingMemory): Promise<{ result: RubricResul
     if (!supDetails.ok) failures.push(`Verbotene Superlative: ${found.join(", ")}`);
   }
 
-  // 5. Photos: ≥6, AND ≥1 labelled exterior OR floorplan (Lastenheft §4.5)
+  // 5. Photos: ≥6, AND ≥1 non-interior photo OR floorplan.
+  // "Non-interior" = any classification that isn't a room inside the property.
+  // This catches exterior, garden, garage, balcony, other, floorplan — all provide
+  // building context that pure interior shots don't. Avoids false negatives from
+  // classifier labeling a street view as "garden" due to visible trees.
+  const INTERIOR_TYPES = new Set(["living", "kitchen", "bathroom", "bedroom", "office", "hallway", "basement"]);
   const photos = m.uploads.filter((u) => u.kind === "PHOTO" || u.kind === "FLOORPLAN");
   const photoCount = photos.length;
-  const hasExteriorOrFloorplan =
+  const hasNonInteriorOrFloorplan =
     photos.some((u) => u.kind === "FLOORPLAN") ||
-    photos.some((u) => u.classification?.roomType === "exterior" || u.classification?.roomType === "floorplan");
-  const photosOk = photoCount >= 6 && hasExteriorOrFloorplan;
+    photos.some((u) => u.classification?.roomType && !INTERIOR_TYPES.has(u.classification.roomType));
+  const photosOk = photoCount >= 6 && hasNonInteriorOrFloorplan;
   if (photoCount < 6) failures.push(`Nur ${photoCount} Fotos hochgeladen (Soll: ≥6)`);
-  else if (!hasExteriorOrFloorplan) failures.push("Mindestens ein Außenfoto oder Grundriss fehlt");
+  else if (!hasNonInteriorOrFloorplan) failures.push("Mindestens ein Außenfoto oder Grundriss fehlt");
 
   // 6. Asking price within band, OR explicit override
   let priceOk = true;
@@ -938,6 +1241,75 @@ export async function runRubric(m: WorkingMemory): Promise<{ result: RubricResul
 }
 
 // ────────────────────────────────────────────────────────────────────────
+// rubricFailureToQuestions() — convert rubric failures to targeted re-ask questions
+// ────────────────────────────────────────────────────────────────────────
+
+export function rubricFailureToQuestions(rubric: RubricResult, wm?: WorkingMemory): string[] {
+  const questions: string[] = [];
+  if (!rubric.details.gegFields.ok) {
+    questions.push("Bitte ergänzen Sie die fehlenden Energieausweis-Daten: Energieklasse, Energieverbrauch (kWh/m²·a) und Primärenergieträger.");
+  }
+  if (!rubric.details.wordCount.ok) {
+    const w = rubric.details.wordCount.words || 0;
+    const min = rubric.details.wordCount.words !== undefined ? (w < 200 ? 180 : 230) : 230;
+    if (w < min) questions.push(`Die Beschreibung hat nur ${w} Wörter (Minimum: ${min}). Soll ich den Text erweitern?`);
+    else if (w > 600) questions.push(`Die Beschreibung hat ${w} Wörter (Maximum: 600). Soll ich den Text kürzen?`);
+    else questions.push("Die Absatzstruktur der Beschreibung stimmt nicht (2-4 Absätze mit je mind. 80 Wörtern). Soll ich den Text anpassen?");
+  }
+  if (!rubric.details.noHallucination.ok && rubric.details.noHallucination.flagged) {
+    questions.push(`Folgende Angaben im Text sind nicht durch Ihre Daten belegt: ${rubric.details.noHallucination.flagged.join(", ")}. Stimmen diese oder soll ich sie entfernen?`);
+  }
+  if (!rubric.details.noSuperlatives.ok && rubric.details.noSuperlatives.found) {
+    questions.push(`Der Text enthält unzulässige Superlative (${rubric.details.noSuperlatives.found.join(", ")}). Soll ich diese ersetzen?`);
+  }
+  if (!rubric.details.photos.ok) {
+    const c = rubric.details.photos.count || 0;
+    if (c < 6) questions.push(`Es fehlen noch ${6 - c} Fotos (mindestens 6 benötigt). Bitte laden Sie weitere Fotos über den 📷-Button hoch.`);
+    else questions.push("Mindestens ein Außenfoto oder Grundriss wird benötigt. Bitte laden Sie ein Foto vom Gebäude von außen hoch — z.B. Fassade, Eingang oder Straßenansicht.");
+  }
+  if (!rubric.details.priceInBand.ok && wm) {
+    const price = wm.askingPrice ? wm.askingPrice.toLocaleString("de-DE") : "?";
+    const mid = wm.priceBand ? wm.priceBand.strategyReal.toLocaleString("de-DE") : "?";
+    const low = wm.priceBand ? wm.priceBand.low.toLocaleString("de-DE") : "?";
+    const high = wm.priceBand ? wm.priceBand.high.toLocaleString("de-DE") : "?";
+    questions.push(
+      `Ihr Angebotspreis von ${price} € liegt außerhalb der Marktempfehlung (${low}–${high} €).\n\nWie möchten Sie fortfahren?\nA) Bei ${price} € bleiben\nB) Auf ${mid} € anheben (Marktmitte)\nC) Einen anderen Preis nennen`
+    );
+  } else if (!rubric.details.priceInBand.ok) {
+    questions.push("Ihr Angebotspreis liegt außerhalb der Marktempfehlung. Möchten Sie den Preis anpassen oder bewusst überschreiben?");
+  }
+  return questions;
+}
+
+// Deterministic message after chained listing_review.
+// Returns { message, passed } so caller can branch on outcome.
+export function chainedReviewMessage(rubric: RubricResult, draft: DraftResult, wm?: WorkingMemory): { message: string; passed: boolean } {
+  if (rubric.passed) {
+    const hl = draft.exposeHeadline || draft.titleShort;
+    const highlights = (draft.highlights || []).join(" · ");
+    const message = [
+      "Ihr Exposé-Entwurf ist fertig und hat die Qualitätsprüfung bestanden.",
+      "",
+      `**Überschrift:** ${hl}`,
+      `**Kurztitel:** ${draft.titleShort}`,
+      "",
+      "**Beschreibung:**",
+      draft.descriptionLong,
+      "",
+      highlights ? `**Highlights:** ${highlights}` : "",
+      "",
+      'Möchten Sie das Inserat so erstellen? Antworten Sie mit "Ja" um fortzufahren.',
+    ].filter(Boolean).join("\n");
+    return { message, passed: true };
+  }
+  const questions = rubricFailureToQuestions(rubric, wm);
+  return {
+    message: questions[0] || "Der Entwurf entspricht noch nicht den Anforderungen. Bitte prüfen Sie die Angaben.",
+    passed: false,
+  };
+}
+
+// ────────────────────────────────────────────────────────────────────────
 // Tool dispatcher
 // ────────────────────────────────────────────────────────────────────────
 
@@ -961,6 +1333,7 @@ export async function executeTool(
   name: string,
   args: Record<string, unknown>,
   memory: WorkingMemory,
+  turnNumber?: number,
 ): Promise<ToolExecutionResult> {
   const start = Date.now();
   let output: Record<string, unknown> = {};
@@ -993,14 +1366,20 @@ export async function executeTool(
         output = r as unknown as Record<string, unknown>;
         costCents = r.costCents || 0;
         if (r.ok) {
-          memoryPatch = {
-            hasEnergyCert: true,
-            energyCertType: r.type === "BEDARF" ? "BEDARF" : "VERBRAUCH",
-            energyClass: r.energyClass || memory.energyClass,
-            energyValue: r.energyValue ?? memory.energyValue,
-            energySource: r.primarySource || memory.energySource,
-            energyValidUntil: r.validUntil || memory.energyValidUntil,
+          // Beliefs are the sole write path for observed energy values.
+          // projectBeliefToFlat derives flat fields from beliefs.
+          // Fields OCR didn't detect produce no belief → no projection →
+          // prior flat values from user turns survive untouched.
+          const energyBeliefs: Partial<BeliefStore> = {
+            hasEnergyCert: { value: true, confidence: 0.9, source: "ocr" as FieldSource, lastConfirmedTurn: turnNumber ?? 0 },
           };
+          if (r.energyClass) energyBeliefs.energyClass = { value: r.energyClass, confidence: 0.85, source: "ocr" as FieldSource, lastConfirmedTurn: turnNumber ?? 0 };
+          if (r.energyValue != null) energyBeliefs.energyValue = { value: r.energyValue, confidence: 0.85, source: "ocr" as FieldSource, lastConfirmedTurn: turnNumber ?? 0 };
+          if (r.primarySource) energyBeliefs.energySource = { value: r.primarySource, confidence: 0.8, source: "ocr" as FieldSource, lastConfirmedTurn: turnNumber ?? 0 };
+          if (r.validUntil) energyBeliefs.energyValidUntil = { value: r.validUntil, confidence: 0.8, source: "ocr" as FieldSource, lastConfirmedTurn: turnNumber ?? 0 };
+          memoryPatch = projectBeliefToFlat({ beliefs: energyBeliefs });
+          // energyCertType is a format flag, not a property belief
+          memoryPatch.energyCertType = r.type === "BEDARF" ? "BEDARF" : "VERBRAUCH";
         }
         ok = r.ok;
         break;
@@ -1097,6 +1476,52 @@ export function rebuildMemory(turns: PersistedTurn[]): WorkingMemory {
   return memory;
 }
 
+function mergeBeliefField<T>(
+  existing: FieldBelief<T> | undefined,
+  incoming: FieldBelief<T>,
+): FieldBelief<T> {
+  if (!existing || existing.value === undefined || existing.value === null) {
+    return incoming;
+  }
+  if (existing.value !== incoming.value) {
+    return {
+      ...incoming,
+      conflictsWith: [
+        ...(incoming.conflictsWith || []),
+        ...(existing.conflictsWith || []),
+        { source: existing.source, value: existing.value, turn: existing.lastConfirmedTurn ?? 0 },
+      ],
+    };
+  }
+  // Same value from different source — confirming evidence, bump confidence.
+  // Additive rather than independent-evidence formula 1-(1-p1)(1-p2) because
+  // sources are often correlated (user reads from the cert OCR also parsed).
+  // 0.05 bonus distinguishes "confirmed by two sources" (>=0.95) from
+  // "single source" (<=0.9) in PR2c's publish-without-confirmation threshold.
+  return {
+    ...incoming,
+    confidence: Math.round(Math.min(1, Math.max(incoming.confidence, existing.confidence) + 0.05) * 100) / 100,
+    conflictsWith: existing.conflictsWith?.length
+      ? [...(incoming.conflictsWith || []), ...existing.conflictsWith]
+      : incoming.conflictsWith,
+  };
+}
+
+// Copies belief values to flat fields where the flat field is not already set.
+// Used by tool writers that produce beliefs as their primary output.
+function projectBeliefToFlat(patch: MemoryPatch): MemoryPatch {
+  if (!patch.beliefs) return patch;
+  const result = { ...patch };
+  for (const [k, belief] of Object.entries(patch.beliefs)) {
+    if (belief?.value !== undefined && belief.value !== null) {
+      if ((result as Record<string, unknown>)[k] === undefined) {
+        (result as Record<string, unknown>)[k] = belief.value;
+      }
+    }
+  }
+  return result;
+}
+
 function applyPatch(memory: WorkingMemory, patch: MemoryPatch): WorkingMemory {
   const next = { ...memory, uploads: [...memory.uploads] };
   for (const [k, v] of Object.entries(patch)) {
@@ -1119,6 +1544,21 @@ function applyPatch(memory: WorkingMemory, patch: MemoryPatch): WorkingMemory {
       next.assumptions = Array.from(merged);
     } else if (k === "units" && Array.isArray(v)) {
       next.units = v as UnitData[];
+    } else if (k === "beliefs" && v && typeof v === "object") {
+      const incoming = v as Partial<BeliefStore>;
+      const merged = { ...next.beliefs };
+      for (const [bk, newBelief] of Object.entries(incoming)) {
+        if (!newBelief) continue;
+        const existing = merged[bk as keyof BeliefStore];
+        // Safe: same field key guarantees matching value types at runtime.
+        (merged as Record<string, unknown>)[bk] = mergeBeliefField(
+          existing as FieldBelief<typeof newBelief.value> | undefined,
+          newBelief as FieldBelief<typeof newBelief.value>,
+        );
+      }
+      next.beliefs = merged as Partial<BeliefStore>;
+    } else if (k === "roomProgram" && Array.isArray(v)) {
+      next.roomProgram = v as { name: string; area: number }[];
     } else {
       // @ts-expect-error generic patch
       next[k] = v;
@@ -1163,7 +1603,15 @@ MODUS A — BULK (Verkäufer gibt viele Daten auf einmal):
 
 MODUS B — DIALOG (Verkäufer antwortet einzeln):
 Stelle pro Nachricht NUR EINE Frage. Reihenfolge:
-Typ → Adresse → PLZ/Stadt → Wohnfläche → Grundstück → Zimmer → Bäder → Baujahr → Zustand → Ausstattung → [MFH: Einheiten, Verkaufsart] → Energie → Fotos → Grundriss
+Typ → Adresse → PLZ/Stadt → [typspezifische Fragen] → Energie → Fotos → Grundriss
+
+TYPSPEZIFISCHE FRAGEN:
+• ETW: Wohnfläche → Zimmer → Bäder → Etage → Baujahr → Zustand → Ausstattung (Balkon, Aufzug, Keller, Stellplatz, Hausgeld?)
+• EFH/DHH/RH: Wohnfläche → Grundstück → Zimmer → Bäder → Baujahr → Zustand → Ausstattung (Garten, Garage, Keller, Terrasse, Carport?)
+• MFH: Wohnfläche (gesamt) → Grundstück → Baujahr → Zustand → Ausstattung → **Einheiten (PHASE B)** → **Verkaufsart (PHASE C)** → dann Energie → Fotos → Grundriss
+• GRUNDSTUECK: Grundstücksfläche → Bebauungsplan? → Erschließung? → Zustand
+
+WICHTIG FÜR MFH: Frage nach Einheiten und Verkaufsart BEVOR du nach Fotos fragst! Der Verkäufer muss wissen welche Wohnungen es gibt, damit er die Fotos richtig zuordnen kann.
 
 ═══ AUTOMATISCHE TOOL-AUFRUFE ═══
 
@@ -1174,23 +1622,80 @@ Rufe Tools SOFORT auf — frage NICHT erst um Erlaubnis:
 • listing_review → SOFORT nach listing_draft
 • handoff_commit → NUR wenn rubric bestanden UND Verkäufer "ja" sagt
 
-═══ NACH FOTOS/GRUNDRISS-UPLOAD ═══
+═══ NACH UPLOADS — FÜHRE DEN VERKÄUFER ═══
 
+Der Verkäufer sendet nach jedem Upload eine kurze Bestätigungsnachricht. Reagiere als GUIDE:
+
+NACH FOTO-UPLOAD:
+- "Danke, [N] Fotos erhalten! ✓"
+- Wenn Grundriss noch fehlt: "Haben Sie auch einen Grundriss? Nutzen Sie den 📐-Button links unten."
+- Wenn Grundriss da, aber Energieausweis fehlt: "Haben Sie einen Energieausweis? Nutzen Sie den ⚡-Button."
+- Wenn alles da: sofort pricing_recommend aufrufen
+
+NACH GRUNDRISS-UPLOAD:
+- "Grundriss erhalten! ✓"
+- Wenn Energieausweis fehlt: "Jetzt fehlt noch der Energieausweis. Nutzen Sie den ⚡-Button, oder teilen Sie mir die Daten mit (Typ, Klasse, Verbrauch, Energieträger)."
+- Wenn Fotos < 6: "Es fehlen noch Fotos (mindestens 6). Nutzen Sie den 📷-Button."
+
+NACH ENERGIEAUSWEIS-UPLOAD:
+- Prüfe die erkannten Werte im Memory: "Energieausweis erkannt: [Typ], Klasse [X], [Y] kWh/(m²·a). Stimmt das?"
+- Wenn Werte fehlen: "Einige Werte konnten nicht ausgelesen werden. Bitte ergänzen Sie: [fehlende Felder]"
+
+AUTOMATISCHE PIPELINE:
 Wenn ≥6 Fotos im Memory UND alle Pflichtfelder gesetzt:
 → Rufe SOFORT pricing_recommend auf
 → Dann listing_draft
 → Dann listing_review
 → Zeige dem Verkäufer den Entwurf und frage nach Bestätigung
 
-═══ MEHRFAMILIENHAUS (MFH) ═══
+═══ MEHRFAMILIENHAUS (MFH) — STRUKTURIERTER ABLAUF ═══
 
-Wenn der Typ MFH ist:
-1. Erkenne Wohneinheiten aus der Beschreibung (z.B. "3 Wohnungen: 95m², 95m², 55m²")
-2. Frage nach Verkaufsart: Einzeln / Paket / Beides
-3. Nach den Gebäudefotos und Grundrissen, frage EINMAL:
-   "Haben Sie separate Fotos und Grundrisse für die einzelnen Wohnungen, oder sollen die Gebäudefotos für alle verwendet werden?"
-   → Bei "gleiche/selbe/nein" → Gebäudefotos für alle verwenden
-   → Bei "ja" → für jede Wohnung einzeln fragen
+Wenn der Typ MFH ist, folge diesem Ablauf:
+
+PHASE A — GEBÄUDE:
+1. "Wie viele Wohneinheiten hat das Gebäude?"
+2. "Liegen alle Wohnungen an derselben Adresse?" (Normalfall: ja)
+3. Sammle Gebäude-Daten: Adresse, Baujahr, Zustand, Energieausweis
+4. "Laden Sie jetzt Fotos vom Gebäude hoch — Außenansicht, Treppenhaus, Gemeinschaftsflächen. Nutzen Sie den 📷-Button links unten."
+5. "Haben Sie einen Gebäude-Grundriss? Nutzen Sie den 📐-Button."
+
+PHASE B — WOHNUNGEN EINZELN:
+Sage: "Perfekt, das Gebäude ist erfasst. Jetzt gehen wir die [N] Wohnungen einzeln durch. Starten wir mit der ersten."
+
+Für JEDE Wohnung frage nacheinander:
+a) "Wie bezeichnen Sie diese Wohnung?" (WE 01, EG links, Whg 1, etc.)
+b) "Wohnfläche in m²?"
+c) "Zimmer / Bäder?"
+d) "Welches Stockwerk?" (EG, 1. OG, DG…)
+e) "Besonderheiten?" (Balkon, Ankleide, eigener Eingang, Terrasse…)
+f) "Haben Sie separate Fotos für diese Wohnung? Laden Sie sie jetzt hoch — sie werden automatisch [Label] zugeordnet."
+g) "Haben Sie einen eigenen Grundriss für [Label]?"
+h) Optional: "Raumprogramm — wie groß sind die einzelnen Räume?" (Küche 32m², Wohnen 19m², etc.)
+
+WICHTIG: Akzeptiere auch Bulk-Eingaben! Wenn der Verkäufer sagt "Wohnung 1: 95m², 3 Zimmer, EG. Wohnung 2: 55m², 2 Zimmer, 1. OG" → erfasse ALLE auf einmal und zeige eine ✓-Liste.
+
+WICHTIG — UPLOAD-KONTEXT SETZEN:
+Wenn du zu einer bestimmten Wohnung wechselst, setze currentUnit im Memory auf das Label dieser Wohnung.
+Wenn du zurück zur Gebäude-Ebene wechselst, setze currentUnit auf null.
+Der Upload-Kontext wird dem Verkäufer automatisch angezeigt. Alle Fotos/Grundrisse die hochgeladen werden, werden automatisch dieser Wohnung zugeordnet.
+
+Nach jeder Wohnung: "✓ [Label] erfasst ([Area] m², [Rooms] Zi). Weiter mit Wohnung [N+1]."
+
+PHASE C — VERKAUFSSTRATEGIE:
+"Wie möchten Sie verkaufen?"
+• Einzeln — jede Wohnung separat an Selbstnutzer
+• Als Paket — alle Wohnungen zusammen an einen Investor
+• Beides — einzeln UND als Paket anbieten (empfohlen, erreicht mehr Käufer)
+
+PHASE D — WEITER WIE GEWOHNT:
+Wenn alle Einheiten + Verkaufsart erfasst → pricing_recommend → listing_draft → listing_review → handoff
+
+MFH-INTELLIGENZ:
+• Vererbung: Baujahr, Zustand, Energieausweis vom Gebäude gelten automatisch für alle Einheiten
+• "Gleich wie oben" / "Selbe Ausstattung" → vorherige Wohnungs-Daten übernehmen
+• "Keine eigenen Fotos" / "Die Gebäudefotos reichen" → Gebäudefotos für alle verwenden
+• Plausibilitätsprüfung: Gesamtfläche aller Einheiten sollte ungefähr der Gebäude-Wohnfläche entsprechen
+• Bei "Weiß ich nicht" für optionale Unit-Felder → überspringen, kein Problem
 
 ═══ INTELLIGENZ ═══
 
@@ -1201,12 +1706,47 @@ Wenn der Typ MFH ist:
 • Adresse nicht validierbar → akzeptieren, weiter
 • Pricing fehlgeschlagen → zeige fehlende Felder
 
-═══ UPLOAD-BUTTONS ═══
+═══ FOTO-ANLEITUNG ═══
 
-Weise den Verkäufer auf die drei Buttons links unten hin:
+Wenn Fotos fehlen, weise auf die Buttons links unten hin UND gib konkrete Foto-Tipps:
 📷 Foto-Button — für Fotos (mind. 6)
 ⚡ Energie-Button — für Energieausweis-PDF
 📐 Grundriss-Button — für Grundriss-PDF
+
+Sage dem Verkäufer WAS er fotografieren soll:
+"Für ein professionelles Exposé empfehle ich folgende Fotos:
+- Außenansicht von der Straße
+- Wohnzimmer (bei Tageslicht, aufgeräumt)
+- Küche
+- Schlafzimmer
+- Badezimmer
+- Balkon, Garten oder Eingangsbereich
+
+Tipp: Fotografieren Sie bei Tageslicht, räumen Sie vorher auf, und halten Sie die Kamera gerade."
+
+═══ PREISEMPFEHLUNG ERKLÄREN ═══
+
+Wenn pricing_recommend erfolgreich ist, erkläre den Preis im Kontext:
+- Zeige €/m² und vergleiche mit dem Markt
+- Erkläre die 3 Strategien: Schnellverkauf (unter Markt), Realistisch (Marktmitte), Maximum (darüber)
+- Wenn der Wunschpreis über dem Band liegt: "Ihr Preis liegt [X]% über unserer Empfehlung. Das ist möglich, kann aber die Verkaufsdauer verlängern."
+
+═══ NACH HANDOFF (Nächste Schritte) ═══
+
+Wenn handoff_commit erfolgreich war, sage:
+"Ihr Inserat ist erstellt! So geht es weiter:
+1. Prüfen Sie das Exposé auf der nächsten Seite
+2. Laden Sie die PDF herunter und teilen Sie sie mit Interessenten
+3. Aktivieren Sie das Inserat, wenn Sie bereit sind
+4. Optional: Auf ImmobilienScout24 freischalten unter Portal-Sync"
+
+═══ RAUMPROGRAMM (Optional) ═══
+
+Nach den Grunddaten, frage optional:
+"Möchten Sie die einzelnen Räume mit Größe angeben? Das macht Ihr Exposé professioneller.
+Beispiel: Wohnzimmer 25m², Küche 12m², Schlafzimmer 14m², Bad 6m²"
+Speichere als roomProgram: [{ name: "Wohnzimmer", area: 25 }, ...] im Memory.
+Wenn "nein" oder "skip" → überspringen.
 
 ═══ REFERENZ ═══
 
@@ -1215,8 +1755,10 @@ ZUSTAND: ERSTBEZUG, NEUBAU, GEPFLEGT, RENOVIERUNGS_BEDUERFTIG, SANIERUNGS_BEDUER
 ENERGIEKLASSEN: A+, A, B, C, D, E, F, G, H
 VERKAUFSART: INDIVIDUAL (einzeln), BUNDLE (Paket), BOTH (beides)`;
 
-function buildMemoryContext(m: WorkingMemory): string {
+export function buildMemoryContext(m: WorkingMemory): string {
   const missing = getMissingFields(m);
+  const q = nextQuestion(m);
+  const score = completenessScore(m);
   return `[WORKING MEMORY]
 Phase: ${m.phase}
 Typ: ${m.type || "—"}
@@ -1244,8 +1786,12 @@ Preisband: ${m.priceBand ? `${m.priceBand.low.toLocaleString("de")}–${m.priceB
 Wunschpreis: ${m.askingPrice ? `${m.askingPrice.toLocaleString("de")} €` : "—"}
 Entwurf vorhanden: ${m.draft ? "ja" : "nein"}
 Letzte Rubric: ${m.lastRubric ? (m.lastRubric.passed ? "✓ bestanden" : `✗ ${m.lastRubric.failures.join("; ")}`) : "—"}
+Aktuelle Wohnung (Upload-Kontext): ${m.currentUnit || "Gebäude"}
+Raumprogramm: ${m.roomProgram.length > 0 ? m.roomProgram.map((r) => `${r.name} ${r.area}m²`).join(", ") : "—"}
+Kontaktdaten: ${m.sellerContact ? [m.sellerContact.name, m.sellerContact.company, m.sellerContact.phone, m.sellerContact.email].filter(Boolean).join(", ") : "—"}
 Handoff bereit: ${m.handoffReady ? "ja" : "nein"}
-Fehlende Pflichtfelder: ${missing.join(", ") || "keine"}`;
+Vollständigkeit: ${score}%
+Nächste Aktion: ${q.action === "ask" ? `Frage: "${q.prompt}"` : q.action === "upload_photos" ? `Foto-Upload: "${q.prompt}"` : q.action === "trigger_pricing" ? "→ pricing_recommend aufrufen" : q.action === "trigger_draft" ? "→ listing_draft aufrufen" : "→ Bestätigung abwarten"}${q.field ? ` [Feld: ${q.field}]` : ""}${m.lastRubric && !m.lastRubric.passed ? `\nRubric-Fehler: ${rubricFailureToQuestions(m.lastRubric, m).join(" | ")}` : ""}${m.costCompressed ? "\n\n[KOSTEN-MODUS] Budget knapp. Antworte kurz (max 2 Sätze). Überspringe optionale Felder (Zimmer, Bäder, Etage, Grundstück, Raumprogramm, Kontaktdaten). Frage nur Pflichtfelder." : ""}`;
 }
 
 interface ChatMsg {
@@ -1256,20 +1802,28 @@ interface ChatMsg {
   name?: string;
 }
 
-function parseInlineMemory(content: string): { cleaned: string; patch: Partial<WorkingMemory> | null } {
+function parseInlineMemory(content: string): { cleaned: string; patch: MemoryPatch | null } {
   const match = content.match(/###MEMORY###\s*([\s\S]*?)\s*###END###/);
   if (!match) return { cleaned: content, patch: null };
   const cleaned = content.replace(/###MEMORY###[\s\S]*?###END###/, "").trim();
   try {
     const raw = JSON.parse(match[1]);
-    return { cleaned, patch: normalizeUserPatch(raw) };
+    // Legacy inline memory path — no turn context available, use 0.
+    // This path is backwards-compat and rarely hit; removes in PR2b.
+    return { cleaned, patch: normalizeUserPatch(raw, 0) };
   } catch {
     return { cleaned, patch: null };
   }
 }
 
-function normalizeUserPatch(data: Record<string, unknown>): Partial<WorkingMemory> {
-  const patch: Partial<WorkingMemory> = {};
+// Turn numbering convention for lastConfirmedTurn:
+// Counted as the number of prior user messages in the conversation history
+// at the time the turn is processed. First user message → turnNumber=0,
+// second → 1, etc. This is a 0-based index into the user turn sequence,
+// computed in runAgentTurn as history.filter(m => m.role === "user").length.
+// PR2c's recency filtering uses this to prefer later-confirmed values.
+function normalizeUserPatch(data: Record<string, unknown>, turnNumber: number): MemoryPatch {
+  const patch: MemoryPatch = {};
   if (typeof data.type === "string") {
     const map: Record<string, string> = {
       eigentumswohnung: "ETW", wohnung: "ETW", etw: "ETW",
@@ -1349,6 +1903,46 @@ function normalizeUserPatch(data: Record<string, unknown>): Partial<WorkingMemor
     patch.sellingMode = (modeMap[data.sellingMode.toLowerCase()] || data.sellingMode.toUpperCase()) as WorkingMemory["sellingMode"];
   }
   if (typeof data.hasFloorPlan === "boolean") patch.hasFloorPlan = data.hasFloorPlan;
+  if (Array.isArray(data.roomProgram)) {
+    patch.roomProgram = data.roomProgram.filter((r: unknown) => r && typeof r === "object" && "name" in (r as Record<string, unknown>) && "area" in (r as Record<string, unknown>)).map((r: unknown) => {
+      const obj = r as Record<string, unknown>;
+      return { name: String(obj.name), area: Number(obj.area) };
+    });
+  }
+  if (data.sellerContact && typeof data.sellerContact === "object") {
+    const sc = data.sellerContact as Record<string, unknown>;
+    const contact = {
+      name: sc.name ? String(sc.name) : undefined,
+      company: sc.company ? String(sc.company) : undefined,
+      phone: sc.phone ? String(sc.phone) : undefined,
+      email: sc.email ? String(sc.email) : undefined,
+    };
+    // Only write sellerContact if at least one subfield is present.
+    // Empty objects from LLM extraction should be treated as not extracted.
+    if (contact.name || contact.company || contact.phone || contact.email) {
+      patch.sellerContact = contact;
+    }
+  }
+  // Dual-write: for each scalar field written, create a belief entry
+  const BELIEF_FIELDS: (keyof BeliefStore)[] = [
+    "type", "street", "houseNumber", "postcode", "city",
+    "livingArea", "condition", "rooms", "yearBuilt", "bathrooms",
+    "floor", "plotArea", "hasEnergyCert", "energyCertType",
+    "energyClass", "energyValue", "energySource", "energyValidUntil",
+    "attributes",
+  ];
+  const beliefs: Partial<BeliefStore> = {};
+  for (const f of BELIEF_FIELDS) {
+    if (f in patch && (patch as Record<string, unknown>)[f] !== undefined) {
+      (beliefs as Record<string, unknown>)[f] = {
+        value: (patch as Record<string, unknown>)[f],
+        confidence: 0.9,
+        source: "user" as FieldSource,
+        lastConfirmedTurn: turnNumber,
+      };
+    }
+  }
+  if (Object.keys(beliefs).length > 0) patch.beliefs = beliefs;
   return patch;
 }
 
@@ -1380,7 +1974,8 @@ async function extractMemoryFromMessage(
   userMessage: string,
   currentMemory: WorkingMemory,
   agentRunId: string,
-): Promise<{ patch: Partial<WorkingMemory> | null; costCents: number }> {
+  turnNumber: number,
+): Promise<{ patch: MemoryPatch | null; costCents: number }> {
   const known = Object.entries(currentMemory)
     .filter(([k, v]) => v !== null && k !== "uploads" && k !== "draft" && k !== "lastRubric" && k !== "assumptions" && k !== "priceBand")
     .map(([k, v]) => `${k}: ${v}`)
@@ -1434,6 +2029,10 @@ Erlaubte Felder (nur NEUE/GEÄNDERTE extrahieren):
 - units: Array von { label, livingArea, rooms, bathrooms, floor, features } — Daten einzelner Wohneinheiten
 - sellingMode: INDIVIDUAL|BUNDLE|BOTH — Verkaufsart (einzeln/Paket/beides)
 - hasFloorPlan: true wenn Grundriss vorhanden
+- currentUnit: string|null — Label der Wohnung die gerade besprochen wird (z.B. "Wohnung 1", "WE 01"). null wenn Gebäude-Ebene. Setze dies wenn der Assistent explizit zu einer bestimmten Wohnung wechselt.
+- roomProgram: Array von { name: string, area: number } — einzelne Räume mit Größe (z.B. { name: "Wohnzimmer", area: 25 })
+- askingPrice: Wunschpreis/Angebotspreis in Euro (Zahl, ohne Währung)
+- sellerContact: { name?, company?, phone?, email? } — Kontaktdaten für das Exposé
 
 Antworte NUR mit JSON. Leeres Objekt {} wenn nichts Neues extrahiert wurde.`;
 
@@ -1458,7 +2057,7 @@ Antworte NUR mit JSON. Leeres Objekt {} wenn nichts Neues extrahiert wurde.`;
     });
 
     const raw = JSON.parse(llm.message.content || "{}");
-    const patch = normalizeUserPatch(raw);
+    const patch = normalizeUserPatch(raw, turnNumber);
     const hasData = Object.keys(patch).length > 0;
     return { patch: hasData ? patch : null, costCents: llm.usage.costCents };
   } catch {
@@ -1487,7 +2086,114 @@ export async function runAgentTurn(
   let costCentsTotal = ctx.startingCostCents;
   let finished = false;
   let agentMessage = "";
+  const turnNumber = history.filter(m => m.role === "user").length;
   let abortedReason: AgentTurnResult["abortedReason"];
+
+  // Cost-compression hysteresis: one-way latch, stays on once triggered
+  if (costCentsTotal > 140 && !workingMemory.costCompressed) {
+    workingMemory = { ...workingMemory, costCompressed: true };
+    await prisma.conversationTurn.create({
+      data: {
+        conversationId: ctx.conversationId,
+        role: "SYSTEM",
+        content: "[cost-compression-latch]",
+        toolName: "system",
+        toolOutput: asJson({ memoryPatch: { costCompressed: true } }),
+      },
+    });
+  }
+
+  // Mechanical price A/B/C detection: when last rubric failed on price-in-band
+  // and user responds to the A/B/C question, parse mechanically and re-run pipeline.
+  if (
+    userMessage &&
+    workingMemory.lastRubric &&
+    !workingMemory.lastRubric.passed &&
+    !workingMemory.lastRubric.details.priceInBand.ok &&
+    workingMemory.priceBand
+  ) {
+    const msg = userMessage.trim().toLowerCase();
+    let priceAction: "override" | "market" | "custom" | null = null;
+    let customPrice: number | null = null;
+
+    // Match order: letter → phrase → number → null
+    if (/^\s*a\b/i.test(userMessage)) priceAction = "override";
+    else if (/^\s*b\b/i.test(userMessage)) priceAction = "market";
+    else if (/^\s*c\b/i.test(userMessage)) priceAction = "custom";
+    else if (/bei meinem|bleiben/i.test(msg)) priceAction = "override";
+    else if (/anheben|marktmitte/i.test(msg)) priceAction = "market";
+    else if (/anderer|anderen/i.test(msg)) priceAction = "custom";
+    else {
+      // Any number in the message → custom price
+      const numMatch = msg.replace(/\./g, "").match(/(\d{4,})/);
+      if (numMatch) {
+        customPrice = parseInt(numMatch[1]);
+        priceAction = "custom";
+      }
+    }
+
+    if (priceAction === "override") {
+      workingMemory = applyPatch(workingMemory, { priceOverride: true });
+      await prisma.conversationTurn.create({
+        data: {
+          conversationId: ctx.conversationId,
+          role: "SYSTEM",
+          content: "[price-override-confirmed]",
+          toolName: "system",
+          toolOutput: asJson({ memoryPatch: { priceOverride: true } }),
+        },
+      });
+      // Re-run rubric — price-in-band will now pass with override
+      if (workingMemory.draft && canAffordChainedTool(costCentsTotal, 5)) {
+        const reviewTr = await executeTool("listing_review", {}, workingMemory, turnNumber);
+        toolStepsExecuted++;
+        costCentsThisTurn += reviewTr.costCents;
+        costCentsTotal += reviewTr.costCents;
+        if (reviewTr.memoryPatch) workingMemory = applyPatch(workingMemory, reviewTr.memoryPatch);
+        await prisma.agentStep.create({ data: { agentRunId: ctx.agentRunId, ordinal: await nextStepOrdinal(ctx.agentRunId), toolName: "listing_review", input: asJson({ priceOverride: true }), output: asJson({ ...reviewTr.output, memoryPatch: reviewTr.memoryPatch }), latencyMs: reviewTr.latencyMs, ok: reviewTr.ok } });
+        await prisma.conversationTurn.create({ data: { conversationId: ctx.conversationId, role: "TOOL", content: "listing_review", toolName: "listing_review", toolInput: asJson({}), toolOutput: asJson({ ...reviewTr.output, memoryPatch: reviewTr.memoryPatch }), latencyMs: reviewTr.latencyMs } });
+        const result = chainedReviewMessage(workingMemory.lastRubric!, workingMemory.draft!, workingMemory);
+        agentMessage = `Ihr Preis von ${workingMemory.askingPrice?.toLocaleString("de-DE")} € wurde übernommen.\n\n${result.message}`;
+        return { agentMessage, memory: workingMemory, toolStepsExecuted, costCentsThisTurn, costCentsTotal, finished: false, abortedReason };
+      }
+    } else if (priceAction === "market" && workingMemory.priceBand) {
+      workingMemory = applyPatch(workingMemory, { askingPrice: workingMemory.priceBand.strategyReal });
+      await prisma.conversationTurn.create({
+        data: {
+          conversationId: ctx.conversationId,
+          role: "SYSTEM",
+          content: "[price-adjusted-to-market]",
+          toolName: "system",
+          toolOutput: asJson({ memoryPatch: { askingPrice: workingMemory.priceBand!.strategyReal } }),
+        },
+      });
+      if (workingMemory.draft && canAffordChainedTool(costCentsTotal, 5)) {
+        const reviewTr = await executeTool("listing_review", {}, workingMemory, turnNumber);
+        toolStepsExecuted++;
+        costCentsThisTurn += reviewTr.costCents;
+        costCentsTotal += reviewTr.costCents;
+        if (reviewTr.memoryPatch) workingMemory = applyPatch(workingMemory, reviewTr.memoryPatch);
+        await prisma.agentStep.create({ data: { agentRunId: ctx.agentRunId, ordinal: await nextStepOrdinal(ctx.agentRunId), toolName: "listing_review", input: asJson({ priceAdjusted: true }), output: asJson({ ...reviewTr.output, memoryPatch: reviewTr.memoryPatch }), latencyMs: reviewTr.latencyMs, ok: reviewTr.ok } });
+        await prisma.conversationTurn.create({ data: { conversationId: ctx.conversationId, role: "TOOL", content: "listing_review", toolName: "listing_review", toolInput: asJson({}), toolOutput: asJson({ ...reviewTr.output, memoryPatch: reviewTr.memoryPatch }), latencyMs: reviewTr.latencyMs } });
+        const result = chainedReviewMessage(workingMemory.lastRubric!, workingMemory.draft!, workingMemory);
+        agentMessage = `Preis auf ${workingMemory.priceBand!.strategyReal.toLocaleString("de-DE")} € (Marktmitte) angepasst.\n\n${result.message}`;
+        return { agentMessage, memory: workingMemory, toolStepsExecuted, costCentsThisTurn, costCentsTotal, finished: false, abortedReason };
+      }
+    } else if (priceAction === "custom" && customPrice && customPrice > 0) {
+      workingMemory = applyPatch(workingMemory, { askingPrice: customPrice });
+      await prisma.conversationTurn.create({
+        data: {
+          conversationId: ctx.conversationId,
+          role: "SYSTEM",
+          content: `[price-custom-${customPrice}]`,
+          toolName: "system",
+          toolOutput: asJson({ memoryPatch: { askingPrice: customPrice } }),
+        },
+      });
+      // Fall through to normal LLM processing — it will re-trigger draft+review
+    }
+    // If nothing matched (priceAction === null), fall through to LLM
+  }
 
   for (let iter = 0; iter < MAX_TOOL_ITERATIONS_PER_TURN; iter++) {
     // Cost-cap pre-check
@@ -1502,7 +2208,7 @@ export async function runAgentTurn(
       tools: getToolsSpec(),
       toolChoice: "auto",
       temperature: 0.4,
-      maxTokens: 1000,
+      maxTokens: workingMemory.costCompressed ? 500 : 1000,
     });
     costCentsThisTurn += llm.usage.costCents;
     costCentsTotal += llm.usage.costCents;
@@ -1542,7 +2248,7 @@ export async function runAgentTurn(
         } catch {
           parsedArgs = {};
         }
-        const tr = await executeTool(tc.function.name, parsedArgs, workingMemory);
+        const tr = await executeTool(tc.function.name, parsedArgs, workingMemory, turnNumber);
         toolStepsExecuted++;
         costCentsThisTurn += tr.costCents;
         costCentsTotal += tr.costCents;
@@ -1585,7 +2291,52 @@ export async function runAgentTurn(
         }
       }
 
+      // Mechanical chaining: after ALL tool calls complete, if listing_draft
+      // succeeded this iteration, chain listing_review deterministically.
+      // Don't give LLM the choice between reviewing and presenting.
+      if (!finished && workingMemory.draft && msg.tool_calls.some((tc) => tc.function.name === "listing_draft")) {
+        if (!canAffordChainedTool(costCentsTotal, 5)) { // hallucination check ~3-5c
+          agentMessage = "Qualitätsprüfung übersprungen aufgrund Budget-Limit. Bitte prüfen Sie den Entwurf manuell auf der nächsten Seite.";
+          break;
+        }
+
+        const reviewTr = await executeTool("listing_review", {}, workingMemory, turnNumber);
+        toolStepsExecuted++;
+        costCentsThisTurn += reviewTr.costCents;
+        costCentsTotal += reviewTr.costCents;
+        if (reviewTr.memoryPatch) workingMemory = applyPatch(workingMemory, reviewTr.memoryPatch);
+
+        await prisma.agentStep.create({
+          data: {
+            agentRunId: ctx.agentRunId,
+            ordinal: await nextStepOrdinal(ctx.agentRunId),
+            toolName: "listing_review",
+            input: asJson({}),
+            output: asJson({ ...reviewTr.output, memoryPatch: reviewTr.memoryPatch }),
+            latencyMs: reviewTr.latencyMs,
+            ok: reviewTr.ok,
+          },
+        });
+
+        await prisma.conversationTurn.create({
+          data: {
+            conversationId: ctx.conversationId,
+            role: "TOOL",
+            content: "listing_review",
+            toolName: "listing_review",
+            toolInput: asJson({}),
+            toolOutput: asJson({ ...reviewTr.output, memoryPatch: reviewTr.memoryPatch }),
+            latencyMs: reviewTr.latencyMs,
+          },
+        });
+
+        const reviewResult = chainedReviewMessage(workingMemory.lastRubric!, workingMemory.draft!, workingMemory);
+        agentMessage = reviewResult.message;
+        break; // exit iter loop — deterministic message set
+      }
+
       if (finished) break;
+      if (agentMessage) break;
       // Continue loop: feed tool results back to LLM
       continue;
     }
@@ -1613,7 +2364,7 @@ export async function runAgentTurn(
   if (userMessage && agentMessage && costCentsTotal < MAX_COST_CENTS) {
     // Find the last agent message from history to give the extraction context
     const lastAgentMsg = [...history].reverse().find(m => m.role === "assistant")?.content || "";
-    const ext = await extractMemoryFromMessage(lastAgentMsg, userMessage, workingMemory, ctx.agentRunId);
+    const ext = await extractMemoryFromMessage(lastAgentMsg, userMessage, workingMemory, ctx.agentRunId, turnNumber);
     costCentsThisTurn += ext.costCents;
     costCentsTotal += ext.costCents;
     if (ext.patch) {
@@ -1631,6 +2382,52 @@ export async function runAgentTurn(
         },
       });
     }
+  }
+
+  // Mechanical chaining: address_validate fires when address is complete but not yet validated.
+  // Counts toward toolStepsExecuted (same as listing_review chain — all mechanical
+  // chains are full tool executions with audit trail, not "free" calls).
+  // Capped at MAX_ADDRESS_VALIDATION_ATTEMPTS per conversation to avoid infinite retry on bad addresses.
+  if (
+    workingMemory.street && workingMemory.houseNumber &&
+    workingMemory.postcode && workingMemory.city &&
+    !workingMemory.addressValidated &&
+    workingMemory.addressValidationAttempts < MAX_ADDRESS_VALIDATION_ATTEMPTS &&
+    canAffordChainedTool(costCentsTotal, 0) // Nominatim is free
+  ) {
+    const addrTr = await executeTool("address_validate", {}, workingMemory, turnNumber);
+    toolStepsExecuted++;
+    costCentsThisTurn += addrTr.costCents;
+    costCentsTotal += addrTr.costCents;
+    const addrPatch: MemoryPatch = {
+      ...(addrTr.memoryPatch || {}),
+      addressValidationAttempts: workingMemory.addressValidationAttempts + 1,
+    };
+    workingMemory = applyPatch(workingMemory, addrPatch);
+
+    await prisma.agentStep.create({
+      data: {
+        agentRunId: ctx.agentRunId,
+        ordinal: await nextStepOrdinal(ctx.agentRunId),
+        toolName: "address_validate",
+        input: asJson({ street: workingMemory.street, houseNumber: workingMemory.houseNumber, postcode: workingMemory.postcode, city: workingMemory.city }),
+        output: asJson({ ...addrTr.output, memoryPatch: addrPatch }),
+        latencyMs: addrTr.latencyMs,
+        ok: addrTr.ok,
+      },
+    });
+
+    await prisma.conversationTurn.create({
+      data: {
+        conversationId: ctx.conversationId,
+        role: "TOOL",
+        content: "address_validate",
+        toolName: "address_validate",
+        toolInput: asJson({ street: workingMemory.street, houseNumber: workingMemory.houseNumber }),
+        toolOutput: asJson({ ...addrTr.output, memoryPatch: addrPatch }),
+        latencyMs: addrTr.latencyMs,
+      },
+    });
   }
 
   return {

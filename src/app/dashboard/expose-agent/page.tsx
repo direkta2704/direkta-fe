@@ -4,6 +4,24 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import type { WorkingMemory } from "@/lib/expose-agent";
 
+function renderMarkdown(text: string) {
+  return text.split("\n").map((line, i) => {
+    if (line.startsWith("### ")) return <h4 key={i} className="font-bold text-sm mt-3 mb-1">{line.slice(4)}</h4>;
+    if (line.startsWith("## ")) return <h3 key={i} className="font-bold text-base mt-3 mb-1">{line.slice(3)}</h3>;
+    if (line.startsWith("- ") || line.startsWith("• ")) {
+      const content = line.slice(2);
+      return <div key={i} className="flex gap-1.5 ml-1"><span className="text-primary mt-0.5">•</span><span>{renderInline(content)}</span></div>;
+    }
+    if (line.startsWith("✓ ") || line.startsWith("✗ ")) return <div key={i} className="flex gap-1.5 ml-1"><span>{line[0]}</span><span>{renderInline(line.slice(2))}</span></div>;
+    if (line.trim() === "") return <div key={i} className="h-2" />;
+    return <p key={i}>{renderInline(line)}</p>;
+  });
+}
+function renderInline(text: string) {
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  return parts.map((p, i) => p.startsWith("**") && p.endsWith("**") ? <strong key={i} className="font-bold">{p.slice(2, -2)}</strong> : p);
+}
+
 interface Turn {
   id?: string;
   role: string;
@@ -138,6 +156,11 @@ export default function ExposeAgentPage() {
       if (data.finished && data.listingId) {
         router.push(`/dashboard/listings/${data.listingId}`);
       }
+      // Auto-retry when agent indicates it wants to try again
+      const retryPhrases = ["try again", "versuche", "nochmal", "Moment bitte", "erneut", "retry"];
+      if (data.content && retryPhrases.some((p) => data.content.toLowerCase().includes(p.toLowerCase())) && !data.finished) {
+        setTimeout(() => sendText("Bitte fortfahren."), 2000);
+      }
     } catch (err) {
       setTurns((prev) => [...prev, { role: "AGENT", content: `Fehler: ${err instanceof Error ? err.message : "Unbekannt"}` }]);
     }
@@ -179,49 +202,82 @@ export default function ExposeAgentPage() {
     recognition.start();
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const uploadOne = useCallback(
+    async (file: File, kind: "PHOTO" | "FLOORPLAN" | "ENERGY_PDF", unitLabel?: string): Promise<any> => {
+      if (!conversationId) return null;
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("kind", kind);
+      if (unitLabel) fd.append("unitLabel", unitLabel);
+      const res = await fetch(`/api/agents/expose/conversations/${conversationId}/upload`, { method: "POST", body: fd });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      if (data.memory) setMemory(data.memory);
+      return data;
+    },
+    [conversationId],
+  );
+
   const upload = useCallback(
     async (file: File, kind: "PHOTO" | "FLOORPLAN" | "ENERGY_PDF", unitLabel?: string) => {
-      if (!conversationId) return;
       setUploading(true);
       try {
-        const fd = new FormData();
-        fd.append("file", file);
-        fd.append("kind", kind);
-        if (unitLabel) fd.append("unitLabel", unitLabel);
-        const res = await fetch(`/api/agents/expose/conversations/${conversationId}/upload`, {
-          method: "POST",
-          body: fd,
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error);
-        if (data.memory) setMemory(data.memory);
+        const effectiveUnit = unitLabel || (kind !== "ENERGY_PDF" ? memory?.currentUnit : null) || undefined;
+        const data = await uploadOne(file, kind, effectiveUnit);
         const label = kind === "ENERGY_PDF" ? "Energieausweis" : kind === "FLOORPLAN" ? "Grundriss" : "Foto";
-        setTurns((prev) => [
-          ...prev,
-          { role: "SYSTEM", content: `📎 ${label} hochgeladen: ${file.name}${data.message ? ` — ${data.message}` : ""}` },
-        ]);
-        // Auto-continue when enough photos + all fields ready
-        if (data.autoContinue) {
-          setTimeout(() => {
-            sendText(`${data.photoCount} Fotos hochgeladen. Bitte Preis berechnen und Entwurf erstellen.`);
-          }, 500);
+        const key = data?.upload?.storageKey;
+        const isImage = key && /\.(jpg|jpeg|png|webp)$/i.test(key);
+        const msg = `${label} hochgeladen: ${file.name}${data?.message ? ` — ${data.message}` : ""}`;
+        const content = isImage && kind !== "ENERGY_PDF"
+          ? `__MEDIA__${key}__${kind}__${msg}`
+          : msg;
+        setTurns((prev) => [...prev, { role: "SYSTEM", content }]);
+        if (kind === "FLOORPLAN") {
+          setTimeout(() => sendText("Grundriss hochgeladen."), 800);
+        } else if (kind === "ENERGY_PDF") {
+          setTimeout(() => sendText("Energieausweis hochgeladen."), 800);
+        } else if (data?.autoContinue) {
+          setTimeout(() => sendText(`${data.photoCount} Fotos hochgeladen. Bitte Preis berechnen und Entwurf erstellen.`), 500);
         }
       } catch (err) {
         alert(err instanceof Error ? err.message : "Upload fehlgeschlagen");
       }
       setUploading(false);
     },
-    [conversationId],
+    [conversationId, uploadOne],
   );
 
   const handlePhotoFiles = useCallback(
     async (files: FileList) => {
-      for (const file of Array.from(files)) {
-        const isImage = file.type.startsWith("image/");
-        if (isImage) await upload(file, "PHOTO");
+      const images = Array.from(files).filter((f) => f.type.startsWith("image/"));
+      if (!images.length) return;
+      setUploading(true);
+      const keys: string[] = [];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let lastData: any = null;
+      try {
+        const unitCtx = memory?.currentUnit || undefined;
+        for (const file of images) {
+          const data = await uploadOne(file, "PHOTO", unitCtx);
+          if (data?.upload?.storageKey) keys.push(data.upload.storageKey);
+          lastData = data;
+        }
+        const targetInfo = unitCtx ? ` für ${unitCtx}` : "";
+        const label = `📷 ${keys.length} Foto${keys.length > 1 ? "s" : ""}${targetInfo} hochgeladen`;
+        const content = keys.length > 0 ? `__PHOTOS__${JSON.stringify(keys)}__${label}` : label;
+        setTurns((prev) => [...prev, { role: "SYSTEM", content }]);
+        if (lastData?.autoContinue) {
+          setTimeout(() => sendText(`${lastData.photoCount} Fotos hochgeladen. Bitte Preis berechnen und Entwurf erstellen.`), 500);
+        } else if (keys.length > 0) {
+          setTimeout(() => sendText(`${keys.length} Fotos${targetInfo} hochgeladen.`), 800);
+        }
+      } catch (err) {
+        alert(err instanceof Error ? err.message : "Upload fehlgeschlagen");
       }
+      setUploading(false);
     },
-    [upload],
+    [uploadOne],
   );
 
   function onDrop(e: React.DragEvent) {
@@ -424,6 +480,54 @@ export default function ExposeAgentPage() {
         <div className="flex-1 overflow-y-auto space-y-4 pb-4">
           {turns.map((turn, i) => {
             if (turn.role === "SYSTEM") {
+              // Photo batch grid (__PHOTOS__[keys]__label)
+              const photosMatch = turn.content.match(/^__PHOTOS__(\[.*?\])__(.*)/);
+              if (photosMatch) {
+                const keys = JSON.parse(photosMatch[1]) as string[];
+                const label = photosMatch[2];
+                return (
+                  <div key={i} className="flex justify-center my-1">
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 w-full max-w-lg">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="material-symbols-outlined text-emerald-500 text-sm">check_circle</span>
+                        <span className="text-xs font-bold text-slate-600">{label}</span>
+                      </div>
+                      <div className={`grid gap-1.5 ${keys.length === 1 ? "grid-cols-1" : keys.length === 2 ? "grid-cols-2" : "grid-cols-3"}`}>
+                        {keys.slice(0, 9).map((key, j) => (
+                          <div key={j} className="aspect-[4/3] rounded-lg overflow-hidden bg-slate-200">
+                            <img src={key} alt="" className="w-full h-full object-cover" loading="lazy" />
+                          </div>
+                        ))}
+                      </div>
+                      {keys.length > 9 && <p className="text-center text-[10px] text-slate-400 mt-1.5">+{keys.length - 9} weitere</p>}
+                    </div>
+                  </div>
+                );
+              }
+              // Single media preview (__MEDIA__key__kind__label)
+              const mediaMatch = turn.content.match(/^__MEDIA__(.+?)__(.+?)__(.*)/);
+              if (mediaMatch) {
+                const [, mKey, mKind, mLabel] = mediaMatch;
+                const isImg = /\.(jpg|jpeg|png|webp)$/i.test(mKey);
+                return (
+                  <div key={i} className="flex justify-center my-1">
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 max-w-xs">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className={`material-symbols-outlined text-sm ${mKind === "FLOORPLAN" ? "text-blue-500" : "text-emerald-500"}`}>
+                          {mKind === "FLOORPLAN" ? "floor" : "check_circle"}
+                        </span>
+                        <span className="text-xs font-bold text-slate-600">{mLabel}</span>
+                      </div>
+                      {isImg && (
+                        <div className="aspect-[4/3] rounded-lg overflow-hidden bg-slate-200">
+                          <img src={mKey} alt="" className="w-full h-full object-cover" loading="lazy" />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              }
+              // Default system message (energy cert, text-only, etc.)
               const isPhotoUpload = turn.content.includes("Foto") && turn.content.includes("hochgeladen");
               return (
                 <div key={i} className="flex justify-center">
@@ -476,7 +580,7 @@ export default function ExposeAgentPage() {
                       </div>
                     </div>
                   ) : (
-                    <p className="text-sm leading-relaxed whitespace-pre-line">{turn.content}</p>
+                    <div className="text-sm leading-relaxed space-y-1">{turn.role === "AGENT" ? renderMarkdown(turn.content) : <p className="whitespace-pre-line">{turn.content}</p>}</div>
                   )}
                   {turn.role === "USER" && turn.id && !isEditing && (
                     <button
@@ -493,11 +597,14 @@ export default function ExposeAgentPage() {
           })}
           {(loading || uploading) && (
             <div className="flex justify-start">
-              <div className="bg-white border border-slate-200 rounded-2xl rounded-bl-md px-5 py-4">
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
-                  <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
-                  <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+              <div className="bg-white border border-slate-200 rounded-2xl rounded-bl-md px-5 py-3">
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
+                    <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
+                    <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+                  </div>
+                  <span className="text-xs text-slate-400">{uploading ? "Wird hochgeladen..." : "Assistent denkt nach..."}</span>
                 </div>
               </div>
             </div>
@@ -534,6 +641,12 @@ export default function ExposeAgentPage() {
             >
               <span className="material-symbols-outlined text-lg">floor</span>
             </button>
+            {memory?.currentUnit && (
+              <div className="h-10 bg-primary/10 text-primary text-xs font-bold rounded-lg px-3 flex items-center gap-1.5 border border-primary/20">
+                <span className="material-symbols-outlined text-sm">home</span>
+                {memory.currentUnit}
+              </div>
+            )}
             <input
               ref={photoInputRef}
               type="file"
@@ -606,7 +719,7 @@ export default function ExposeAgentPage() {
       </div>
 
       <div className="hidden lg:block w-72 flex-shrink-0">
-        <div className="bg-white rounded-2xl border border-slate-200 p-5 sticky top-24">
+        <div className="bg-white rounded-2xl border border-slate-200 p-5 sticky top-24 max-h-[calc(100vh-7rem)] overflow-y-auto">
           <h3 className="font-black text-blueprint text-sm mb-4">Fortschritt</h3>
           <div className="space-y-2 mb-6">
             {(["greet", "basics", "details", "energy", "photos", "draft"] as const).map((phase) => {
@@ -657,6 +770,78 @@ export default function ExposeAgentPage() {
               {memory.askingPrice && <MemoryItem label="Wunschpreis" value={`€${memory.askingPrice.toLocaleString("de-DE")}`} />}
               {memory.draft && <MemoryItem label="Entwurf" value="✓ vorhanden" />}
               {memory.lastRubric && <MemoryItem label="Qualität" value={memory.lastRubric.passed ? "✓ bestanden" : `✗ ${memory.lastRubric.failures.length} Fehler`} />}
+            </div>
+          )}
+
+          {/* Photo thumbnails */}
+          {memory && memory.uploads.filter((u) => u.kind === "PHOTO").length > 0 && (
+            <div className="mt-4 pt-4 border-t border-slate-100">
+              <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-2">
+                Fotos ({memory.uploads.filter((u) => u.kind === "PHOTO").length})
+              </div>
+              <div className="grid grid-cols-3 gap-1">
+                {memory.uploads.filter((u) => u.kind === "PHOTO").slice(0, 12).map((u, j) => (
+                  <div key={j} className="aspect-square rounded overflow-hidden bg-slate-100">
+                    <img src={u.storageKey} alt="" className="w-full h-full object-cover" loading="lazy" />
+                  </div>
+                ))}
+              </div>
+              {memory.uploads.filter((u) => u.kind === "PHOTO").length > 12 && (
+                <p className="text-[10px] text-slate-400 text-center mt-1">+{memory.uploads.filter((u) => u.kind === "PHOTO").length - 12} weitere</p>
+              )}
+            </div>
+          )}
+
+          {/* Floorplan thumbnails */}
+          {memory && memory.uploads.filter((u) => u.kind === "FLOORPLAN").length > 0 && (
+            <div className="mt-3 pt-3 border-t border-slate-100">
+              <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-2">
+                Grundrisse ({memory.uploads.filter((u) => u.kind === "FLOORPLAN").length})
+              </div>
+              <div className="grid grid-cols-2 gap-1">
+                {memory.uploads.filter((u) => u.kind === "FLOORPLAN").map((u, j) => (
+                  <div key={j} className="aspect-[4/3] rounded overflow-hidden bg-slate-100 flex items-center justify-center">
+                    {/\.(jpg|jpeg|png|webp)$/i.test(u.storageKey)
+                      ? <img src={u.storageKey} alt="" className="w-full h-full object-cover" loading="lazy" />
+                      : <span className="material-symbols-outlined text-2xl text-slate-300">floor</span>
+                    }
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* MFH Unit cards */}
+          {memory && memory.units.length > 0 && (
+            <div className="mt-4 pt-4 border-t border-slate-100">
+              <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-2">Wohneinheiten</div>
+              <div className="space-y-2">
+                {memory.units.map((unit, j) => {
+                  const uPhotos = memory.uploads.filter((u) => u.kind === "PHOTO" && u.unitLabel === unit.label).length;
+                  const uPlans = memory.uploads.filter((u) => u.kind === "FLOORPLAN" && u.unitLabel === unit.label).length;
+                  const meta = [unit.livingArea && `${unit.livingArea}m²`, unit.rooms && `${unit.rooms}Zi`, unit.bathrooms && `${unit.bathrooms}Bad`].filter(Boolean);
+                  return (
+                    <div key={j} className="bg-slate-50 rounded-lg p-2.5">
+                      <div className="flex items-center justify-between mb-0.5">
+                        <span className="text-xs font-bold text-blueprint">{unit.label}</span>
+                        {unit.floor != null && <span className="text-[10px] text-slate-400">{unit.floor === 0 ? "EG" : `${unit.floor}. OG`}</span>}
+                      </div>
+                      <div className="text-[10px] text-slate-500">{meta.join(" · ")}</div>
+                      <div className="flex items-center gap-3 mt-1 text-[10px] text-slate-400">
+                        <span className="flex items-center gap-0.5"><span className="material-symbols-outlined text-xs">photo_camera</span> {uPhotos}</span>
+                        <span className="flex items-center gap-0.5"><span className="material-symbols-outlined text-xs">floor</span> {uPlans}</span>
+                        {unit.askingPrice && <span className="font-bold text-blueprint">{Number(unit.askingPrice).toLocaleString("de-DE")} €</span>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              {memory.sellingMode && (
+                <div className="mt-2 text-[10px] text-slate-400 flex items-center gap-1">
+                  <span className="material-symbols-outlined text-xs">sell</span>
+                  {memory.sellingMode === "BOTH" ? "Einzeln & Paket" : memory.sellingMode === "BUNDLE" ? "Paketverkauf" : "Einzelverkauf"}
+                </div>
+              )}
             </div>
           )}
 

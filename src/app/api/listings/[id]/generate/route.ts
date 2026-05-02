@@ -58,6 +58,9 @@ export async function POST(
       data: {
         descriptionLong: result.descriptionLong,
         titleShort: result.titleShort,
+        locationDescription: result.locationDescription || null,
+        buildingDescription: result.buildingDescription || null,
+        highlights: result.highlights.length > 0 ? result.highlights : undefined,
       },
     });
 

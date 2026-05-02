@@ -80,6 +80,7 @@ export async function POST(
         floor: memory.floor,
         condition: memory.condition as "ERSTBEZUG" | "NEUBAU" | "GEPFLEGT" | "RENOVIERUNGS_BEDUERFTIG" | "SANIERUNGS_BEDUERFTIG" | "ROHBAU",
         attributes: memory.attributes.length > 0 ? memory.attributes : undefined,
+        roomProgram: memory.roomProgram && memory.roomProgram.length > 0 ? memory.roomProgram : undefined,
       },
     });
 
@@ -216,6 +217,12 @@ export async function POST(
         descriptionLong: memory.draft.descriptionLong,
         askingPrice: memory.askingPrice ?? null,
         status: "REVIEW",
+        locationDescription: memory.draft.locationDescription || null,
+        buildingDescription: memory.draft.buildingDescription || null,
+        highlights: memory.draft.highlights && memory.draft.highlights.length > 0 ? memory.draft.highlights : undefined,
+        exposeHeadline: memory.draft.exposeHeadline || null,
+        exposeSubheadline: memory.draft.exposeSubheadline || null,
+        sellerContact: memory.sellerContact || undefined,
       },
     });
 
