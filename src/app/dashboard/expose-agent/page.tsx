@@ -162,12 +162,14 @@ export default function ExposeAgentPage() {
       return;
     }
     const SpeechRecognition = (window as unknown as Record<string, unknown>).SpeechRecognition || (window as unknown as Record<string, unknown>).webkitSpeechRecognition;
-    const recognition = new (SpeechRecognition as new () => SpeechRecognition)();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const recognition = new (SpeechRecognition as any)();
     recognition.lang = "de-DE";
     recognition.continuous = false;
     recognition.interimResults = false;
     recognition.onstart = () => setIsRecording(true);
-    recognition.onresult = (event: SpeechRecognitionEvent) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    recognition.onresult = (event: any) => {
       const transcript = event.results[0][0].transcript;
       setInput((prev) => prev ? prev + " " + transcript : transcript);
       setIsRecording(false);

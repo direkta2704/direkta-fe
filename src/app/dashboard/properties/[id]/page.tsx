@@ -57,7 +57,7 @@ interface Property {
     primarySource: string;
     validUntil: string;
   } | null;
-  listings: { id: string; status: string; slug: string }[];
+  listings: { id: string; status: string; slug: string; askingPrice?: string | null }[];
   media: MediaItem[];
   parent: { id: string; street: string; houseNumber: string; city: string } | null;
   units: UnitSummary[];
