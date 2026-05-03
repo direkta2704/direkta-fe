@@ -219,6 +219,10 @@ export default function PropertiesPage() {
                 {p.street} {p.houseNumber}
               </h3>
               <p className="text-sm text-slate-500">{p.postcode} {p.city}</p>
+              <p className="text-[10px] text-slate-400 mt-1 flex items-center gap-1">
+                <span className="material-symbols-outlined text-xs">calendar_today</span>
+                {new Date(p.createdAt).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" })} · {new Date(p.createdAt).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}
+              </p>
               <div className="flex items-center gap-4 mt-4 pt-4 border-t border-slate-100 text-xs text-slate-400">
                 <span>{p.livingArea} m²</span>
                 {p.rooms && <span>{p.rooms} Zi.</span>}

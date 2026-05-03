@@ -133,14 +133,10 @@ export async function POST(
           });
         }
 
-        // Assign unit-specific uploads, falling back to parent's shared uploads
-        const unitUploads = memory.uploads.filter(
+        // Assign only unit-specific uploads — no fallback to property photos
+        const uploadsForUnit = memory.uploads.filter(
           (u) => (u.kind === "PHOTO" || u.kind === "FLOORPLAN") && u.unitLabel === unit.label
         );
-        const sharedUploads = memory.uploads.filter(
-          (u) => (u.kind === "PHOTO" || u.kind === "FLOORPLAN") && !u.unitLabel
-        );
-        const uploadsForUnit = unitUploads.length > 0 ? unitUploads : sharedUploads;
         for (let i = 0; i < uploadsForUnit.length; i++) {
           const u = uploadsForUnit[i];
           await prisma.mediaAsset.create({

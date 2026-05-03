@@ -82,26 +82,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       });
     }
 
-    // Auto-share building photos to unit
-    if (parent.media.length > 0) {
-      for (let i = 0; i < parent.media.length; i++) {
-        const m = parent.media[i];
-        await prisma.mediaAsset.create({
-          data: {
-            propertyId: unit.id,
-            kind: m.kind,
-            storageKey: m.storageKey,
-            fileName: m.fileName,
-            mimeType: m.mimeType,
-            sizeBytes: m.sizeBytes,
-            width: m.width,
-            height: m.height,
-            ordering: i,
-          },
-        });
-      }
-    }
-
     return NextResponse.json(unit, { status: 201 });
   } catch (err) {
     console.error("Create unit error:", err);

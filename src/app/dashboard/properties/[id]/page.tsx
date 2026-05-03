@@ -814,6 +814,19 @@ export default function PropertyDetailPage() {
                             <span className="text-[10px] font-bold text-slate-400">Paketverkauf</span>
                           )}
 
+                          <button
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              if (!confirm(`Wohnung "${unit.unitLabel || "Wohnung"}" wirklich löschen? Alle Fotos und Inserate dieser Wohnung werden ebenfalls gelöscht.`)) return;
+                              await fetch(`/api/properties/${unit.id}`, { method: "DELETE" });
+                              fetchProperty();
+                            }}
+                            className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors"
+                            title="Wohnung löschen"
+                          >
+                            <span className="material-symbols-outlined text-base">delete</span>
+                          </button>
+
                           <span className="material-symbols-outlined text-slate-300 group-hover:text-primary transition-colors">
                             chevron_right
                           </span>
