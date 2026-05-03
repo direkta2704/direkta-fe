@@ -163,6 +163,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       exposeHeadline: listing.exposeHeadline || undefined,
       exposeSubheadline: listing.exposeSubheadline || undefined,
       units: unitData,
+      specifications: p.specifications && typeof p.specifications === "object" && !Array.isArray(p.specifications) ? (p.specifications as Record<string, string>) : undefined,
+      buildingDescription: listing.buildingDescription || undefined,
     });
 
     const fn = `Expose_${p.street}_${p.houseNumber}_${p.city}.pdf`.replace(/\s+/g, "_");

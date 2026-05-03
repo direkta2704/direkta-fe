@@ -157,6 +157,8 @@ export interface ExposeData {
   exposeHeadline?: string;
   exposeSubheadline?: string;
   units?: ExposeUnit[];
+  specifications?: Record<string, string>;
+  buildingDescription?: string;
 }
 
 export async function generateExposePdf(data: ExposeData): Promise<Buffer> {
@@ -327,24 +329,41 @@ export async function generateExposePdf(data: ExposeData): Promise<Buffer> {
 
     let y = drawSectionHead(pg, f, `${String(secIdx).padStart(2, "0")} — Objektbeschreibung`, "Beschreibung", data.titleShort, CONTENT_TOP);
 
-    // Highlights pull-quote box
+    // Highlights — clean structured list matching reference expose format
     if (data.highlights && data.highlights.length > 0) {
-      const items = data.highlights.slice(0, 8);
-      const boxH = 28 + items.length * 16;
-      pg.drawRectangle({ x: M, y: y - boxH, width: CW, height: boxH, color: PAPER_PURE });
-      pg.drawLine({ start: { x: M, y: y - boxH }, end: { x: M, y }, thickness: 3, color: ACCENT });
-      pg.drawText("AUF EINEN BLICK", { x: M + 14, y: y - 16, size: 7, font: f.sansBold, color: ACCENT });
-      let hy = y - 32;
-      for (const h of items) {
-        pg.drawLine({ start: { x: M + 14, y: hy + 4 }, end: { x: M + 22, y: hy + 4 }, thickness: 1, color: ACCENT });
-        const hLines = wrap(h, f.serif, 9.5, CW - 42);
+      const items = data.highlights.slice(0, 10);
+      pg.drawText("HIGHLIGHTS", { x: M, y, size: 7, font: f.sansBold, color: ACCENT });
+      y -= 16;
+
+      // Two-column layout for highlights
+      const halfW = (CW - 16) / 2;
+      const leftItems = items.slice(0, Math.ceil(items.length / 2));
+      const rightItems = items.slice(Math.ceil(items.length / 2));
+      const startY = y;
+
+      for (const h of leftItems) {
+        pg.drawText("—", { x: M, y, size: 9, font: f.sans, color: ACCENT });
+        const hLines = wrap(h, f.sans, 9, halfW - 16);
         for (const hl of hLines) {
-          pg.drawText(hl, { x: M + 28, y: hy, size: 9.5, font: f.serif, color: INK });
-          hy -= 15;
+          pg.drawText(hl, { x: M + 14, y, size: 9, font: f.sans, color: INK });
+          y -= 14;
         }
-        hy -= 1;
+        y -= 2;
       }
-      y -= boxH + 14;
+      const leftEndY = y;
+
+      y = startY;
+      for (const h of rightItems) {
+        pg.drawText("—", { x: M + halfW + 16, y, size: 9, font: f.sans, color: ACCENT });
+        const hLines = wrap(h, f.sans, 9, halfW - 16);
+        for (const hl of hLines) {
+          pg.drawText(hl, { x: M + halfW + 30, y, size: 9, font: f.sans, color: INK });
+          y -= 14;
+        }
+        y -= 2;
+      }
+
+      y = Math.min(y, leftEndY) - 12;
     }
 
     const desc = data.descriptionLong.replace(/\r\n/g, "\n");
@@ -393,6 +412,61 @@ export async function generateExposePdf(data: ExposeData): Promise<Buffer> {
     }
   }
 
+  // ════════════════════════════════════════════════════════════ AUSSTATTUNG & MATERIALIEN (conditional)
+  if (data.specifications && Object.keys(data.specifications).length > 0) {
+    secIdx++;
+    const pg = doc.addPage([W, H]);
+    pg.drawRectangle({ x: 0, y: 0, width: W, height: H, color: PAPER });
+    pages.push({ pg, sec: "Ausstattung" });
+
+    let y = drawSectionHead(pg, f, `${String(secIdx).padStart(2, "0")} — Ausstattung & Materialien`, "Details", "Was verbaut wird.", CONTENT_TOP);
+
+    if (data.buildingDescription) {
+      for (const l of wrap(data.buildingDescription, f.sans, 9, CW)) {
+        pg.drawText(l, { x: M, y, size: 9, font: f.sans, color: INK_SOFT });
+        y -= 14;
+      }
+      y -= 10;
+    }
+
+    // Two-column spec table
+    const halfW = (CW - 16) / 2;
+    const entries = Object.entries(data.specifications);
+    const leftEntries = entries.slice(0, Math.ceil(entries.length / 2));
+    const rightEntries = entries.slice(Math.ceil(entries.length / 2));
+
+    const drawSpecCol = (specs: [string, string][], startX: number, startY: number): number => {
+      let sy = startY;
+      for (const [label, value] of specs) {
+        if (sy < CONTENT_BOTTOM) break;
+        pg.drawText(label, { x: startX, y: sy, size: 8, font: f.sansBold, color: INK });
+        sy -= 13;
+        for (const l of wrap(value, f.sans, 8.5, halfW - 4)) {
+          pg.drawText(l, { x: startX, y: sy, size: 8.5, font: f.sans, color: INK_SOFT });
+          sy -= 12;
+        }
+        sy -= 8;
+      }
+      return sy;
+    };
+
+    const leftEnd = drawSpecCol(leftEntries, M, y);
+    const rightEnd = drawSpecCol(rightEntries, M + halfW + 16, y);
+    y = Math.min(leftEnd, rightEnd);
+
+    // "Nicht im Lieferumfang" note if relevant
+    if (data.condition === "Erstbezug" || data.condition === "Neubau") {
+      y -= 16;
+      pg.drawText("NICHT IM LIEFERUMFANG", { x: M, y, size: 7, font: f.sansBold, color: ACCENT });
+      y -= 14;
+      const note = "Möblierung, Küchenzeile, Sanitärobjekte, Armaturen, Spiegel. Anschlüsse und Vorwände sind fachgerecht vorinstalliert.";
+      for (const l of wrap(note, f.sans, 8.5, CW)) {
+        pg.drawText(l, { x: M, y, size: 8.5, font: f.sans, color: INK_SOFT });
+        y -= 12;
+      }
+    }
+  }
+
   // ════════════════════════════════════════════════════════════ LOCATION (conditional)
   if (data.locationDescription) {
     secIdx++;
@@ -405,6 +479,7 @@ export async function generateExposePdf(data: ExposeData): Promise<Buffer> {
     const locDesc = data.locationDescription.replace(/\r\n/g, "\n");
     const locParas = locDesc.split("\n\n").filter(Boolean);
 
+    // First paragraph as lede
     if (locParas.length > 0) {
       for (const l of wrap(locParas[0], f.serif, 12, CW)) {
         if (y < CONTENT_BOTTOM) {
@@ -419,19 +494,62 @@ export async function generateExposePdf(data: ExposeData): Promise<Buffer> {
       y -= 8;
     }
 
+    // Remaining paragraphs — detect category labels (Versorgung:, Bildung:, etc.)
+    const halfW = (CW - 16) / 2;
+    let inGrid = false;
+    let gridCol = 0;
+    let gridStartY = y;
+
     for (let pi = 1; pi < locParas.length; pi++) {
-      for (const l of wrap(locParas[pi], f.sans, 9.5, CW)) {
-        if (y < CONTENT_BOTTOM) {
-          pg = doc.addPage([W, H]);
-          pg.drawRectangle({ x: 0, y: 0, width: W, height: H, color: PAPER });
-          pages.push({ pg, sec: "Die Lage" });
-          y = CONTENT_TOP;
+      const para = locParas[pi];
+      // Check if paragraph starts with a category label
+      const catMatch = para.match(/^(Versorgung|Bildung|Verkehr|Freizeit|Arbeit|Region|Mikrolage|Erreichbarkeit|Nahversorgung|Infrastruktur)[:\s]/i);
+
+      if (catMatch) {
+        if (!inGrid) { inGrid = true; gridStartY = y; gridCol = 0; }
+        const catLabel = catMatch[1].toUpperCase();
+        const catText = para.slice(catMatch[0].length).trim();
+        const colX = gridCol === 0 ? M : M + halfW + 16;
+
+        if (gridCol === 0) {
+          // Reset Y for new row
+        } else if (gridCol === 1) {
+          y = gridStartY; // Same row, right column
         }
-        if (l === "") { y -= 8; continue; }
-        pg.drawText(l, { x: M, y, size: 9.5, font: f.sans, color: INK });
-        y -= 16;
+
+        pg.drawText(catLabel, { x: colX, y, size: 7, font: f.sansBold, color: ACCENT });
+        y -= 14;
+        for (const l of wrap(catText, f.sans, 9, halfW)) {
+          pg.drawText(l, { x: colX, y, size: 9, font: f.sans, color: INK_SOFT });
+          y -= 13;
+        }
+        y -= 6;
+
+        if (gridCol === 1) {
+          y = Math.min(y, gridStartY - 60); // Move past both columns
+          gridCol = 0;
+          gridStartY = y;
+        } else {
+          gridStartY = y;
+          gridCol = 1;
+          y = gridStartY + 60; // Will be reset
+        }
+      } else {
+        inGrid = false;
+        gridCol = 0;
+        for (const l of wrap(para, f.sans, 9.5, CW)) {
+          if (y < CONTENT_BOTTOM) {
+            pg = doc.addPage([W, H]);
+            pg.drawRectangle({ x: 0, y: 0, width: W, height: H, color: PAPER });
+            pages.push({ pg, sec: "Die Lage" });
+            y = CONTENT_TOP;
+          }
+          if (l === "") { y -= 8; continue; }
+          pg.drawText(l, { x: M, y, size: 9.5, font: f.sans, color: INK });
+          y -= 16;
+        }
+        y -= 8;
       }
-      y -= 8;
     }
   }
 
