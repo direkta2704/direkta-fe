@@ -98,16 +98,32 @@ export async function POST(
     let height: number | undefined;
 
     if (file.type.startsWith("image/")) {
-      const image = sharp(rawBuffer);
+      const image = sharp(rawBuffer).rotate(); // EXIF-based rotation correction
       const meta = await image.metadata();
       const maxDim = kind === "FLOORPLAN" ? 2400 : 1920;
       const needsResize = (meta.width && meta.width > maxDim) || (meta.height && meta.height > maxDim);
-      const pipeline = needsResize
+      let pipeline = needsResize
         ? image.resize({ width: maxDim, height: maxDim, fit: "inside", withoutEnlargement: true })
         : image;
-      finalBuffer = (await pipeline.jpeg({ quality: 82, mozjpeg: true }).toBuffer()) as Buffer;
-      finalExt = "jpg";
-      finalMime = "image/jpeg";
+
+      // F-M1-05: Auto-enhance photos (brightness, white balance, light normalization)
+      // Does NOT add, remove, or modify objects — only adjusts colour, exposure and geometry.
+      if (kind === "PHOTO") {
+        pipeline = pipeline
+          .normalize()                    // auto white balance + contrast stretch
+          .sharpen({ sigma: 0.8 })        // subtle sharpening for clarity
+          .modulate({ brightness: 1.02 }); // slight brightness boost for darker interiors
+      }
+
+      if (kind === "FLOORPLAN" && meta.format === "png") {
+        finalBuffer = (await pipeline.png({ quality: 85, compressionLevel: 9 }).toBuffer()) as Buffer;
+        finalExt = "png";
+        finalMime = "image/png";
+      } else {
+        finalBuffer = (await pipeline.jpeg({ quality: 82, mozjpeg: true }).toBuffer()) as Buffer;
+        finalExt = "jpg";
+        finalMime = "image/jpeg";
+      }
       const outMeta = await sharp(finalBuffer).metadata();
       width = outMeta.width;
       height = outMeta.height;
