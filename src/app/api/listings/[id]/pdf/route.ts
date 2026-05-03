@@ -1,12 +1,14 @@
 import { prisma } from "@/lib/prisma";
 import { getRequiredUser } from "@/lib/session";
 import { generateExposePdf } from "@/lib/expose-pdf";
+import type { ExposePhoto } from "@/lib/expose-pdf";
 import { getFromS3 } from "@/lib/s3";
 import { readFile } from "fs/promises";
 import path from "path";
+import puppeteer from "puppeteer";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 async function loadMediaBytes(storageKey: string, mimeType: string): Promise<{ bytes: Uint8Array; mimeType: string } | null> {
   try {
@@ -29,6 +31,52 @@ async function loadMediaBytes(storageKey: string, mimeType: string): Promise<{ b
     }
   } catch {
     return null;
+  }
+}
+
+async function convertPdfToImage(pdfBytes: Uint8Array): Promise<{ bytes: Uint8Array; mimeType: string } | null> {
+  let browser;
+  try {
+    const b64 = Buffer.from(pdfBytes).toString("base64");
+    const html = `<!DOCTYPE html><html><head><style>
+      * { margin: 0; padding: 0; }
+      body { background: #fff; }
+      canvas { display: block; }
+    </style></head><body>
+    <canvas id="c"></canvas>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script>
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      var raw = atob('${b64}');
+      var bytes = new Uint8Array(raw.length);
+      for (var i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+      pdfjsLib.getDocument({ data: bytes }).promise.then(function(pdf) {
+        pdf.getPage(1).then(function(pg) {
+          var vp = pg.getViewport({ scale: 2.0 });
+          var canvas = document.getElementById('c');
+          canvas.width = vp.width;
+          canvas.height = vp.height;
+          pg.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise.then(function() {
+            document.title = 'OK';
+          });
+        });
+      });
+    </script></body></html>`;
+
+    browser = await puppeteer.launch({ headless: true, args: ["--no-sandbox", "--disable-setuid-sandbox"] });
+    const page = await browser.newPage();
+    await page.setContent(html, { waitUntil: "domcontentloaded", timeout: 30000 });
+    await page.waitForFunction(() => document.title === "OK", { timeout: 20000 });
+
+    const canvasEl = await page.$("#c");
+    if (!canvasEl) return null;
+    const screenshot = await canvasEl.screenshot({ type: "png" });
+    return { bytes: new Uint8Array(screenshot), mimeType: "image/png" };
+  } catch (e) {
+    console.error("PDF-to-image conversion failed:", e);
+    return null;
+  } finally {
+    if (browser) await browser.close();
   }
 }
 
@@ -78,35 +126,59 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     };
 
     const photoMedia = p.media.filter((m) => m.kind === "PHOTO");
-    const photos: { bytes: Uint8Array; mimeType: string }[] = [];
+    const photos: ExposePhoto[] = [];
     for (const m of photoMedia) {
       const data = await loadMediaBytes(m.storageKey, m.mimeType);
-      if (data) photos.push(data);
+      if (data) {
+        const cls = m.classification as { roomType?: string; caption?: string; description?: string; features?: string[] } | null;
+        photos.push({
+          ...data,
+          roomType: cls?.roomType,
+          caption: cls?.caption,
+          description: cls?.description,
+          features: cls?.features,
+        });
+      }
     }
 
     const fpMedia = p.media.filter((m) => m.kind === "FLOORPLAN");
-    const floorPlans: { bytes: Uint8Array; mimeType: string }[] = [];
+    const floorPlans: ExposePhoto[] = [];
     for (const m of fpMedia) {
       const data = await loadMediaBytes(m.storageKey, m.mimeType);
-      if (data) floorPlans.push(data);
+      if (!data) continue;
+      if (data.mimeType === "application/pdf") {
+        const converted = await convertPdfToImage(data.bytes);
+        if (converted) floorPlans.push(converted);
+      } else {
+        floorPlans.push(data);
+      }
     }
 
     // Load unit data for MFH bundle listings
     const isBundle = !p.parentId && p.units && p.units.length > 0;
-    let unitData: { label: string; livingArea: number; rooms: number | null; bathrooms?: number; floor?: number; askingPrice?: number; titleShort?: string; roomProgram?: { name: string; area: number }[]; photos: { bytes: Uint8Array; mimeType: string }[]; floorPlans: { bytes: Uint8Array; mimeType: string }[] }[] | undefined;
+    let unitData: { label: string; livingArea: number; rooms: number | null; bathrooms?: number; floor?: number; askingPrice?: number; titleShort?: string; roomProgram?: { name: string; area: number }[]; photos: ExposePhoto[]; floorPlans: ExposePhoto[] }[] | undefined;
 
     if (isBundle) {
       unitData = [];
       for (const unit of p.units) {
-        const uPhotos: { bytes: Uint8Array; mimeType: string }[] = [];
+        const uPhotos: ExposePhoto[] = [];
         for (const m of unit.media.filter((m) => m.kind === "PHOTO")) {
           const d = await loadMediaBytes(m.storageKey, m.mimeType);
-          if (d) uPhotos.push(d);
+          if (d) {
+            const cls = m.classification as { roomType?: string; caption?: string; description?: string; features?: string[] } | null;
+            uPhotos.push({ ...d, roomType: cls?.roomType, caption: cls?.caption, description: cls?.description, features: cls?.features });
+          }
         }
-        const uFP: { bytes: Uint8Array; mimeType: string }[] = [];
+        const uFP: ExposePhoto[] = [];
         for (const m of unit.media.filter((m) => m.kind === "FLOORPLAN")) {
           const d = await loadMediaBytes(m.storageKey, m.mimeType);
-          if (d) uFP.push(d);
+          if (!d) continue;
+          if (d.mimeType === "application/pdf") {
+            const conv = await convertPdfToImage(d.bytes);
+            if (conv) uFP.push(conv);
+          } else {
+            uFP.push(d);
+          }
         }
         const uListing = unit.listings[0];
         unitData.push({
@@ -168,11 +240,13 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     });
 
     const fn = `Expose_${p.street}_${p.houseNumber}_${p.city}.pdf`.replace(/\s+/g, "_");
+    const url = new URL(req.url);
+    const inline = url.searchParams.get("inline") === "1";
 
     return new Response(new Uint8Array(pdfBuffer), {
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="${fn}"`,
+        "Content-Disposition": `${inline ? "inline" : "attachment"}; filename="${fn}"`,
       },
     });
   } catch (err) {

@@ -97,6 +97,8 @@ export default function PropertyDetailPage() {
   const [editBathrooms, setEditBathrooms] = useState("");
   const [editYearBuilt, setEditYearBuilt] = useState("");
   const [energySaving, setEnergySaving] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [pdfDownloading, setPdfDownloading] = useState(false);
   const [energyPdfUploading, setEnergyPdfUploading] = useState(false);
   const [energyPdfName, setEnergyPdfName] = useState<string | null>(null);
   const [energyPdfAssetId, setEnergyPdfAssetId] = useState<string | null>(null);
@@ -259,6 +261,44 @@ export default function PropertyDetailPage() {
     fetchProperty();
   }
 
+  async function downloadPdf(listingId: string) {
+    setPdfDownloading(true);
+    try {
+      const res = await fetch(`/api/listings/${listingId}/pdf`);
+      if (res.ok) {
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `Expose_${property?.street || ""}_${property?.houseNumber || ""}.pdf`;
+        a.click();
+        URL.revokeObjectURL(url);
+      } else {
+        alert("PDF-Erstellung fehlgeschlagen.");
+      }
+    } catch {
+      alert("PDF-Erstellung fehlgeschlagen.");
+    }
+    setPdfDownloading(false);
+  }
+
+  async function analyzePhotos() {
+    setAnalyzing(true);
+    try {
+      const res = await fetch(`/api/properties/${id}/analyze-photos`, { method: "POST" });
+      if (res.ok) {
+        const data = await res.json();
+        alert(`${data.analyzed} Fotos analysiert — Beschreibungen wurden generiert.`);
+        fetchProperty();
+      } else {
+        alert("Analyse fehlgeschlagen.");
+      }
+    } catch {
+      alert("Analyse fehlgeschlagen.");
+    }
+    setAnalyzing(false);
+  }
+
   async function createListing() {
     setCreating(true);
     const res = await fetch("/api/listings", {
@@ -373,14 +413,22 @@ export default function PropertyDetailPage() {
                 </button>
               ) : (
                 <>
-                  <a
-                    href={`/expose/${property.listings[0].id}?print=1`}
-                    target="_blank"
-                    className="bg-white border border-slate-200 hover:border-primary text-blueprint px-5 py-3 rounded-xl text-sm font-black uppercase tracking-[0.18em] transition-colors flex items-center gap-2"
+                  <button
+                    onClick={analyzePhotos}
+                    disabled={analyzing}
+                    className="bg-white border border-slate-200 hover:border-primary text-blueprint px-5 py-3 rounded-xl text-sm font-black uppercase tracking-[0.18em] transition-colors flex items-center gap-2 disabled:opacity-60"
                   >
-                    <span className="material-symbols-outlined text-lg text-primary">download</span>
-                    PDF
-                  </a>
+                    <span className="material-symbols-outlined text-lg text-primary">{analyzing ? "hourglass_top" : "auto_awesome"}</span>
+                    {analyzing ? "Analysiert..." : "Fotos analysieren"}
+                  </button>
+                  <button
+                    onClick={() => downloadPdf(property.listings[0].id)}
+                    disabled={pdfDownloading}
+                    className="bg-white border border-slate-200 hover:border-primary text-blueprint px-5 py-3 rounded-xl text-sm font-black uppercase tracking-[0.18em] transition-colors flex items-center gap-2 disabled:opacity-60"
+                  >
+                    <span className="material-symbols-outlined text-lg text-primary">{pdfDownloading ? "hourglass_top" : "download"}</span>
+                    {pdfDownloading ? "Wird erstellt..." : "PDF"}
+                  </button>
                   <button
                     onClick={() => router.push(`/dashboard/listings/${property.listings[0].id}`)}
                     className="bg-blueprint hover:bg-primary text-white px-5 py-3 rounded-xl text-sm font-black uppercase tracking-[0.18em] transition-colors flex items-center gap-2"

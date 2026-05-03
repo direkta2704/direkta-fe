@@ -1,120 +1,15 @@
-import { PDFDocument, PDFPage, PDFFont, rgb, StandardFonts } from "pdf-lib";
+import puppeteer from "puppeteer";
 
-// ── Design tokens from Expose_Reference_Source.html ─────────────────
-const W = 595.28;
-const H = 841.89;
-const M = 51;
-const CW = W - 2 * M;
+// ── Public interfaces (unchanged) ────────────────────────────────────
 
-const INK = rgb(15 / 255, 27 / 255, 46 / 255);
-const INK_SOFT = rgb(72 / 255, 84 / 255, 104 / 255);
-const INK_FAINT = rgb(138 / 255, 146 / 255, 160 / 255);
-const ACCENT = rgb(184 / 255, 84 / 255, 50 / 255);
-const LINE = rgb(217 / 255, 208 / 255, 190 / 255);
-const LINE_SOFT = rgb(231 / 255, 223 / 255, 205 / 255);
-const PAPER = rgb(247 / 255, 243 / 255, 234 / 255);
-const PAPER_PURE = rgb(251 / 255, 248 / 255, 241 / 255);
-const MUTED = rgb(234 / 255, 226 / 255, 206 / 255);
-const WHITE = rgb(1, 1, 1);
-
-const FOOTER_Y = 23;
-const HEADER_BASE = H - M;
-const HEADER_LINE = HEADER_BASE - 16;
-const CONTENT_TOP = HEADER_LINE - 22;
-const CONTENT_BOTTOM = FOOTER_Y + 20;
-
-type C = ReturnType<typeof rgb>;
-interface F { sans: PDFFont; sansBold: PDFFont; serif: PDFFont; serifIt: PDFFont; serifBold: PDFFont }
-
-function wrap(t: string, font: PDFFont, sz: number, maxW: number): string[] {
-  const r: string[] = [];
-  for (const p of t.split("\n")) {
-    if (!p.trim()) { r.push(""); continue; }
-    let l = "";
-    for (const w of p.split(" ")) {
-      const x = l ? `${l} ${w}` : w;
-      if (font.widthOfTextAtSize(x, sz) > maxW && l) { r.push(l); l = w; } else l = x;
-    }
-    if (l) r.push(l);
-  }
-  return r;
+export interface ExposePhoto {
+  bytes: Uint8Array;
+  mimeType: string;
+  roomType?: string;
+  caption?: string;
+  description?: string;
+  features?: string[];
 }
-
-function drawBrand(pg: PDFPage, f: F, x: number, y: number, sz: number, clr: C) {
-  pg.drawText("DIREKTA", { x, y, size: sz, font: f.sansBold, color: clr });
-  pg.drawText(".", { x: x + f.sansBold.widthOfTextAtSize("DIREKTA", sz), y, size: sz, font: f.sansBold, color: ACCENT });
-}
-
-function drawPageHeader(pg: PDFPage, f: F, addr: string) {
-  drawBrand(pg, f, M, HEADER_BASE, 9, INK);
-  const aw = f.sans.widthOfTextAtSize(addr, 7);
-  pg.drawText(addr, { x: W - M - aw, y: HEADER_BASE, size: 7, font: f.sans, color: INK_FAINT });
-  pg.drawLine({ start: { x: M, y: HEADER_LINE }, end: { x: W - M, y: HEADER_LINE }, thickness: 0.5, color: LINE });
-}
-
-function drawPageFooter(pg: PDFPage, f: F, sec: string, num: number, total: number) {
-  drawBrand(pg, f, M, FOOTER_Y, 7, INK);
-  const sw = f.sans.widthOfTextAtSize(sec, 7);
-  pg.drawText(sec, { x: (W - sw) / 2, y: FOOTER_Y, size: 7, font: f.sans, color: INK_FAINT });
-  const pn = `${String(num).padStart(2, "0")} / ${String(total).padStart(2, "0")}`;
-  const pw = f.sans.widthOfTextAtSize(pn, 7);
-  pg.drawText(pn, { x: W - M - pw, y: FOOTER_Y, size: 7, font: f.sans, color: INK_FAINT });
-}
-
-function drawSectionHead(pg: PDFPage, f: F, num: string, eyebrow: string, title: string, y: number): number {
-  pg.drawText(num, { x: M, y, size: 10, font: f.serifIt, color: ACCENT });
-  const ey = eyebrow.toUpperCase();
-  pg.drawText(ey, { x: W - M - f.sans.widthOfTextAtSize(ey, 7), y: y + 1, size: 7, font: f.sans, color: INK_FAINT });
-  y -= 28;
-  for (const l of wrap(title, f.serif, 26, CW)) {
-    pg.drawText(l, { x: M, y, size: 26, font: f.serif, color: INK });
-    y -= 28;
-  }
-  y -= 4;
-  pg.drawLine({ start: { x: M, y }, end: { x: M + 113, y }, thickness: 2, color: ACCENT });
-  return y - 18;
-}
-
-function energyBadgeColor(cls: string): C {
-  const m: Record<string, [number, number, number]> = {
-    "A+": [0, 128, 0], A: [79, 168, 79], B: [139, 195, 74], C: [205, 220, 57],
-    D: [255, 235, 59], E: [255, 152, 0], F: [255, 87, 34], G: [211, 47, 47], H: [183, 28, 28],
-  };
-  const c = m[cls] || [128, 128, 128];
-  return rgb(c[0] / 255, c[1] / 255, c[2] / 255);
-}
-
-function grunderwerbsteuer(postcode: string): { land: string; rate: number } {
-  const p = parseInt(postcode.slice(0, 2)) || 0;
-  if (p <= 4) return { land: "Sachsen", rate: 5.5 };
-  if (p <= 6) return { land: "Sachsen-Anhalt", rate: 5.0 };
-  if (p <= 9) return { land: "Thüringen", rate: 5.0 };
-  if (p <= 12) return { land: "Berlin", rate: 6.0 };
-  if (p <= 16) return { land: "Brandenburg", rate: 6.5 };
-  if (p <= 19) return { land: "Mecklenburg-Vorpommern", rate: 6.0 };
-  if (p <= 21) return { land: "Hamburg", rate: 5.5 };
-  if (p <= 25) return { land: "Schleswig-Holstein", rate: 6.5 };
-  if (p <= 27) return { land: "Niedersachsen", rate: 5.0 };
-  if (p <= 29) return { land: "Bremen", rate: 5.0 };
-  if (p <= 31) return { land: "Niedersachsen", rate: 5.0 };
-  if (p <= 33) return { land: "Nordrhein-Westfalen", rate: 6.5 };
-  if (p <= 36) return { land: "Hessen", rate: 6.0 };
-  if (p <= 38) return { land: "Niedersachsen", rate: 5.0 };
-  if (p <= 39) return { land: "Sachsen-Anhalt", rate: 5.0 };
-  if (p <= 53) return { land: "Nordrhein-Westfalen", rate: 6.5 };
-  if (p <= 56) return { land: "Rheinland-Pfalz", rate: 5.0 };
-  if (p <= 59) return { land: "Nordrhein-Westfalen", rate: 6.5 };
-  if (p <= 65) return { land: "Hessen", rate: 6.0 };
-  if (p <= 66) return { land: "Saarland", rate: 6.5 };
-  if (p <= 69) return { land: "Rheinland-Pfalz", rate: 5.0 };
-  if (p <= 79) return { land: "Baden-Württemberg", rate: 5.0 };
-  if (p <= 87) return { land: "Bayern", rate: 3.5 };
-  if (p <= 89) return { land: "Baden-Württemberg", rate: 5.0 };
-  if (p <= 97) return { land: "Bayern", rate: 3.5 };
-  return { land: "Thüringen", rate: 5.0 };
-}
-
-export interface ExposePhoto { bytes: Uint8Array; mimeType: string }
 
 export interface ExposeUnit {
   label: string;
@@ -161,935 +56,1937 @@ export interface ExposeData {
   buildingDescription?: string;
 }
 
-export async function generateExposePdf(data: ExposeData): Promise<Buffer> {
-  const doc = await PDFDocument.create();
-  const f: F = {
-    sans: await doc.embedFont(StandardFonts.Helvetica),
-    sansBold: await doc.embedFont(StandardFonts.HelveticaBold),
-    serif: await doc.embedFont(StandardFonts.TimesRoman),
-    serifIt: await doc.embedFont(StandardFonts.TimesRomanItalic),
-    serifBold: await doc.embedFont(StandardFonts.TimesRomanBold),
+// ── Grunderwerbsteuer helper ─────────────────────────────────────────
+
+function grunderwerbsteuer(postcode: string): { land: string; rate: number } {
+  const p = parseInt(postcode.slice(0, 2)) || 0;
+  if (p <= 4) return { land: "Sachsen", rate: 5.5 };
+  if (p <= 6) return { land: "Sachsen-Anhalt", rate: 5.0 };
+  if (p <= 9) return { land: "Thüringen", rate: 5.0 };
+  if (p <= 12) return { land: "Berlin", rate: 6.0 };
+  if (p <= 16) return { land: "Brandenburg", rate: 6.5 };
+  if (p <= 19) return { land: "Mecklenburg-Vorpommern", rate: 6.0 };
+  if (p <= 21) return { land: "Hamburg", rate: 5.5 };
+  if (p <= 25) return { land: "Schleswig-Holstein", rate: 6.5 };
+  if (p <= 27) return { land: "Niedersachsen", rate: 5.0 };
+  if (p <= 29) return { land: "Bremen", rate: 5.0 };
+  if (p <= 31) return { land: "Niedersachsen", rate: 5.0 };
+  if (p <= 33) return { land: "Nordrhein-Westfalen", rate: 6.5 };
+  if (p <= 36) return { land: "Hessen", rate: 6.0 };
+  if (p <= 38) return { land: "Niedersachsen", rate: 5.0 };
+  if (p <= 39) return { land: "Sachsen-Anhalt", rate: 5.0 };
+  if (p <= 53) return { land: "Nordrhein-Westfalen", rate: 6.5 };
+  if (p <= 56) return { land: "Rheinland-Pfalz", rate: 5.0 };
+  if (p <= 59) return { land: "Nordrhein-Westfalen", rate: 6.5 };
+  if (p <= 65) return { land: "Hessen", rate: 6.0 };
+  if (p <= 66) return { land: "Saarland", rate: 6.5 };
+  if (p <= 69) return { land: "Rheinland-Pfalz", rate: 5.0 };
+  if (p <= 79) return { land: "Baden-Württemberg", rate: 5.0 };
+  if (p <= 87) return { land: "Bayern", rate: 3.5 };
+  if (p <= 89) return { land: "Baden-Württemberg", rate: 5.0 };
+  if (p <= 97) return { land: "Bayern", rate: 3.5 };
+  return { land: "Thüringen", rate: 5.0 };
+}
+
+const ROOM_TYPE_DE: Record<string, string> = {
+  exterior: "Außenansicht", living: "Wohnzimmer", kitchen: "Küche",
+  bathroom: "Badezimmer", bedroom: "Schlafzimmer", office: "Arbeitszimmer",
+  hallway: "Flur / Eingangsbereich", balcony: "Balkon / Loggia",
+  garden: "Garten / Außenbereich", garage: "Garage / Stellplatz",
+  basement: "Keller / Untergeschoss", floorplan: "Grundriss", other: "Impressionen",
+};
+
+function photoCaption(photo: ExposePhoto): string {
+  if (photo.caption) return photo.caption;
+  return ROOM_TYPE_DE[photo.roomType || "other"] || "Impressionen";
+}
+
+// ── Formatting helpers ───────────────────────────────────────────────
+
+function esc(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function fmtArea(n: number): string {
+  return n.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " m²";
+}
+
+function fmtAreaShort(n: number): string {
+  return n.toLocaleString("de-DE", { minimumFractionDigits: 0, maximumFractionDigits: 2 }) + " m²";
+}
+
+function fmtPrice(n: number): string {
+  return "EUR " + n.toLocaleString("de-DE", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+}
+
+function fmtPriceEuro(n: number): string {
+  return n.toLocaleString("de-DE", { minimumFractionDigits: 0, maximumFractionDigits: 0 }) + " €";
+}
+
+function toDataUrl(photo: ExposePhoto): string {
+  return `data:${photo.mimeType};base64,${Buffer.from(photo.bytes).toString("base64")}`;
+}
+
+function floorLabel(floor: number): string {
+  if (floor === 0) return "EG";
+  if (floor < 0) return `${Math.abs(floor)}. UG`;
+  return `${floor}. OG`;
+}
+
+function floorLabelLong(floor: number): string {
+  if (floor === 0) return "Erdgeschoss";
+  if (floor < 0) return `${Math.abs(floor)}. Untergeschoss`;
+  return `${floor}. Obergeschoss`;
+}
+
+function energyBadgeColor(cls: string): string {
+  const m: Record<string, string> = {
+    "A+": "#008000", A: "#4fa84f", B: "#8bc34a", C: "#cddc39",
+    D: "#ffeb3b", E: "#ff9800", F: "#ff5722", G: "#d32f2f", H: "#b71c1c",
   };
+  return m[cls] || "#808080";
+}
 
-  const shortAddr = data.address.split(",")[0].trim() + " · " + data.city;
-  const pages: { pg: PDFPage; sec: string; custom?: boolean }[] = [];
-  let secIdx = 0;
+// ── HTML builder ─────────────────────────────────────────────────────
 
-  // ════════════════════════════════════════════════════════════ COVER
+function buildExposeHtml(data: ExposeData): string {
+  const isBundle = data.units && data.units.length > 0;
+  const totalArea = isBundle
+    ? data.units!.reduce((s, u) => s + u.livingArea, 0)
+    : data.livingArea;
+
+  let sectionIdx = 0;
+  const sections: string[] = [];
+
+  // ────────────────────────────── COVER PAGE
   {
-    const pg = doc.addPage([W, H]);
-    pg.drawRectangle({ x: 0, y: 0, width: W, height: H, color: PAPER });
-    pages.push({ pg, sec: "", custom: true });
+    const heroUrl = data.photos.length > 0 ? toDataUrl(data.photos[0]) : "";
+    const streetAddress = data.address.split(",")[0].trim();
+    const coverTitle = esc(streetAddress);
+    const coverSub = data.exposeHeadline
+      ? esc(data.exposeHeadline)
+      : data.exposeSubheadline
+        ? esc(data.exposeSubheadline)
+        : esc(data.descriptionLong.split("\n")[0].slice(0, 160));
 
-    const heroH = H * 0.6;
-    const heroY = H - heroH;
+    const eyebrowParts: string[] = [esc(data.propertyType)];
+    if (isBundle) eyebrowParts.push(`${data.units!.length} Wohneinheiten`);
+    eyebrowParts.push(esc(data.city));
+    const eyebrow = eyebrowParts.join(" &middot; ");
 
-    let heroDrawn = false;
-    if (data.photos.length > 0) {
-      try {
-        const p0 = data.photos[0];
-        const img = p0.mimeType.includes("png") ? await doc.embedPng(p0.bytes) : await doc.embedJpg(p0.bytes);
-        const s = Math.max(W / img.width, heroH / img.height);
-        pg.drawImage(img, {
-          x: (W - img.width * s) / 2,
-          y: heroY + (heroH - img.height * s) / 2,
-          width: img.width * s,
-          height: img.height * s,
-        });
-        heroDrawn = true;
-      } catch { /* placeholder fallback */ }
-    }
-    if (!heroDrawn) {
-      pg.drawRectangle({ x: 0, y: heroY, width: W, height: heroH, color: MUTED });
-    }
-
-    pg.drawRectangle({ x: 0, y: 0, width: W, height: heroY, color: PAPER });
-    pg.drawRectangle({ x: 0, y: H - 42, width: W, height: 42, color: INK, opacity: 0.4 });
-    drawBrand(pg, f, 40, H - 28, 11, WHITE);
-
-    const bdg = "EXPOSÉ · VERKAUF";
-    const bdgW = f.sans.widthOfTextAtSize(bdg, 7);
-    const bdgPx = 11, bdgPy = 5;
-    const bdgX = W - 40 - bdgW - 2 * bdgPx;
-    const bdgY = H - 28 - bdgPy;
-    pg.drawRectangle({ x: bdgX, y: bdgY, width: bdgW + 2 * bdgPx, height: 7 + 2 * bdgPy, borderColor: WHITE, borderWidth: 0.5 });
-    pg.drawText(bdg, { x: bdgX + bdgPx, y: bdgY + bdgPy, size: 7, font: f.sans, color: WHITE });
-
-    const cx = 40;
-    let cy = heroY - 34;
-
-    pg.drawText(data.propertyType.toUpperCase(), { x: cx, y: cy, size: 8, font: f.sans, color: ACCENT });
-    cy -= 24;
-
-    const coverTitle = data.exposeHeadline || data.titleShort;
-    for (const l of wrap(coverTitle, f.serif, 30, W - 2 * cx).slice(0, 3)) {
-      pg.drawText(l, { x: cx, y: cy, size: 30, font: f.serif, color: INK });
-      cy -= 33;
-    }
-    cy -= 2;
-
-    if (data.exposeSubheadline) {
-      pg.drawText(data.exposeSubheadline, { x: cx, y: cy, size: 11, font: f.serifIt, color: INK_SOFT });
-      cy -= 18;
-    }
-    pg.drawText(data.address, { x: cx, y: cy, size: 11, font: f.sansBold, color: INK });
-    cy -= 16;
-    pg.drawText(data.city, { x: cx, y: cy, size: 11, font: f.sans, color: INK_SOFT });
-
-    const stripTop = 100;
-    pg.drawLine({ start: { x: cx, y: stripTop + 22 }, end: { x: W - cx, y: stripTop + 22 }, thickness: 0.5, color: LINE });
-
-    const isBundle = data.units && data.units.length > 0;
-    const coverArea = isBundle ? data.units!.reduce((s, u) => s + u.livingArea, 0) : data.livingArea;
-    const kf: { l: string; v: string; u?: string }[] = [
-      { l: "WOHNFLÄCHE", v: String(Math.round(coverArea * 100) / 100), u: " m²" },
+    interface CoverFact { label: string; value: string; unit?: string }
+    const facts: CoverFact[] = [
+      { label: "WOHNFLÄCHE", value: fmtAreaShort(totalArea) },
     ];
     if (isBundle) {
-      kf.push({ l: "EINHEITEN", v: String(data.units!.length), u: " WE" });
+      facts.push({ label: "EINHEITEN", value: `${data.units!.length} WE` });
     } else if (data.rooms) {
-      kf.push({ l: "ZIMMER", v: String(data.rooms) });
+      facts.push({ label: "ZIMMER", value: String(data.rooms) });
     }
-    if (data.yearBuilt) kf.push({ l: "BAUJAHR", v: String(data.yearBuilt) });
-    if (data.energy) kf.push({ l: "ENERGIEKLASSE", v: data.energy.class });
-    if (kf.length < 4 && data.askingPrice) kf.push({ l: "KAUFPREIS", v: data.askingPrice.toLocaleString("de-DE"), u: " €" });
-
-    const colW = (W - 2 * cx) / Math.max(kf.length, 1);
-    for (let i = 0; i < kf.length; i++) {
-      const x = cx + i * colW;
-      pg.drawText(kf[i].l, { x, y: stripTop + 8, size: 6.5, font: f.sans, color: INK_FAINT });
-      pg.drawText(kf[i].v, { x, y: stripTop - 8, size: 14, font: f.serifBold, color: INK });
-      if (kf[i].u) {
-        const vw = f.serifBold.widthOfTextAtSize(kf[i].v, 14);
-        pg.drawText(kf[i].u!, { x: x + vw, y: stripTop - 6, size: 7, font: f.sans, color: INK_SOFT });
-      }
-      if (i < kf.length - 1) {
-        pg.drawLine({ start: { x: x + colW - 6, y: stripTop + 10 }, end: { x: x + colW - 6, y: stripTop - 14 }, thickness: 0.5, color: LINE_SOFT });
-      }
+    if (data.yearBuilt) facts.push({ label: "BAUJAHR", value: String(data.yearBuilt) });
+    if (data.condition) facts.push({ label: "ZUSTAND", value: esc(data.condition) });
+    if (facts.length < 4 && data.askingPrice) {
+      facts.push({ label: "KAUFPREIS", value: fmtPriceEuro(data.askingPrice) });
     }
 
-    pg.drawText(`Exposé · Stand ${data.generatedAt}`, { x: cx, y: 20, size: 7, font: f.sans, color: INK_FAINT });
-    const footR = "www.direkta.de";
-    pg.drawText(footR, { x: W - cx - f.sans.widthOfTextAtSize(footR, 7), y: 20, size: 7, font: f.sans, color: INK_FAINT });
+    const factsHtml = facts.map((f, i) => `
+      <div class="cover-fact${i < facts.length - 1 ? " cover-fact--border" : ""}">
+        <span class="cover-fact__label">${f.label}</span>
+        <span class="cover-fact__value">${f.value}</span>
+      </div>
+    `).join("");
+
+    const conditionBadge = data.condition
+      ? `<div class="cover-badge">${esc(data.condition)}</div>`
+      : "";
+
+    sections.push(`
+      <div class="page cover-page">
+        ${heroUrl ? `<img class="cover-hero" src="${heroUrl}" alt="" />` : `<div class="cover-hero cover-hero--placeholder"></div>`}
+        <div class="cover-gradient-top"></div>
+        <div class="cover-gradient-bottom"></div>
+        <div class="cover-brand">DIREKTA &middot; Verkauf</div>
+        ${conditionBadge}
+        <div class="cover-content">
+          <div class="cover-eyebrow">${eyebrow}</div>
+          <h1 class="cover-title">${coverTitle}</h1>
+          <p class="cover-subtitle">${coverSub}</p>
+          <div class="cover-address">${esc(streetAddress)} &middot; ${esc(data.postcode || "")} ${esc(data.city)}</div>
+          <div class="cover-facts">${factsHtml}</div>
+        </div>
+        <div class="cover-footer">
+          <span>Expos&eacute; &middot; Stand ${esc(data.generatedAt)}</span>
+          <span>www.direkta.de</span>
+        </div>
+      </div>
+    `);
   }
 
-  // ════════════════════════════════════════════════════════════ PHOTOS
-  const gallery = data.photos.slice(1);
-  if (gallery.length > 0) {
-    secIdx++;
-    const perPage = 6;
-    const totalPP = Math.ceil(gallery.length / perPage);
-    for (let pi = 0; pi < totalPP; pi++) {
-      const pg = doc.addPage([W, H]);
-      pg.drawRectangle({ x: 0, y: 0, width: W, height: H, color: PAPER });
-      const label = totalPP > 1 ? `Eindrücke (${pi + 1}/${totalPP})` : "Eindrücke";
-      pages.push({ pg, sec: label });
-
-      let y: number;
-      if (pi === 0) {
-        y = drawSectionHead(pg, f, `${String(secIdx).padStart(2, "0")} — Eindrücke`, "Impressionen", "Bilder der Immobilie.", CONTENT_TOP);
-      } else {
-        y = CONTENT_TOP;
-      }
-
-      const cols = 2, rows = 3, gap = 10;
-      const cellW = (CW - gap) / cols;
-      const avail = y - CONTENT_BOTTOM;
-      const cellH = Math.min((avail - (rows - 1) * gap) / rows, 200);
-      const startI = pi * perPage;
-      const endI = Math.min(startI + perPage, gallery.length);
-
-      for (let i = startI; i < endI; i++) {
-        try {
-          const photo = gallery[i];
-          const img = photo.mimeType.includes("png") ? await doc.embedPng(photo.bytes) : await doc.embedJpg(photo.bytes);
-          const pos = i - startI;
-          const col = pos % cols;
-          const row = Math.floor(pos / cols);
-          const cx = M + col * (cellW + gap);
-          const cy = y - (row + 1) * cellH - row * gap;
-          pg.drawRectangle({ x: cx - 3, y: cy - 3, width: cellW + 6, height: cellH + 6, color: WHITE });
-          const s = Math.min(cellW / img.width, cellH / img.height);
-          pg.drawImage(img, {
-            x: cx + (cellW - img.width * s) / 2,
-            y: cy + (cellH - img.height * s) / 2,
-            width: img.width * s,
-            height: img.height * s,
-          });
-        } catch { continue; }
-      }
-    }
-  }
-
-  // ════════════════════════════════════════════════════════════ DESCRIPTION + HIGHLIGHTS
+  // ────────────────────────────── AUF EINEN BLICK
   {
-    secIdx++;
-    let pg = doc.addPage([W, H]);
-    pg.drawRectangle({ x: 0, y: 0, width: W, height: H, color: PAPER });
-    pages.push({ pg, sec: "Objektbeschreibung" });
+    sectionIdx++;
+    const num = String(sectionIdx).padStart(2, "0");
 
-    let y = drawSectionHead(pg, f, `${String(secIdx).padStart(2, "0")} — Objektbeschreibung`, "Beschreibung", data.titleShort, CONTENT_TOP);
+    const highlightsHtml = (data.highlights && data.highlights.length > 0)
+      ? data.highlights.slice(0, 10).map(h => `<li>&mdash; ${esc(h)}</li>`).join("")
+      : data.attributes.slice(0, 10).map(a => `<li>&mdash; ${esc(a)}</li>`).join("");
 
-    // Highlights — clean structured list matching reference expose format
-    if (data.highlights && data.highlights.length > 0) {
-      const items = data.highlights.slice(0, 10);
-      pg.drawText("HIGHLIGHTS", { x: M, y, size: 7, font: f.sansBold, color: ACCENT });
-      y -= 16;
+    interface FactRow { label: string; value: string }
+    const factRows: FactRow[] = [
+      { label: "Adresse", value: `${esc(data.address)}, ${esc(data.city)}` },
+      { label: "Objekttyp", value: esc(data.propertyType) },
+      { label: "Wohnfläche", value: fmtAreaShort(totalArea) },
+    ];
+    if (isBundle) factRows.push({ label: "Wohneinheiten", value: String(data.units!.length) });
+    if (!isBundle && data.rooms) factRows.push({ label: "Zimmer", value: String(data.rooms) });
+    if (!isBundle && data.bathrooms) factRows.push({ label: "Badezimmer", value: String(data.bathrooms) });
+    if (!isBundle && data.floor != null) factRows.push({ label: "Etage", value: floorLabelLong(data.floor) });
+    if (data.plotArea) factRows.push({ label: "Grundstücksfläche", value: fmtAreaShort(data.plotArea) });
+    if (data.yearBuilt) factRows.push({ label: "Baujahr", value: String(data.yearBuilt) });
+    if (data.condition) factRows.push({ label: "Zustand", value: esc(data.condition) });
+    if (data.askingPrice) factRows.push({
+      label: "Kaufpreis",
+      value: isBundle
+        ? `${fmtPriceEuro(data.askingPrice)} (Paket)`
+        : fmtPriceEuro(data.askingPrice),
+    });
+    if (data.priceBand) factRows.push({
+      label: "Preisempfehlung",
+      value: `${fmtPriceEuro(data.priceBand.low)} – ${fmtPriceEuro(data.priceBand.high)} (${esc(data.priceBand.confidence)})`,
+    });
 
-      // Two-column layout for highlights
-      const halfW = (CW - 16) / 2;
-      const leftItems = items.slice(0, Math.ceil(items.length / 2));
-      const rightItems = items.slice(Math.ceil(items.length / 2));
-      const startY = y;
+    const factsRowsHtml = factRows.map(r => `
+      <div class="fact-row">
+        <span class="fact-row__label">${r.label}</span>
+        <span class="fact-row__value">${r.value}</span>
+      </div>
+    `).join("");
 
-      for (const h of leftItems) {
-        pg.drawText("—", { x: M, y, size: 9, font: f.sans, color: ACCENT });
-        const hLines = wrap(h, f.sans, 9, halfW - 16);
-        for (const hl of hLines) {
-          pg.drawText(hl, { x: M + 14, y, size: 9, font: f.sans, color: INK });
-          y -= 14;
-        }
-        y -= 2;
-      }
-      const leftEndY = y;
+    const leadText = esc(data.descriptionLong.split("\n\n")[0] || data.descriptionLong.split("\n")[0] || data.titleShort);
 
-      y = startY;
-      for (const h of rightItems) {
-        pg.drawText("—", { x: M + halfW + 16, y, size: 9, font: f.sans, color: ACCENT });
-        const hLines = wrap(h, f.sans, 9, halfW - 16);
-        for (const hl of hLines) {
-          pg.drawText(hl, { x: M + halfW + 30, y, size: 9, font: f.sans, color: INK });
-          y -= 14;
-        }
-        y -= 2;
-      }
+    sections.push(`
+      <div class="page content-page">
+        <div class="page-header">
+          <span class="header-brand">DIREKTA<span class="accent">.</span></span>
+          <span class="header-address">${esc(data.address)} &middot; ${esc(data.city)}</span>
+        </div>
+        <div class="section-eyebrow">${num} &mdash; Auf einen Blick</div>
+        <h2 class="section-title">Auf einen Blick</h2>
+        <div class="gold-rule"></div>
+        <p class="lead-text">${leadText}</p>
+        <div class="two-col">
+          <div class="two-col__left">
+            <ul class="highlights-list">${highlightsHtml}</ul>
+          </div>
+          <div class="two-col__right">
+            <div class="facts-panel">${factsRowsHtml}</div>
+          </div>
+        </div>
+        <div class="page-footer">
+          <span class="footer-brand">DIREKTA<span class="accent">.</span></span>
+          <span class="footer-section">Auf einen Blick</span>
+        </div>
+      </div>
+    `);
+  }
 
-      y = Math.min(y, leftEndY) - 12;
-    }
-
+  // ────────────────────────────── OBJEKTBESCHREIBUNG
+  {
+    sectionIdx++;
+    const num = String(sectionIdx).padStart(2, "0");
     const desc = data.descriptionLong.replace(/\r\n/g, "\n");
     const paras = desc.split("\n\n").filter(Boolean);
+    const leadPara = paras[0] || "";
+    const restParas = paras.slice(1);
 
-    if (paras.length > 0) {
-      for (const l of wrap(paras[0], f.serif, 12, CW)) {
-        if (y < CONTENT_BOTTOM) {
-          pg = doc.addPage([W, H]);
-          pg.drawRectangle({ x: 0, y: 0, width: W, height: H, color: PAPER });
-          pages.push({ pg, sec: "Objektbeschreibung" });
-          y = CONTENT_TOP;
-        }
-        pg.drawText(l, { x: M, y, size: 12, font: f.serif, color: INK });
-        y -= 19;
-      }
-      y -= 8;
-    }
+    const restHtml = restParas.map(p => `<p>${esc(p)}</p>`).join("");
 
-    for (let pi = 1; pi < paras.length; pi++) {
-      for (const l of wrap(paras[pi], f.sans, 9.5, CW)) {
-        if (y < CONTENT_BOTTOM) {
-          pg = doc.addPage([W, H]);
-          pg.drawRectangle({ x: 0, y: 0, width: W, height: H, color: PAPER });
-          pages.push({ pg, sec: "Objektbeschreibung" });
-          y = CONTENT_TOP;
-        }
-        if (l === "") { y -= 8; continue; }
-        pg.drawText(l, { x: M, y, size: 9.5, font: f.sans, color: INK });
-        y -= 16;
-      }
-      y -= 8;
-    }
+    const attrsHtml = data.attributes.length > 0
+      ? `<div class="attr-section">
+          <div class="attr-label">AUSSTATTUNG</div>
+          ${data.attributes.map(a => `<div class="attr-item"><span class="attr-dash">&mdash;</span> ${esc(a)}</div>`).join("")}
+        </div>`
+      : "";
 
-    if (data.attributes.length > 0 && y > CONTENT_BOTTOM + 60) {
-      y -= 12;
-      pg.drawText("AUSSTATTUNG", { x: M, y, size: 7, font: f.sansBold, color: ACCENT });
-      y -= 16;
-      for (const attr of data.attributes) {
-        if (y < CONTENT_BOTTOM) break;
-        pg.drawLine({ start: { x: M, y: y + 4 }, end: { x: M + 8.5, y: y + 4 }, thickness: 1, color: ACCENT });
-        pg.drawText(attr, { x: M + 17, y, size: 9, font: f.sans, color: INK });
-        y -= 16;
-        pg.drawLine({ start: { x: M, y: y + 8 }, end: { x: W - M, y: y + 8 }, thickness: 0.3, color: LINE_SOFT });
-      }
-    }
+    sections.push(`
+      <div class="page content-page">
+        <div class="page-header">
+          <span class="header-brand">DIREKTA<span class="accent">.</span></span>
+          <span class="header-address">${esc(data.address)} &middot; ${esc(data.city)}</span>
+        </div>
+        <div class="section-eyebrow">${num} &mdash; Objektbeschreibung</div>
+        <h2 class="section-title">${esc(data.titleShort)}</h2>
+        <div class="gold-rule"></div>
+        <p class="lead-text">${esc(leadPara)}</p>
+        <div class="desc-body two-col-text">${restHtml}</div>
+        ${attrsHtml}
+        <div class="page-footer">
+          <span class="footer-brand">DIREKTA<span class="accent">.</span></span>
+          <span class="footer-section">Objektbeschreibung</span>
+        </div>
+      </div>
+    `);
   }
 
-  // ════════════════════════════════════════════════════════════ AUSSTATTUNG & MATERIALIEN (conditional)
+  // ────────────────────────────── AUSSTATTUNG & MATERIALIEN
   if (data.specifications && Object.keys(data.specifications).length > 0) {
-    secIdx++;
-    const pg = doc.addPage([W, H]);
-    pg.drawRectangle({ x: 0, y: 0, width: W, height: H, color: PAPER });
-    pages.push({ pg, sec: "Ausstattung" });
-
-    let y = drawSectionHead(pg, f, `${String(secIdx).padStart(2, "0")} — Ausstattung & Materialien`, "Details", "Was verbaut wird.", CONTENT_TOP);
-
-    if (data.buildingDescription) {
-      for (const l of wrap(data.buildingDescription, f.sans, 9, CW)) {
-        pg.drawText(l, { x: M, y, size: 9, font: f.sans, color: INK_SOFT });
-        y -= 14;
-      }
-      y -= 10;
-    }
-
-    // Two-column spec table
-    const halfW = (CW - 16) / 2;
+    sectionIdx++;
+    const num = String(sectionIdx).padStart(2, "0");
     const entries = Object.entries(data.specifications);
-    const leftEntries = entries.slice(0, Math.ceil(entries.length / 2));
-    const rightEntries = entries.slice(Math.ceil(entries.length / 2));
+    const half = Math.ceil(entries.length / 2);
+    const leftEntries = entries.slice(0, half);
+    const rightEntries = entries.slice(half);
 
-    const drawSpecCol = (specs: [string, string][], startX: number, startY: number): number => {
-      let sy = startY;
-      for (const [label, value] of specs) {
-        if (sy < CONTENT_BOTTOM) break;
-        pg.drawText(label, { x: startX, y: sy, size: 8, font: f.sansBold, color: INK });
-        sy -= 13;
-        for (const l of wrap(value, f.sans, 8.5, halfW - 4)) {
-          pg.drawText(l, { x: startX, y: sy, size: 8.5, font: f.sans, color: INK_SOFT });
-          sy -= 12;
-        }
-        sy -= 8;
-      }
-      return sy;
-    };
+    const renderSpecCol = (specs: [string, string][]): string =>
+      specs.map(([label, value]) => `
+        <div class="spec-item">
+          <div class="spec-item__label">${esc(label)}</div>
+          <div class="spec-item__value">${esc(value)}</div>
+        </div>
+      `).join("");
 
-    const leftEnd = drawSpecCol(leftEntries, M, y);
-    const rightEnd = drawSpecCol(rightEntries, M + halfW + 16, y);
-    y = Math.min(leftEnd, rightEnd);
+    const buildingDescHtml = data.buildingDescription
+      ? `<p class="building-desc">${esc(data.buildingDescription)}</p>`
+      : "";
 
-    // "Nicht im Lieferumfang" note if relevant
-    if (data.condition === "Erstbezug" || data.condition === "Neubau") {
-      y -= 16;
-      pg.drawText("NICHT IM LIEFERUMFANG", { x: M, y, size: 7, font: f.sansBold, color: ACCENT });
-      y -= 14;
-      const note = "Möblierung, Küchenzeile, Sanitärobjekte, Armaturen, Spiegel. Anschlüsse und Vorwände sind fachgerecht vorinstalliert.";
-      for (const l of wrap(note, f.sans, 8.5, CW)) {
-        pg.drawText(l, { x: M, y, size: 8.5, font: f.sans, color: INK_SOFT });
-        y -= 12;
-      }
-    }
+    const notInScope = (data.condition === "Erstbezug" || data.condition === "Neubau")
+      ? `<div class="not-in-scope">
+          <div class="not-in-scope__label">NICHT IM LIEFERUMFANG</div>
+          <p>M&ouml;blierung, K&uuml;chenzeile, Sanit&auml;robjekte, Armaturen, Spiegel. Anschl&uuml;sse und Vorw&auml;nde sind fachgerecht vorinstalliert.</p>
+        </div>`
+      : "";
+
+    sections.push(`
+      <div class="page content-page">
+        <div class="page-header">
+          <span class="header-brand">DIREKTA<span class="accent">.</span></span>
+          <span class="header-address">${esc(data.address)} &middot; ${esc(data.city)}</span>
+        </div>
+        <div class="section-eyebrow">${num} &mdash; Ausstattung &amp; Materialien</div>
+        <h2 class="section-title">Was verbaut wird</h2>
+        <div class="gold-rule"></div>
+        ${buildingDescHtml}
+        <div class="two-col">
+          <div class="two-col__left">${renderSpecCol(leftEntries)}</div>
+          <div class="two-col__right">${renderSpecCol(rightEntries)}</div>
+        </div>
+        ${notInScope}
+        <div class="page-footer">
+          <span class="footer-brand">DIREKTA<span class="accent">.</span></span>
+          <span class="footer-section">Ausstattung</span>
+        </div>
+      </div>
+    `);
   }
 
-  // ════════════════════════════════════════════════════════════ LOCATION (conditional)
+  // ────────────────────────────── LAGE
   if (data.locationDescription) {
-    secIdx++;
-    let pg = doc.addPage([W, H]);
-    pg.drawRectangle({ x: 0, y: 0, width: W, height: H, color: PAPER });
-    pages.push({ pg, sec: "Die Lage" });
-
-    let y = drawSectionHead(pg, f, `${String(secIdx).padStart(2, "0")} — Die Lage`, data.city, "Standort und Umgebung.", CONTENT_TOP);
-
+    sectionIdx++;
+    const num = String(sectionIdx).padStart(2, "0");
     const locDesc = data.locationDescription.replace(/\r\n/g, "\n");
     const locParas = locDesc.split("\n\n").filter(Boolean);
+    const leadPara = locParas[0] || "";
+    const restParas = locParas.slice(1);
 
-    // First paragraph as lede
-    if (locParas.length > 0) {
-      for (const l of wrap(locParas[0], f.serif, 12, CW)) {
-        if (y < CONTENT_BOTTOM) {
-          pg = doc.addPage([W, H]);
-          pg.drawRectangle({ x: 0, y: 0, width: W, height: H, color: PAPER });
-          pages.push({ pg, sec: "Die Lage" });
-          y = CONTENT_TOP;
-        }
-        pg.drawText(l, { x: M, y, size: 12, font: f.serif, color: INK });
-        y -= 19;
+    // Detect category paragraphs for grid layout
+    const catRegex = /^(Versorgung|Bildung|Verkehr|Freizeit|Arbeit|Region|Mikrolage|Erreichbarkeit|Nahversorgung|Infrastruktur)[:\s]/i;
+    const catItems: { label: string; text: string }[] = [];
+    const plainParas: string[] = [];
+
+    for (const p of restParas) {
+      const match = p.match(catRegex);
+      if (match) {
+        catItems.push({ label: match[1].toUpperCase(), text: p.slice(match[0].length).trim() });
+      } else {
+        plainParas.push(p);
       }
-      y -= 8;
     }
 
-    // Remaining paragraphs — detect category labels (Versorgung:, Bildung:, etc.)
-    const halfW = (CW - 16) / 2;
-    let inGrid = false;
-    let gridCol = 0;
-    let gridStartY = y;
+    const plainHtml = plainParas.map(p => `<p>${esc(p)}</p>`).join("");
+    const catHtml = catItems.length > 0
+      ? `<div class="location-grid">${catItems.map(c => `
+          <div class="location-grid__item">
+            <div class="location-grid__label">${esc(c.label)}</div>
+            <p class="location-grid__text">${esc(c.text)}</p>
+          </div>
+        `).join("")}</div>`
+      : "";
 
-    for (let pi = 1; pi < locParas.length; pi++) {
-      const para = locParas[pi];
-      // Check if paragraph starts with a category label
-      const catMatch = para.match(/^(Versorgung|Bildung|Verkehr|Freizeit|Arbeit|Region|Mikrolage|Erreichbarkeit|Nahversorgung|Infrastruktur)[:\s]/i);
+    sections.push(`
+      <div class="page content-page">
+        <div class="page-header">
+          <span class="header-brand">DIREKTA<span class="accent">.</span></span>
+          <span class="header-address">${esc(data.address)} &middot; ${esc(data.city)}</span>
+        </div>
+        <div class="section-eyebrow">${num} &mdash; Lage</div>
+        <h2 class="section-title">Standort &amp; Umgebung</h2>
+        <div class="gold-rule"></div>
+        <p class="lead-text">${esc(leadPara)}</p>
+        ${plainHtml}
+        ${catHtml}
+        <div class="page-footer">
+          <span class="footer-brand">DIREKTA<span class="accent">.</span></span>
+          <span class="footer-section">Lage</span>
+        </div>
+      </div>
+    `);
+  }
 
-      if (catMatch) {
-        if (!inGrid) { inGrid = true; gridStartY = y; gridCol = 0; }
-        const catLabel = catMatch[1].toUpperCase();
-        const catText = para.slice(catMatch[0].length).trim();
-        const colX = gridCol === 0 ? M : M + halfW + 16;
+  // ────────────────────────────── WOHNUNGSÜBERSICHT
+  if (isBundle) {
+    sectionIdx++;
+    const num = String(sectionIdx).padStart(2, "0");
+    let sumArea = 0;
 
-        if (gridCol === 0) {
-          // Reset Y for new row
-        } else if (gridCol === 1) {
-          y = gridStartY; // Same row, right column
-        }
+    const rowsHtml = data.units!.map(unit => {
+      sumArea += unit.livingArea;
+      const flTxt = unit.floor != null ? floorLabel(unit.floor) : "&ndash;";
+      const prTxt = unit.askingPrice
+        ? fmtPriceEuro(unit.askingPrice)
+        : `<span class="price-inquiry">auf Anfrage</span>`;
+      return `
+        <tr>
+          <td class="cell-label">${esc(unit.label)}</td>
+          <td>${fmtAreaShort(unit.livingArea)}</td>
+          <td>${unit.rooms ? unit.rooms : "&ndash;"}</td>
+          <td>${flTxt}</td>
+          <td class="cell-price">${prTxt}</td>
+        </tr>
+      `;
+    }).join("");
 
-        pg.drawText(catLabel, { x: colX, y, size: 7, font: f.sansBold, color: ACCENT });
-        y -= 14;
-        for (const l of wrap(catText, f.sans, 9, halfW)) {
-          pg.drawText(l, { x: colX, y, size: 9, font: f.sans, color: INK_SOFT });
-          y -= 13;
-        }
-        y -= 6;
+    const bundlePrice = data.askingPrice
+      ? fmtPriceEuro(data.askingPrice)
+      : "auf Anfrage";
 
-        if (gridCol === 1) {
-          y = Math.min(y, gridStartY - 60); // Move past both columns
-          gridCol = 0;
-          gridStartY = y;
-        } else {
-          gridStartY = y;
-          gridCol = 1;
-          y = gridStartY + 60; // Will be reset
-        }
-      } else {
-        inGrid = false;
-        gridCol = 0;
-        for (const l of wrap(para, f.sans, 9.5, CW)) {
-          if (y < CONTENT_BOTTOM) {
-            pg = doc.addPage([W, H]);
-            pg.drawRectangle({ x: 0, y: 0, width: W, height: H, color: PAPER });
-            pages.push({ pg, sec: "Die Lage" });
-            y = CONTENT_TOP;
-          }
-          if (l === "") { y -= 8; continue; }
-          pg.drawText(l, { x: M, y, size: 9.5, font: f.sans, color: INK });
-          y -= 16;
-        }
-        y -= 8;
-      }
+    sections.push(`
+      <div class="page content-page">
+        <div class="page-header">
+          <span class="header-brand">DIREKTA<span class="accent">.</span></span>
+          <span class="header-address">${esc(data.address)} &middot; ${esc(data.city)}</span>
+        </div>
+        <div class="section-eyebrow">${num} &mdash; Wohnungs&uuml;bersicht</div>
+        <h2 class="section-title">Die Wohnungen im &Uuml;berblick</h2>
+        <div class="gold-rule"></div>
+        <table class="units-table">
+          <thead>
+            <tr>
+              <th>EINHEIT</th>
+              <th>WOHNFL&Auml;CHE</th>
+              <th>ZIMMER</th>
+              <th>ETAGE</th>
+              <th>KAUFPREIS</th>
+            </tr>
+          </thead>
+          <tbody>${rowsHtml}</tbody>
+          <tfoot>
+            <tr class="units-table__total">
+              <td class="cell-label">Paket &middot; alle ${data.units!.length} WE</td>
+              <td>${fmtAreaShort(sumArea)}</td>
+              <td></td>
+              <td></td>
+              <td class="cell-price cell-price--accent">${bundlePrice}</td>
+            </tr>
+          </tfoot>
+        </table>
+        <p class="units-note">Erwerb einzeln je Einheit oder als Gesamtpaket m&ouml;glich. Konditionen auf Anfrage.</p>
+        <div class="page-footer">
+          <span class="footer-brand">DIREKTA<span class="accent">.</span></span>
+          <span class="footer-section">Wohnungs&uuml;bersicht</span>
+        </div>
+      </div>
+    `);
+  }
+
+  // ────────────────────────────── FLOOR PLANS (building-level)
+  if (data.floorPlans && data.floorPlans.length > 0) {
+    sectionIdx++;
+    const num = String(sectionIdx).padStart(2, "0");
+    for (let i = 0; i < data.floorPlans.length; i++) {
+      const fp = data.floorPlans[i];
+      if (fp.mimeType === "application/pdf") continue; // pre-converted to image in route
+      const label = data.floorPlans.length > 1
+        ? `Grundriss (${i + 1}/${data.floorPlans.length})`
+        : "Grundriss";
+      sections.push(`
+        <div class="page content-page floorplan-page">
+          <div class="page-header">
+            <span class="header-brand">DIREKTA<span class="accent">.</span></span>
+            <span class="header-address">${esc(data.address)} &middot; ${esc(data.city)}</span>
+          </div>
+          ${i === 0 ? `
+            <div class="section-eyebrow">${num} &mdash; Grundriss</div>
+            <h2 class="section-title">Grundrissdarstellung</h2>
+            <div class="gold-rule"></div>
+          ` : `<h3 class="floorplan-subtitle">${esc(label)}</h3>`}
+          <div class="floorplan-container">
+            <img class="floorplan-img" src="${toDataUrl(fp)}" alt="${esc(label)}" />
+          </div>
+          <div class="page-footer">
+            <span class="footer-brand">DIREKTA<span class="accent">.</span></span>
+            <span class="footer-section">${esc(label)}</span>
+          </div>
+        </div>
+      `);
     }
   }
 
-  // ════════════════════════════════════════════════════════════ MFH: UNIT OVERVIEW + UNIT PAGES + SALES OPTIONS
-  if (data.units && data.units.length > 0) {
-    // ── Unit comparison table ──
-    secIdx++;
-    {
-      const pg = doc.addPage([W, H]);
-      pg.drawRectangle({ x: 0, y: 0, width: W, height: H, color: PAPER });
-      pages.push({ pg, sec: "Wohnungsübersicht" });
-
-      let y = drawSectionHead(pg, f, `${String(secIdx).padStart(2, "0")} — Wohnungsübersicht`, "Einheiten", "Die Wohnungen im Überblick.", CONTENT_TOP);
-
-      const cX = [M, M + 100, M + 190, M + 260, M + 350];
-      const hdr = ["EINHEIT", "WOHNFLÄCHE", "ZIMMER", "ETAGE", "KAUFPREIS"];
-      for (let hi = 0; hi < hdr.length; hi++) pg.drawText(hdr[hi], { x: cX[hi], y, size: 7, font: f.sansBold, color: INK_FAINT });
-      y -= 8;
-      pg.drawLine({ start: { x: M, y }, end: { x: W - M, y }, thickness: 0.5, color: LINE });
-      y -= 14;
-
-      let sumArea = 0;
-      for (const unit of data.units!) {
-        pg.drawText(unit.label, { x: cX[0], y, size: 9.5, font: f.sansBold, color: INK });
-        pg.drawText(`${unit.livingArea} m²`, { x: cX[1], y, size: 9, font: f.sans, color: INK });
-        pg.drawText(unit.rooms ? String(unit.rooms) : "–", { x: cX[2], y, size: 9, font: f.sans, color: INK });
-        const flTxt = unit.floor != null ? (unit.floor === 0 ? "EG" : `${unit.floor}. OG`) : "–";
-        pg.drawText(flTxt, { x: cX[3], y, size: 9, font: f.sans, color: INK });
-        const prTxt = unit.askingPrice ? `${unit.askingPrice.toLocaleString("de-DE")} €` : "auf Anfrage";
-        pg.drawText(prTxt, { x: cX[4], y, size: 9, font: f.serifIt, color: unit.askingPrice ? INK : ACCENT });
-        y -= 20;
-        pg.drawLine({ start: { x: M, y: y + 8 }, end: { x: W - M, y: y + 8 }, thickness: 0.3, color: LINE_SOFT });
-        sumArea += unit.livingArea;
-      }
-
-      y -= 4;
-      pg.drawLine({ start: { x: M, y: y + 8 }, end: { x: W - M, y: y + 8 }, thickness: 1, color: INK });
-      pg.drawRectangle({ x: M, y: y - 10, width: CW, height: 24, color: PAPER_PURE });
-      pg.drawText(`Paket · alle ${data.units!.length} WE`, { x: cX[0], y, size: 9.5, font: f.sansBold, color: INK });
-      pg.drawText(`${(Math.round(sumArea * 100) / 100)} m²`, { x: cX[1], y, size: 9, font: f.sansBold, color: INK });
-      const bpTxt = data.askingPrice ? `${data.askingPrice.toLocaleString("de-DE")} €` : "auf Anfrage";
-      pg.drawText(bpTxt, { x: cX[4], y, size: 9.5, font: f.serifBold, color: ACCENT });
-
-      y -= 40;
-      pg.drawText("Erwerb einzeln je Einheit oder als Gesamtpaket möglich. Konditionen auf Anfrage.", { x: M, y, size: 8.5, font: f.sans, color: INK_SOFT });
-    }
-
-    // ── Individual unit pages ──
+  // ────────────────────────────── PER-UNIT PAGES
+  if (isBundle) {
     for (let ui = 0; ui < data.units!.length; ui++) {
       const unit = data.units![ui];
-      secIdx++;
+      sectionIdx++;
+      const num = String(sectionIdx).padStart(2, "0");
 
-      // Unit detail page
+      // UNIT DIVIDER
       {
-        const pg = doc.addPage([W, H]);
-        pg.drawRectangle({ x: 0, y: 0, width: W, height: H, color: PAPER });
-        pages.push({ pg, sec: unit.label });
+        const statsItems: { label: string; value: string }[] = [
+          { label: "WOHNFLÄCHE", value: fmtAreaShort(unit.livingArea) },
+        ];
+        if (unit.rooms) statsItems.push({ label: "ZIMMER", value: String(unit.rooms) });
+        if (unit.bathrooms) statsItems.push({ label: "BÄDER", value: String(unit.bathrooms) });
+        if (unit.floor != null) statsItems.push({ label: "ETAGE", value: floorLabel(unit.floor) });
+        if (unit.askingPrice) statsItems.push({ label: "PREIS", value: fmtPriceEuro(unit.askingPrice) });
 
-        let y = drawSectionHead(pg, f,
-          `${String(secIdx).padStart(2, "0")} — ${unit.label}`,
-          `Einheit ${ui + 1} von ${data.units!.length}`,
-          unit.titleShort || `${unit.label} · ${unit.livingArea} m²`,
-          CONTENT_TOP,
-        );
+        const statsHtml = statsItems.map((s, i) => `
+          <div class="unit-stat${i < statsItems.length - 1 ? " unit-stat--border" : ""}">
+            <span class="unit-stat__label">${s.label}</span>
+            <span class="unit-stat__value">${s.value}</span>
+          </div>
+        `).join("");
 
-        // Hero photo
-        if (unit.photos.length > 0) {
-          try {
-            const p0 = unit.photos[0];
-            const img = p0.mimeType.includes("png") ? await doc.embedPng(p0.bytes) : await doc.embedJpg(p0.bytes);
-            const heroH = 175;
-            pg.drawRectangle({ x: M - 2, y: y - heroH - 2, width: CW + 4, height: heroH + 4, color: WHITE });
-            const s = Math.min(CW / img.width, heroH / img.height);
-            pg.drawImage(img, {
-              x: M + (CW - img.width * s) / 2,
-              y: y - heroH + (heroH - img.height * s) / 2,
-              width: img.width * s,
-              height: img.height * s,
-            });
-            y -= heroH + 12;
-          } catch { /* skip */ }
-        }
+        const roomProgramHtml = (unit.roomProgram && unit.roomProgram.length > 0)
+          ? (() => {
+              let rpTotal = 0;
+              const rows = unit.roomProgram.map(r => {
+                rpTotal += r.area;
+                return `<div class="rp-row">
+                  <span class="rp-row__name">${esc(r.name)}</span>
+                  <span class="rp-row__area">${fmtArea(r.area)}</span>
+                </div>`;
+              }).join("");
+              return `
+                <div class="room-program">
+                  <div class="room-program__label">RAUMPROGRAMM</div>
+                  ${rows}
+                  <div class="rp-row rp-row--total">
+                    <span class="rp-row__name">Gesamt</span>
+                    <span class="rp-row__area">${fmtArea(rpTotal)}</span>
+                  </div>
+                </div>
+              `;
+            })()
+          : "";
 
-        // Meta strip
-        pg.drawLine({ start: { x: M, y }, end: { x: W - M, y }, thickness: 0.5, color: LINE });
-        const uMeta: { l: string; v: string }[] = [{ l: "WOHNFLÄCHE", v: `${unit.livingArea} m²` }];
-        if (unit.rooms) uMeta.push({ l: "ZIMMER", v: String(unit.rooms) });
-        if (unit.bathrooms) uMeta.push({ l: "BÄDER", v: String(unit.bathrooms) });
-        if (unit.floor != null) uMeta.push({ l: "ETAGE", v: unit.floor === 0 ? "EG" : `${unit.floor}. OG` });
-        if (unit.askingPrice) uMeta.push({ l: "PREIS", v: `${unit.askingPrice.toLocaleString("de-DE")} €` });
+        const unitTitle = unit.titleShort || `${unit.label} &middot; ${fmtAreaShort(unit.livingArea)}`;
 
-        const uColW = CW / Math.max(uMeta.length, 1);
-        for (let mi = 0; mi < uMeta.length; mi++) {
-          const mx = M + mi * uColW;
-          pg.drawText(uMeta[mi].l, { x: mx, y: y - 12, size: 6.5, font: f.sans, color: INK_FAINT });
-          pg.drawText(uMeta[mi].v, { x: mx, y: y - 26, size: 12, font: f.serifBold, color: INK });
-        }
-        pg.drawLine({ start: { x: M, y: y - 34 }, end: { x: W - M, y: y - 34 }, thickness: 0.5, color: LINE });
-        y -= 52;
-
-        // Two-column: left = description, right = room program
-        const halfW = (CW - 16) / 2;
-        const rightX = M + halfW + 16;
-
-        if (unit.titleShort) {
-          for (const l of wrap(unit.titleShort, f.serif, 10, halfW)) {
-            pg.drawText(l, { x: M, y, size: 10, font: f.serif, color: INK });
-            y -= 15;
-          }
-        }
-
-        if (unit.roomProgram && unit.roomProgram.length > 0) {
-          let ry = y + (unit.titleShort ? unit.titleShort.length * 0.15 : 0);
-          ry = Math.min(ry, y + 15);
-          const rpStartY = y + 15;
-          pg.drawText("RAUMPROGRAMM", { x: rightX, y: rpStartY, size: 7, font: f.sansBold, color: ACCENT });
-          let rpy = rpStartY - 16;
-          let uTotal = 0;
-          for (const room of unit.roomProgram) {
-            pg.drawText(room.name, { x: rightX, y: rpy, size: 8.5, font: f.sans, color: INK_SOFT });
-            const aStr = `${room.area.toFixed(2)} m²`;
-            const aW = f.serifBold.widthOfTextAtSize(aStr, 9);
-            pg.drawText(aStr, { x: W - M - aW, y: rpy, size: 9, font: f.serifBold, color: INK });
-            rpy -= 14;
-            pg.drawLine({ start: { x: rightX, y: rpy + 5 }, end: { x: W - M, y: rpy + 5 }, thickness: 0.3, color: LINE_SOFT });
-            uTotal += room.area;
-          }
-          rpy -= 2;
-          pg.drawLine({ start: { x: rightX, y: rpy + 5 }, end: { x: W - M, y: rpy + 5 }, thickness: 0.8, color: INK });
-          rpy -= 2;
-          pg.drawText("Gesamt", { x: rightX, y: rpy, size: 8.5, font: f.sansBold, color: INK });
-          const tStr = `${uTotal.toFixed(2)} m²`;
-          const tW = f.serifBold.widthOfTextAtSize(tStr, 10);
-          pg.drawText(tStr, { x: W - M - tW, y: rpy, size: 10, font: f.serifBold, color: INK });
-        }
+        sections.push(`
+          <div class="page content-page unit-divider-page">
+            <div class="page-header">
+              <span class="header-brand">DIREKTA<span class="accent">.</span></span>
+              <span class="header-address">${esc(data.address)} &middot; ${esc(data.city)}</span>
+            </div>
+            <div class="section-eyebrow">${num} &mdash; ${esc(unit.label)}</div>
+            <div class="unit-divider__number">${String(ui + 1).padStart(2, "0")}</div>
+            <div class="unit-divider__tag">Einheit ${ui + 1} von ${data.units!.length}</div>
+            <h2 class="unit-divider__title">${unitTitle}</h2>
+            <div class="unit-stats">${statsHtml}</div>
+            ${roomProgramHtml}
+            <div class="page-footer">
+              <span class="footer-brand">DIREKTA<span class="accent">.</span></span>
+              <span class="footer-section">${esc(unit.label)}</span>
+            </div>
+          </div>
+        `);
       }
 
-      // Unit floor plans
+      // UNIT PHOTOS — individual pages per photo
+      if (unit.photos.length > 0) {
+        unit.photos.forEach((photo, pIdx) => {
+          const cap = esc(photoCaption(photo));
+          const desc = photo.description ? esc(photo.description) : "";
+          const roomMeta = ROOM_TYPE_DE[photo.roomType || "other"] || "";
+
+          sections.push(`
+            <div class="page content-page">
+              <div class="page-header">
+                <span class="header-brand">DIREKTA<span class="accent">.</span></span>
+                <span class="header-address">${esc(data.address)} &middot; ${esc(unit.label)}</span>
+              </div>
+              ${pIdx === 0 ? `<div class="section-eyebrow">${esc(unit.label)} &middot; Eindr&uuml;cke</div>` : ""}
+              <div class="img-hero-container">
+                <img class="img-hero" src="${toDataUrl(photo)}" alt="${cap}" />
+              </div>
+              <div class="room-caption">
+                <span class="room-name">${cap}</span>
+                ${roomMeta && roomMeta !== cap ? `<span class="room-meta">${esc(roomMeta)}</span>` : ""}
+              </div>
+              ${desc ? `
+                <div class="img-note">
+                  ${desc}
+                </div>
+              ` : ""}
+              <div class="page-footer">
+                <span class="footer-brand">DIREKTA<span class="accent">.</span></span>
+                <span class="footer-section">${esc(unit.label)} &middot; ${pIdx + 1}/${unit.photos.length}</span>
+              </div>
+            </div>
+          `);
+        });
+      }
+
+      // UNIT FLOOR PLANS
       for (const fp of unit.floorPlans) {
-        const pg = doc.addPage([W, H]);
-        pg.drawRectangle({ x: 0, y: 0, width: W, height: H, color: WHITE });
-        pages.push({ pg, sec: `Grundriss ${unit.label}` });
-        let y = CONTENT_TOP;
-        pg.drawText(`Grundriss ${unit.label}`, { x: M, y, size: 18, font: f.serifBold, color: INK });
-        y -= 30;
-        try {
-          if (fp.mimeType === "application/pdf") {
-            const fpDoc = await PDFDocument.load(fp.bytes);
-            const [emb] = await doc.embedPdf(fpDoc, [0]);
-            const dims = emb.size();
-            const mxW = CW, mxH = y - CONTENT_BOTTOM;
-            const s = Math.min(mxW / dims.width, mxH / dims.height, 1);
-            pg.drawPage(emb, { x: M + (mxW - dims.width * s) / 2, y: y - dims.height * s, width: dims.width * s, height: dims.height * s });
-          } else {
-            const img = fp.mimeType.includes("png") ? await doc.embedPng(fp.bytes) : await doc.embedJpg(fp.bytes);
-            const mxW = CW, mxH = y - CONTENT_BOTTOM;
-            const s = Math.min(mxW / img.width, mxH / img.height, 1);
-            pg.drawImage(img, { x: M + (mxW - img.width * s) / 2, y: y - img.height * s, width: img.width * s, height: img.height * s });
-          }
-        } catch (e) {
-          pg.drawText("Grundriss konnte nicht eingebettet werden.", { x: M, y: y - 30, size: 12, font: f.sans, color: INK_SOFT });
-          console.error("Unit floor plan embed failed:", e);
-        }
-      }
-
-      // Unit additional photos
-      const unitGallery = unit.photos.slice(1);
-      if (unitGallery.length > 0) {
-        const perPage = 6;
-        const totalPP = Math.ceil(unitGallery.length / perPage);
-        for (let pi = 0; pi < totalPP; pi++) {
-          const pg = doc.addPage([W, H]);
-          pg.drawRectangle({ x: 0, y: 0, width: W, height: H, color: PAPER });
-          pages.push({ pg, sec: `${unit.label} Eindrücke` });
-          let y = CONTENT_TOP;
-          if (pi === 0) { pg.drawText(`${unit.label} — Eindrücke`, { x: M, y, size: 18, font: f.serifBold, color: INK }); y -= 30; }
-          const cols = 2, rows = 3, gap = 10;
-          const cellW = (CW - gap) / cols;
-          const avail = y - CONTENT_BOTTOM;
-          const cellH = Math.min((avail - (rows - 1) * gap) / rows, 200);
-          const startI = pi * perPage;
-          const endI = Math.min(startI + perPage, unitGallery.length);
-          for (let i = startI; i < endI; i++) {
-            try {
-              const photo = unitGallery[i];
-              const img = photo.mimeType.includes("png") ? await doc.embedPng(photo.bytes) : await doc.embedJpg(photo.bytes);
-              const pos = i - startI;
-              const col = pos % cols;
-              const row = Math.floor(pos / cols);
-              const cx = M + col * (cellW + gap);
-              const cy = y - (row + 1) * cellH - row * gap;
-              pg.drawRectangle({ x: cx - 3, y: cy - 3, width: cellW + 6, height: cellH + 6, color: WHITE });
-              const s = Math.min(cellW / img.width, cellH / img.height);
-              pg.drawImage(img, { x: cx + (cellW - img.width * s) / 2, y: cy + (cellH - img.height * s) / 2, width: img.width * s, height: img.height * s });
-            } catch { continue; }
-          }
-        }
-      }
-    }
-
-    // ── Sales options page ──
-    secIdx++;
-    {
-      const pg = doc.addPage([W, H]);
-      pg.drawRectangle({ x: 0, y: 0, width: W, height: H, color: PAPER });
-      pages.push({ pg, sec: "Verkaufsoptionen" });
-
-      let y = drawSectionHead(pg, f, `${String(secIdx).padStart(2, "0")} — Verkaufsoptionen`, "Konditionen", "Einzeln oder als Paket.", CONTENT_TOP);
-
-      pg.drawText("Option A — Einzelerwerb", { x: M, y, size: 11, font: f.sansBold, color: INK });
-      y -= 18;
-      for (const l of wrap("Geeignet für Selbstnutzer, die sich für die Wohnung entscheiden, die zu ihrer Lebenssituation passt. Jeder Einzelerwerber profitiert vom gleichen Standard — keine Abstriche bei Material oder Technik.", f.sans, 9, CW)) {
-        pg.drawText(l, { x: M, y, size: 9, font: f.sans, color: INK_SOFT }); y -= 14;
-      }
-      y -= 12;
-      pg.drawText("Option B — Paket-Erwerb", { x: M, y, size: 11, font: f.sansBold, color: INK });
-      y -= 18;
-      for (const l of wrap("Alle Einheiten als Gesamtpaket. Diversifizierung im selben Objekt, Skalenvorteile bei Verwaltung, Instandhaltung und Vermietung.", f.sans, 9, CW)) {
-        pg.drawText(l, { x: M, y, size: 9, font: f.sans, color: INK_SOFT }); y -= 14;
-      }
-      y -= 16;
-
-      // Price table
-      const tX = [M, M + 150];
-      pg.drawText("EINHEIT", { x: tX[0], y, size: 7, font: f.sansBold, color: INK_FAINT });
-      pg.drawText("WOHNFLÄCHE", { x: tX[1], y, size: 7, font: f.sansBold, color: INK_FAINT });
-      const pLbl = "KAUFPREIS";
-      pg.drawText(pLbl, { x: W - M - f.sansBold.widthOfTextAtSize(pLbl, 7), y, size: 7, font: f.sansBold, color: INK_FAINT });
-      y -= 8;
-      pg.drawLine({ start: { x: M, y }, end: { x: W - M, y }, thickness: 0.5, color: LINE });
-      y -= 16;
-
-      let sumA = 0;
-      for (const unit of data.units!) {
-        pg.drawText(unit.label, { x: tX[0], y, size: 10, font: f.serifBold, color: INK });
-        pg.drawText(`${unit.livingArea} m²`, { x: tX[1], y, size: 9, font: f.sans, color: INK_SOFT });
-        const pr = unit.askingPrice ? `${unit.askingPrice.toLocaleString("de-DE")} €` : "auf Anfrage";
-        const prW = f.serifIt.widthOfTextAtSize(pr, 10);
-        pg.drawText(pr, { x: W - M - prW, y, size: 10, font: f.serifIt, color: ACCENT });
-        y -= 22;
-        pg.drawLine({ start: { x: M, y: y + 10 }, end: { x: W - M, y: y + 10 }, thickness: 0.3, color: LINE_SOFT });
-        sumA += unit.livingArea;
-      }
-
-      y -= 4;
-      pg.drawLine({ start: { x: M, y: y + 10 }, end: { x: W - M, y: y + 10 }, thickness: 1, color: INK });
-      pg.drawRectangle({ x: M, y: y - 8, width: CW, height: 24, color: PAPER_PURE });
-      pg.drawText(`Paket · alle ${data.units!.length} WE`, { x: tX[0] + 4, y, size: 10, font: f.serifBold, color: INK });
-      pg.drawText(`${(Math.round(sumA * 100) / 100)} m²`, { x: tX[1], y, size: 9, font: f.sansBold, color: INK });
-      const bpT = data.askingPrice ? `${data.askingPrice.toLocaleString("de-DE")} €` : "Paketpreis auf Anfrage";
-      const bpW = f.serifBold.widthOfTextAtSize(bpT, 10);
-      pg.drawText(bpT, { x: W - M - bpW, y, size: 10, font: f.serifBold, color: ACCENT });
-
-      y -= 36;
-      if (data.postcode) {
-        const ge = grunderwerbsteuer(data.postcode);
-        for (const l of wrap(`Käuferprovision, Notar- und Grundbuchkosten, Grunderwerbsteuer (${ge.land}: ${ge.rate.toFixed(1)} %) sind separat zu tragen.`, f.sans, 8.5, CW)) {
-          pg.drawText(l, { x: M, y, size: 8.5, font: f.sans, color: INK_SOFT }); y -= 13;
-        }
+        if (fp.mimeType === "application/pdf") continue; // pre-converted to image in route
+        sections.push(`
+          <div class="page content-page floorplan-page">
+            <div class="page-header">
+              <span class="header-brand">DIREKTA<span class="accent">.</span></span>
+              <span class="header-address">${esc(data.address)} &middot; ${esc(data.city)}</span>
+            </div>
+            <h3 class="floorplan-subtitle">Grundriss ${esc(unit.label)}</h3>
+            <div class="floorplan-container">
+              <img class="floorplan-img" src="${toDataUrl(fp)}" alt="Grundriss ${esc(unit.label)}" />
+            </div>
+            <div class="page-footer">
+              <span class="footer-brand">DIREKTA<span class="accent">.</span></span>
+              <span class="footer-section">Grundriss ${esc(unit.label)}</span>
+            </div>
+          </div>
+        `);
       }
     }
   }
 
-  // ════════════════════════════════════════════════════════════ FACTS + ENERGY + NEBENKOSTEN
+  // ────────────────────────────── PHOTOS (individual pages per photo)
   {
-    secIdx++;
-    const pg = doc.addPage([W, H]);
-    pg.drawRectangle({ x: 0, y: 0, width: W, height: H, color: PAPER });
-    pages.push({ pg, sec: "Daten & Fakten" });
+    const gallery = data.photos.slice(1);
+    if (gallery.length > 0) {
+      sectionIdx++;
+      const num = String(sectionIdx).padStart(2, "0");
 
-    let y = drawSectionHead(pg, f, `${String(secIdx).padStart(2, "0")} — Daten & Fakten`, "Eckdaten", "Alle Fakten auf einen Blick.", CONTENT_TOP);
+      gallery.forEach((photo, idx) => {
+        const cap = esc(photoCaption(photo));
+        const desc = photo.description ? esc(photo.description) : "";
+        const roomMeta = ROOM_TYPE_DE[photo.roomType || "other"] || "";
 
-    const isMFH = data.units && data.units.length > 0;
-    const factsArea = isMFH ? data.units!.reduce((s, u) => s + u.livingArea, 0) : data.livingArea;
-    const factRows: [string, string][] = [
-      ["Adresse", `${data.address}, ${data.city}`],
-      ["Objekttyp", data.propertyType],
-      ["Wohnfläche", `${Math.round(factsArea * 100) / 100} m²`],
+        sections.push(`
+          <div class="page content-page">
+            <div class="page-header">
+              <span class="header-brand">DIREKTA<span class="accent">.</span></span>
+              <span class="header-address">${esc(data.address)} &middot; ${esc(data.city)}</span>
+            </div>
+            ${idx === 0 ? `
+              <div class="section-eyebrow">${num} &mdash; Eindr&uuml;cke</div>
+            ` : ""}
+            <div class="img-hero-container">
+              <img class="img-hero" src="${toDataUrl(photo)}" alt="${cap}" />
+            </div>
+            <div class="room-caption">
+              <span class="room-name">${cap}</span>
+              ${roomMeta && roomMeta !== cap ? `<span class="room-meta">${esc(roomMeta)}</span>` : ""}
+            </div>
+            ${desc ? `
+              <div class="img-note">
+                ${desc}
+              </div>
+            ` : ""}
+            <div class="page-footer">
+              <span class="footer-brand">DIREKTA<span class="accent">.</span></span>
+              <span class="footer-section">Eindr&uuml;cke &middot; ${idx + 1}/${gallery.length}</span>
+            </div>
+          </div>
+        `);
+      });
+    }
+  }
+
+  // ────────────────────────────── ENERGIE
+  if (data.energy) {
+    sectionIdx++;
+    const num = String(sectionIdx).padStart(2, "0");
+
+    interface EnergyRow { label: string; value: string }
+    const eRows: EnergyRow[] = [
+      { label: "Art", value: data.energy.type === "BEDARF" ? "Bedarfsausweis" : "Verbrauchsausweis" },
+      { label: "Kennwert", value: `${data.energy.value} kWh/(m²·a)` },
+      { label: "Effizienzklasse", value: data.energy.class },
+      { label: "Energieträger", value: data.energy.source },
+      { label: "Gültig bis", value: data.energy.validUntil },
     ];
-    if (isMFH) {
-      factRows.push(["Wohneinheiten", `${data.units!.length}`]);
+
+    const eRowsHtml = eRows.map(r => `
+      <div class="energy-row">
+        <span class="energy-row__label">${esc(r.label)}</span>
+        <span class="energy-row__value">${esc(r.value)}</span>
+      </div>
+    `).join("");
+
+    const badgeColor = energyBadgeColor(data.energy.class);
+
+    // Also build the Eckdaten table
+    const eckdatenRows: { label: string; value: string }[] = [
+      { label: "Adresse", value: `${data.address}, ${data.city}` },
+      { label: "Objekttyp", value: data.propertyType },
+      { label: "Wohnfläche", value: fmtAreaShort(totalArea) },
+    ];
+    if (data.yearBuilt) eckdatenRows.push({ label: "Baujahr", value: String(data.yearBuilt) });
+    if (data.condition) eckdatenRows.push({ label: "Zustand", value: data.condition });
+
+    const eckdatenHtml = eckdatenRows.map(r => `
+      <div class="fact-row">
+        <span class="fact-row__label">${esc(r.label)}</span>
+        <span class="fact-row__value">${esc(r.value)}</span>
+      </div>
+    `).join("");
+
+    sections.push(`
+      <div class="page content-page">
+        <div class="page-header">
+          <span class="header-brand">DIREKTA<span class="accent">.</span></span>
+          <span class="header-address">${esc(data.address)} &middot; ${esc(data.city)}</span>
+        </div>
+        <div class="section-eyebrow">${num} &mdash; Energie</div>
+        <h2 class="section-title">Eckdaten &amp; Energieausweis</h2>
+        <div class="gold-rule"></div>
+
+        <div class="eckdaten-panel">${eckdatenHtml}</div>
+
+        <div class="energy-box">
+          <div class="energy-box__header">
+            <span>Pflichtangaben Energieausweis (GEG)</span>
+            <div class="energy-badge" style="background: ${badgeColor};">${esc(data.energy.class)}</div>
+          </div>
+          ${eRowsHtml}
+        </div>
+
+        <div class="energy-warning">
+          <strong>Hinweis gem. &sect;87 GEG:</strong> Die Pflichtangaben zum Energieausweis werden gem&auml;&szlig; den Vorgaben des Geb&auml;udeenergiegesetzes (GEG) ver&ouml;ffentlicht. Der Energieausweis liegt zur Besichtigung vor.
+        </div>
+
+        <div class="page-footer">
+          <span class="footer-brand">DIREKTA<span class="accent">.</span></span>
+          <span class="footer-section">Energie</span>
+        </div>
+      </div>
+    `);
+  }
+
+  // ────────────────────────────── VERKAUFSOPTIONEN
+  if (isBundle || data.askingPrice) {
+    sectionIdx++;
+    const num = String(sectionIdx).padStart(2, "0");
+
+    let optionsHtml = "";
+    let priceTableHtml = "";
+    let nebenkostenHtml = "";
+
+    if (isBundle) {
+      let sumArea = 0;
+      const unitPriceRows = data.units!.map(unit => {
+        sumArea += unit.livingArea;
+        const pr = unit.askingPrice
+          ? fmtPriceEuro(unit.askingPrice)
+          : `<span class="price-inquiry">auf Anfrage</span>`;
+        return `
+          <tr>
+            <td class="cell-label">${esc(unit.label)}</td>
+            <td>${fmtAreaShort(unit.livingArea)}</td>
+            <td class="cell-price">${pr}</td>
+          </tr>
+        `;
+      }).join("");
+
+      const bundlePrice = data.askingPrice
+        ? fmtPriceEuro(data.askingPrice)
+        : "Paketpreis auf Anfrage";
+
+      optionsHtml = `
+        <div class="option-cards">
+          <div class="option-card">
+            <div class="option-card__label">OPTION A</div>
+            <h3 class="option-card__title">Einzelerwerb</h3>
+            <p>Geeignet f&uuml;r Selbstnutzer, die sich f&uuml;r die Wohnung entscheiden, die zu ihrer Lebenssituation passt. Jeder Einzelerwerber profitiert vom gleichen Standard &mdash; keine Abstriche bei Material oder Technik.</p>
+          </div>
+          <div class="option-card">
+            <div class="option-card__label">OPTION B</div>
+            <h3 class="option-card__title">Paket-Erwerb</h3>
+            <p>Alle Einheiten als Gesamtpaket. Diversifizierung im selben Objekt, Skalenvorteile bei Verwaltung, Instandhaltung und Vermietung.</p>
+          </div>
+        </div>
+      `;
+
+      priceTableHtml = `
+        <table class="price-table">
+          <thead>
+            <tr><th>EINHEIT</th><th>WOHNFL&Auml;CHE</th><th>KAUFPREIS</th></tr>
+          </thead>
+          <tbody>${unitPriceRows}</tbody>
+          <tfoot>
+            <tr class="price-table__total">
+              <td class="cell-label">Paket &middot; alle ${data.units!.length} WE</td>
+              <td>${fmtAreaShort(sumArea)}</td>
+              <td class="cell-price cell-price--accent">${bundlePrice}</td>
+            </tr>
+          </tfoot>
+        </table>
+      `;
     }
-    if (!isMFH && data.rooms) factRows.push(["Zimmer", String(data.rooms)]);
-    if (!isMFH && data.bathrooms) factRows.push(["Badezimmer", String(data.bathrooms)]);
-    if (!isMFH && data.floor != null) {
-      const ft = data.floor === 0 ? "Erdgeschoss" : data.floor < 0 ? `${Math.abs(data.floor)}. Untergeschoss` : `${data.floor}. Obergeschoss`;
-      factRows.push(["Etage", ft]);
-    }
-    if (data.plotArea) factRows.push(["Grundstücksfläche", `${data.plotArea} m²`]);
-    if (data.yearBuilt) factRows.push(["Baujahr", String(data.yearBuilt)]);
-    if (data.condition) factRows.push(["Zustand", data.condition]);
-    if (data.askingPrice) factRows.push(["Kaufpreis", isMFH ? `${data.askingPrice.toLocaleString("de-DE")} € (Paket)` : `${data.askingPrice.toLocaleString("de-DE")} €`]);
-    if (data.priceBand) factRows.push(["Preisempfehlung", `${data.priceBand.low.toLocaleString("de-DE")} – ${data.priceBand.high.toLocaleString("de-DE")} € (${data.priceBand.confidence})`]);
 
-    for (const [label, value] of factRows) {
-      pg.drawText(label, { x: M, y, size: 9, font: f.sans, color: INK_SOFT });
-      const vLines = wrap(value, f.sansBold, 9, CW - 160);
-      for (let vi = 0; vi < vLines.length; vi++) {
-        pg.drawText(vLines[vi], { x: M + 160, y: y - vi * 13, size: 9, font: f.sansBold, color: INK });
-      }
-      y -= Math.max(18, 13 * vLines.length + 6);
-      pg.drawLine({ start: { x: M, y: y + 4 }, end: { x: W - M, y: y + 4 }, thickness: 0.3, color: LINE_SOFT });
-    }
-
-    // Energy box
-    if (data.energy) {
-      y -= 24;
-      const boxH = 120;
-      pg.drawRectangle({ x: M, y: y - boxH, width: CW, height: boxH, color: PAPER_PURE, borderColor: LINE, borderWidth: 0.5 });
-      pg.drawText("Pflichtangaben Energieausweis (GEG)", { x: M + 14, y: y - 18, size: 11, font: f.serifBold, color: INK });
-
-      const eRows: [string, string][] = [
-        ["Art", data.energy.type === "BEDARF" ? "Bedarfsausweis" : "Verbrauchsausweis"],
-        ["Kennwert", `${data.energy.value} kWh/(m²·a)`],
-        ["Effizienzklasse", data.energy.class],
-        ["Energieträger", data.energy.source],
-        ["Gültig bis", data.energy.validUntil],
-      ];
-      let ey = y - 36;
-      for (const [ek, ev] of eRows) {
-        pg.drawText(ek, { x: M + 14, y: ey, size: 8.5, font: f.sans, color: INK_SOFT });
-        pg.drawText(ev, { x: M + 14 + 120, y: ey, size: 8.5, font: f.sansBold, color: INK });
-        ey -= 14;
-      }
-
-      const bc = energyBadgeColor(data.energy.class);
-      const bx = W - M - 60, by = y - boxH + 14;
-      pg.drawRectangle({ x: bx, y: by, width: 46, height: 32, color: bc });
-      const cw = f.serifBold.widthOfTextAtSize(data.energy.class, 22);
-      pg.drawText(data.energy.class, { x: bx + (46 - cw) / 2, y: by + 8, size: 22, font: f.serifBold, color: WHITE });
-      y -= boxH + 10;
-    }
-
-    // Nebenkosten box
     if (data.askingPrice && data.postcode) {
-      y -= 14;
       const ge = grunderwerbsteuer(data.postcode);
       const notarRate = 2.0;
       const gestAmt = Math.round(data.askingPrice * ge.rate / 100);
       const notarAmt = Math.round(data.askingPrice * notarRate / 100);
       const gesamt = data.askingPrice + gestAmt + notarAmt;
 
-      const nkH = 108;
-      pg.drawRectangle({ x: M, y: y - nkH, width: CW, height: nkH, color: PAPER_PURE, borderColor: LINE, borderWidth: 0.5 });
-      pg.drawText("Kaufnebenkosten (geschätzt)", { x: M + 14, y: y - 18, size: 11, font: f.serifBold, color: INK });
-
-      const nkRows: [string, string][] = [
-        [`Kaufpreis`, `${data.askingPrice.toLocaleString("de-DE")} €`],
-        [`Grunderwerbsteuer (${ge.land}, ${ge.rate.toFixed(1)} %)`, `${gestAmt.toLocaleString("de-DE")} €`],
-        [`Notar & Grundbuch (ca. ${notarRate.toFixed(1)} %)`, `ca. ${notarAmt.toLocaleString("de-DE")} €`],
-      ];
-      let ny = y - 36;
-      for (const [nk, nv] of nkRows) {
-        pg.drawText(nk, { x: M + 14, y: ny, size: 8.5, font: f.sans, color: INK_SOFT });
-        const nvW = f.sansBold.widthOfTextAtSize(nv, 8.5);
-        pg.drawText(nv, { x: W - M - 14 - nvW, y: ny, size: 8.5, font: f.sansBold, color: INK });
-        ny -= 14;
-      }
-      ny -= 2;
-      pg.drawLine({ start: { x: M + 14, y: ny + 8 }, end: { x: W - M - 14, y: ny + 8 }, thickness: 0.5, color: INK });
-      const gesamtTxt = `ca. ${gesamt.toLocaleString("de-DE")} €`;
-      pg.drawText("Gesamtinvestition", { x: M + 14, y: ny - 4, size: 9, font: f.sansBold, color: INK });
-      const gtW = f.serifBold.widthOfTextAtSize(gesamtTxt, 11);
-      pg.drawText(gesamtTxt, { x: W - M - 14 - gtW, y: ny - 6, size: 11, font: f.serifBold, color: INK });
-      y -= nkH + 10;
-    }
-  }
-
-  // ════════════════════════════════════════════════════════════ ROOM PROGRAM (conditional)
-  if (data.roomProgram && data.roomProgram.length > 0 && !(data.units && data.units.length > 0)) {
-    secIdx++;
-    const pg = doc.addPage([W, H]);
-    pg.drawRectangle({ x: 0, y: 0, width: W, height: H, color: PAPER });
-    pages.push({ pg, sec: "Raumprogramm" });
-
-    let y = drawSectionHead(pg, f, `${String(secIdx).padStart(2, "0")} — Raumprogramm`, "Raumaufteilung", "Flächenaufstellung.", CONTENT_TOP);
-
-    let totalArea = 0;
-    for (const room of data.roomProgram) {
-      pg.drawText(room.name, { x: M, y, size: 9.5, font: f.sans, color: INK_SOFT });
-      const areaStr = `${room.area.toFixed(2)} m²`;
-      const aW = f.serifBold.widthOfTextAtSize(areaStr, 10);
-      pg.drawText(areaStr, { x: W - M - aW, y, size: 10, font: f.serifBold, color: INK });
-      y -= 18;
-      pg.drawLine({ start: { x: M, y: y + 6 }, end: { x: W - M, y: y + 6 }, thickness: 0.3, color: LINE_SOFT });
-      totalArea += room.area;
+      nebenkostenHtml = `
+        <div class="nebenkosten-box">
+          <h3 class="nebenkosten-box__title">Kaufnebenkosten (gesch&auml;tzt)</h3>
+          <div class="nk-row">
+            <span>Kaufpreis</span>
+            <span class="nk-row__value">${fmtPriceEuro(data.askingPrice)}</span>
+          </div>
+          <div class="nk-row">
+            <span>Grunderwerbsteuer (${esc(ge.land)}, ${ge.rate.toFixed(1)} %)</span>
+            <span class="nk-row__value">${fmtPriceEuro(gestAmt)}</span>
+          </div>
+          <div class="nk-row">
+            <span>Notar &amp; Grundbuch (ca. ${notarRate.toFixed(1)} %)</span>
+            <span class="nk-row__value">ca. ${fmtPriceEuro(notarAmt)}</span>
+          </div>
+          <div class="nk-row nk-row--total">
+            <span>Gesamtinvestition</span>
+            <span class="nk-row__value">ca. ${fmtPriceEuro(gesamt)}</span>
+          </div>
+        </div>
+        <p class="nk-note">K&auml;uferprovision, Notar- und Grundbuchkosten, Grunderwerbsteuer (${esc(ge.land)}: ${ge.rate.toFixed(1)} %) sind separat zu tragen.</p>
+      `;
     }
 
-    y -= 4;
-    pg.drawLine({ start: { x: M, y: y + 6 }, end: { x: W - M, y: y + 6 }, thickness: 1, color: INK });
-    y -= 2;
-    pg.drawText("Wohnfläche gesamt", { x: M, y, size: 9.5, font: f.sansBold, color: INK });
-    const totalStr = `${totalArea.toFixed(2)} m²`;
-    const tW = f.serifBold.widthOfTextAtSize(totalStr, 12);
-    pg.drawText(totalStr, { x: W - M - tW, y, size: 12, font: f.serifBold, color: INK });
+    sections.push(`
+      <div class="page content-page">
+        <div class="page-header">
+          <span class="header-brand">DIREKTA<span class="accent">.</span></span>
+          <span class="header-address">${esc(data.address)} &middot; ${esc(data.city)}</span>
+        </div>
+        <div class="section-eyebrow">${num} &mdash; Verkaufsoptionen</div>
+        <h2 class="section-title">Einzeln oder als Paket</h2>
+        <div class="gold-rule"></div>
+        ${optionsHtml}
+        ${priceTableHtml}
+        ${nebenkostenHtml}
+        <div class="page-footer">
+          <span class="footer-brand">DIREKTA<span class="accent">.</span></span>
+          <span class="footer-section">Verkaufsoptionen</span>
+        </div>
+      </div>
+    `);
   }
 
-  // ════════════════════════════════════════════════════════════ FLOOR PLANS
-  if (data.floorPlans && data.floorPlans.length > 0) {
-    secIdx++;
-    for (let i = 0; i < data.floorPlans.length; i++) {
-      const fp = data.floorPlans[i];
-      const pg = doc.addPage([W, H]);
-      pg.drawRectangle({ x: 0, y: 0, width: W, height: H, color: WHITE });
-      const label = data.floorPlans.length > 1 ? `Grundriss (${i + 1}/${data.floorPlans.length})` : "Grundriss";
-      pages.push({ pg, sec: label });
+  // ────────────────────────────── RAUMPROGRAMM (non-bundle)
+  if (data.roomProgram && data.roomProgram.length > 0 && !isBundle) {
+    sectionIdx++;
+    const num = String(sectionIdx).padStart(2, "0");
+    let rpTotal = 0;
+    const rpRows = data.roomProgram.map(r => {
+      rpTotal += r.area;
+      return `
+        <div class="rp-row">
+          <span class="rp-row__name">${esc(r.name)}</span>
+          <span class="rp-row__area">${fmtArea(r.area)}</span>
+        </div>
+      `;
+    }).join("");
 
-      let y: number;
-      if (i === 0) {
-        y = drawSectionHead(pg, f, `${String(secIdx).padStart(2, "0")} — Grundriss`, "Raumaufteilung", "Grundrissdarstellung.", CONTENT_TOP);
-      } else {
-        y = CONTENT_TOP;
-      }
-
-      try {
-        if (fp.mimeType === "application/pdf") {
-          const fpDoc = await PDFDocument.load(fp.bytes);
-          const [emb] = await doc.embedPdf(fpDoc, [0]);
-          const dims = emb.size();
-          const mxW = CW, mxH = y - CONTENT_BOTTOM;
-          const s = Math.min(mxW / dims.width, mxH / dims.height, 1);
-          pg.drawPage(emb, { x: M + (mxW - dims.width * s) / 2, y: y - dims.height * s, width: dims.width * s, height: dims.height * s });
-        } else {
-          const img = fp.mimeType.includes("png") ? await doc.embedPng(fp.bytes) : await doc.embedJpg(fp.bytes);
-          const mxW = CW, mxH = y - CONTENT_BOTTOM;
-          const s = Math.min(mxW / img.width, mxH / img.height, 1);
-          pg.drawImage(img, { x: M + (mxW - img.width * s) / 2, y: y - img.height * s, width: img.width * s, height: img.height * s });
-        }
-      } catch (e) {
-        pg.drawText("Grundriss konnte nicht eingebettet werden.", { x: M, y: y - 30, size: 12, font: f.sans, color: INK_SOFT });
-        console.error("Floor plan embed failed:", e);
-      }
-    }
+    sections.push(`
+      <div class="page content-page">
+        <div class="page-header">
+          <span class="header-brand">DIREKTA<span class="accent">.</span></span>
+          <span class="header-address">${esc(data.address)} &middot; ${esc(data.city)}</span>
+        </div>
+        <div class="section-eyebrow">${num} &mdash; Raumprogramm</div>
+        <h2 class="section-title">Fl&auml;chenaufstellung</h2>
+        <div class="gold-rule"></div>
+        <div class="room-program room-program--standalone">
+          ${rpRows}
+          <div class="rp-row rp-row--total">
+            <span class="rp-row__name">Wohnfl&auml;che gesamt</span>
+            <span class="rp-row__area">${fmtArea(rpTotal)}</span>
+          </div>
+        </div>
+        <div class="page-footer">
+          <span class="footer-brand">DIREKTA<span class="accent">.</span></span>
+          <span class="footer-section">Raumprogramm</span>
+        </div>
+      </div>
+    `);
   }
 
-  // ════════════════════════════════════════════════════════════ CONTACT + LEGAL
+  // ────────────────────────────── KONTAKT & RECHTLICHES
   {
-    secIdx++;
-    const pg = doc.addPage([W, H]);
-    pg.drawRectangle({ x: 0, y: 0, width: W, height: H, color: PAPER });
-    pages.push({ pg, sec: "Kontakt & Rechtliches" });
-
-    let y = drawSectionHead(pg, f, `${String(secIdx).padStart(2, "0")} — Kontakt`, "Ansprechpartner", "Wir freuen uns auf Ihre Anfrage.", CONTENT_TOP);
-
-    // Dark contact card
+    sectionIdx++;
+    const num = String(sectionIdx).padStart(2, "0");
     const hasContact = data.contact && (data.contact.name || data.contact.email || data.contact.phone);
-    const cardH = 120;
-    pg.drawRectangle({ x: M, y: y - cardH, width: CW, height: cardH, color: INK });
 
-    const halfW = CW / 2;
-    let cy = y - 20;
-    pg.drawText("EIGENTÜMER / VERKAUF", { x: M + 14, y: cy, size: 7, font: f.sans, color: PAPER_PURE, opacity: 0.55 });
-    cy -= 22;
+    const contactLeftHtml = hasContact ? `
+      <div class="contact-card__section">
+        <div class="contact-card__sublabel">EIGENT&Uuml;MER / VERKAUF</div>
+        ${data.contact!.name ? `<div class="contact-card__name">${esc(data.contact!.name)}</div>` : ""}
+        ${data.contact!.phone ? `
+          <div class="contact-card__row">
+            <span class="contact-card__row-label">TELEFON</span>
+            <span>${esc(data.contact!.phone)}</span>
+          </div>
+        ` : ""}
+        ${data.contact!.email ? `
+          <div class="contact-card__row">
+            <span class="contact-card__row-label">E-MAIL</span>
+            <span>${esc(data.contact!.email)}</span>
+          </div>
+        ` : ""}
+      </div>
+    ` : `<div class="contact-card__section"><div class="contact-card__name">Kontakt &uuml;ber Direkta</div></div>`;
 
-    if (hasContact) {
-      if (data.contact!.name) {
-        pg.drawText(data.contact!.name, { x: M + 14, y: cy, size: 16, font: f.serif, color: PAPER_PURE });
-        cy -= 24;
-      }
-      if (data.contact!.phone) {
-        pg.drawText("TELEFON", { x: M + 14, y: cy, size: 7, font: f.sans, color: PAPER_PURE, opacity: 0.5 });
-        pg.drawText(data.contact!.phone, { x: M + 14 + 70, y: cy, size: 9, font: f.sans, color: PAPER_PURE, opacity: 0.85 });
-        cy -= 16;
-      }
-      if (data.contact!.email) {
-        pg.drawText("E-MAIL", { x: M + 14, y: cy, size: 7, font: f.sans, color: PAPER_PURE, opacity: 0.5 });
-        pg.drawText(data.contact!.email, { x: M + 14 + 70, y: cy, size: 9, font: f.sans, color: PAPER_PURE, opacity: 0.85 });
-      }
-    } else {
-      pg.drawText("Kontakt über Direkta", { x: M + 14, y: cy, size: 12, font: f.serif, color: PAPER_PURE });
-    }
+    sections.push(`
+      <div class="page content-page">
+        <div class="page-header">
+          <span class="header-brand">DIREKTA<span class="accent">.</span></span>
+          <span class="header-address">${esc(data.address)} &middot; ${esc(data.city)}</span>
+        </div>
+        <div class="section-eyebrow">${num} &mdash; Kontakt</div>
+        <h2 class="section-title">Wir freuen uns auf Ihre Anfrage</h2>
+        <div class="gold-rule"></div>
 
-    // Right side: CTA
-    let ry = y - 20;
-    pg.drawText("TERMIN VEREINBAREN", { x: M + halfW + 14, y: ry, size: 7, font: f.sans, color: PAPER_PURE, opacity: 0.55 });
-    ry -= 22;
-    pg.drawText("Besichtigung &", { x: M + halfW + 14, y: ry, size: 16, font: f.serif, color: PAPER_PURE });
-    ry -= 20;
-    pg.drawText("Konditionen.", { x: M + halfW + 14, y: ry, size: 16, font: f.serif, color: PAPER_PURE });
-    ry -= 20;
-    const ctaLines = wrap("Für einen Besichtigungstermin oder konkrete Konditionen wenden Sie sich an den genannten Ansprechpartner.", f.sans, 8.5, halfW - 28);
-    for (const cl of ctaLines) {
-      pg.drawText(cl, { x: M + halfW + 14, y: ry, size: 8.5, font: f.sans, color: PAPER_PURE, opacity: 0.75 });
-      ry -= 13;
-    }
+        <div class="contact-card">
+          <div class="contact-card__left">${contactLeftHtml}</div>
+          <div class="contact-card__right">
+            <div class="contact-card__sublabel">TERMIN VEREINBAREN</div>
+            <div class="contact-card__cta-title">Besichtigung &amp;<br/>Konditionen.</div>
+            <p class="contact-card__cta-text">F&uuml;r einen Besichtigungstermin oder konkrete Konditionen wenden Sie sich an den genannten Ansprechpartner.</p>
+          </div>
+        </div>
 
-    y -= cardH + 18;
-
-    // Legal section
-    pg.drawText("RECHTLICHE HINWEISE", { x: M, y, size: 7, font: f.sansBold, color: INK });
-    y -= 14;
-
-    const legalParagraphs = [
-      "Dieses Exposé dient ausschließlich der Information möglicher Kaufinteressenten. Es stellt kein bindendes Angebot dar. Alle Angaben beruhen auf vom Eigentümer bzw. dessen Bevollmächtigten zur Verfügung gestellten Unterlagen. Eine Haftung für Vollständigkeit und Richtigkeit kann nicht übernommen werden. Maßgeblich für einen Erwerb sind ausschließlich die im notariell beurkundeten Kaufvertrag getroffenen Regelungen.",
-      "Zwischenverkauf, Irrtum und Änderungen vorbehalten. Die in diesem Exposé verwendeten Abbildungen zeigen den aktuellen oder geplanten Zustand der Immobilie. Tatsächliche Bauausführung kann in Details abweichen.",
-      "Gemäß Geldwäschegesetz (GwG) ist der Verkäufer verpflichtet, die Identität des Erwerbers vor Abschluss des Kaufvertrags festzustellen.",
-      "Erstellt über die Plattform Direkta. Direkta tritt nicht als Immobilienmakler im Sinne des § 34c GewO auf. Preisempfehlungen sind unverbindliche Schätzungen und stellen keine Bewertungsgutachten dar.",
-    ];
-    for (const lp of legalParagraphs) {
-      for (const l of wrap(lp, f.sans, 7.5, CW)) {
-        if (y < CONTENT_BOTTOM) break;
-        pg.drawText(l, { x: M, y, size: 7.5, font: f.sans, color: INK_SOFT });
-        y -= 11;
-      }
-      y -= 4;
-    }
+        <div class="legal-section">
+          <div class="legal-section__label">RECHTLICHE HINWEISE</div>
+          <p>Dieses Expos&eacute; dient ausschlie&szlig;lich der Information m&ouml;glicher Kaufinteressenten. Es stellt kein bindendes Angebot dar. Alle Angaben beruhen auf vom Eigent&uuml;mer bzw. dessen Bevollm&auml;chtigten zur Verf&uuml;gung gestellten Unterlagen. Eine Haftung f&uuml;r Vollst&auml;ndigkeit und Richtigkeit kann nicht &uuml;bernommen werden. Ma&szlig;geblich f&uuml;r einen Erwerb sind ausschlie&szlig;lich die im notariell beurkundeten Kaufvertrag getroffenen Regelungen.</p>
+          <p>Zwischenverkauf, Irrtum und &Auml;nderungen vorbehalten. Die in diesem Expos&eacute; verwendeten Abbildungen zeigen den aktuellen oder geplanten Zustand der Immobilie. Tats&auml;chliche Bauausf&uuml;hrung kann in Details abweichen.</p>
+          <p>Gem&auml;&szlig; Geldw&auml;schegesetz (GwG) ist der Verk&auml;ufer verpflichtet, die Identit&auml;t des Erwerbers vor Abschluss des Kaufvertrags festzustellen.</p>
+          <p>Erstellt &uuml;ber die Plattform Direkta. Direkta tritt nicht als Immobilienmakler im Sinne des &sect; 34c GewO auf. Preisempfehlungen sind unverbindliche Sch&auml;tzungen und stellen keine Bewertungsgutachten dar.</p>
+        </div>
+        <div class="page-footer">
+          <span class="footer-brand">DIREKTA<span class="accent">.</span></span>
+          <span class="footer-section">Kontakt &amp; Rechtliches</span>
+        </div>
+      </div>
+    `);
   }
 
-  // ════════════════════════════════════════════════════════════ BACK COVER
+  // ────────────────────────────── BACK COVER
   {
-    const pg = doc.addPage([W, H]);
-    pg.drawRectangle({ x: 0, y: 0, width: W, height: H, color: INK });
-    pages.push({ pg, sec: "", custom: true });
-
-    const sz = 22;
-    const bw = f.sansBold.widthOfTextAtSize("DIREKTA", sz);
-    const dw = f.sansBold.widthOfTextAtSize(".", sz);
-    const bx = (W - bw - dw) / 2;
-    const by = H / 2 + 20;
-    pg.drawText("DIREKTA", { x: bx, y: by, size: sz, font: f.sansBold, color: PAPER_PURE });
-    pg.drawText(".", { x: bx + bw, y: by, size: sz, font: f.sansBold, color: ACCENT });
-
-    const rw = 45;
-    pg.drawLine({ start: { x: (W - rw) / 2, y: by - 16 }, end: { x: (W + rw) / 2, y: by - 16 }, thickness: 2, color: ACCENT });
-
-    const tag = "Immobilie verkaufen. Direkt.";
-    const tw = f.serifIt.widthOfTextAtSize(tag, 11);
-    pg.drawText(tag, { x: (W - tw) / 2, y: by - 38, size: 11, font: f.serifIt, color: PAPER_PURE, opacity: 0.7 });
-
-    const btm = `${data.address} · ${data.city} · Exposé · Stand ${data.generatedAt} · www.direkta.de`;
-    const btmW = f.sans.widthOfTextAtSize(btm, 7);
-    pg.drawText(btm, { x: Math.max((W - btmW) / 2, M), y: 34, size: 7, font: f.sans, color: PAPER_PURE, opacity: 0.4 });
+    sections.push(`
+      <div class="page back-cover">
+        <div class="back-cover__content">
+          <div class="back-cover__brand">DIREKTA<span class="accent">.</span></div>
+          <div class="back-cover__rule"></div>
+          <div class="back-cover__tagline">Immobilie verkaufen. Direkt.</div>
+        </div>
+        <div class="back-cover__footer">
+          ${esc(data.address)} &middot; ${esc(data.city)} &middot; Expos&eacute; &middot; Stand ${esc(data.generatedAt)} &middot; www.direkta.de
+        </div>
+      </div>
+    `);
   }
 
-  // ════════════════════════════════════════════════════════════ HEADERS + FOOTERS
-  for (let i = 0; i < pages.length; i++) {
-    if (pages[i].custom) continue;
-    drawPageHeader(pages[i].pg, f, shortAddr);
-    drawPageFooter(pages[i].pg, f, pages[i].sec, i + 1, pages.length);
-  }
+  // ────────────────────────────── FULL HTML
+  return `<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300;1,400;1,500&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+/* ── Reset & Base ────────────────────────────────────────────── */
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { margin: 0; padding: 0; background: #fff; overflow: hidden; }
+html::-webkit-scrollbar { display: none; }
 
-  return Buffer.from(await doc.save());
+/* ── Design Tokens ───────────────────────────────────────────── */
+:root {
+  --gold: #8b6f47;
+  --ink: #1a1f26;
+  --ink-soft: #4a5260;
+  --ink-faint: #8a8478;
+  --beige: #faf8f4;
+  --line: #e6e1d7;
+  --line-soft: #f0ece4;
+  --paper: #fbf8f1;
+  --white: #ffffff;
+
+  --serif: 'Cormorant Garamond', 'Playfair Display', 'Times New Roman', serif;
+  --sans: 'Inter', 'Helvetica Neue', Arial, sans-serif;
+}
+
+/* ── Page Setup ──────────────────────────────────────────────── */
+@page { size: A4; margin: 0; }
+
+.page {
+  position: relative;
+  overflow: hidden;
+  page-break-after: always;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.page:last-child { page-break-after: auto; }
+
+/* ── Content page ────────────────────────────────────────────── */
+.content-page {
+  background: var(--beige);
+  padding: 22mm 20mm 20mm 20mm;
+  width: 100%;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+}
+
+/* ── Page Header & Footer ────────────────────────────────────── */
+.page-header {
+  position: absolute;
+  top: 14mm;
+  left: 20mm;
+  right: 20mm;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding-bottom: 6px;
+  border-bottom: 0.5px solid var(--line);
+}
+.header-brand {
+  font-family: var(--sans);
+  font-size: 9pt;
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: 0.06em;
+}
+.header-address {
+  font-family: var(--sans);
+  font-size: 7pt;
+  color: var(--ink-faint);
+}
+
+.page-footer {
+  position: absolute;
+  bottom: 10mm;
+  left: 20mm;
+  right: 20mm;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.footer-brand {
+  font-family: var(--sans);
+  font-size: 7pt;
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: 0.06em;
+}
+.footer-section {
+  font-family: var(--sans);
+  font-size: 7pt;
+  color: var(--ink-faint);
+}
+
+.accent { color: var(--gold); }
+
+/* ── Section Headings ────────────────────────────────────────── */
+.section-eyebrow {
+  font-family: var(--sans);
+  font-size: 8pt;
+  font-weight: 500;
+  color: var(--ink-faint);
+  letter-spacing: 0.04em;
+  margin-bottom: 8px;
+  margin-top: 4px;
+}
+.section-title {
+  font-family: var(--serif);
+  font-size: 32pt;
+  font-weight: 300;
+  color: var(--ink);
+  line-height: 1.15;
+  margin-bottom: 12px;
+}
+.gold-rule {
+  width: 18mm;
+  height: 1.5px;
+  background: var(--gold);
+  margin-bottom: 18px;
+}
+
+/* ── Lead Text ───────────────────────────────────────────────── */
+.lead-text {
+  font-family: var(--serif);
+  font-size: 11.5pt;
+  font-weight: 400;
+  color: var(--ink);
+  line-height: 1.65;
+  margin-bottom: 18px;
+  max-width: 155mm;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   COVER PAGE
+   ══════════════════════════════════════════════════════════════ */
+.cover-page {
+  background: var(--ink);
+  padding: 0;
+  width: 100%;
+  height: 100vh;
+}
+.cover-hero {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  z-index: 0;
+}
+.cover-hero--placeholder {
+  background: linear-gradient(135deg, #2a3140 0%, #1a1f26 100%);
+}
+.cover-gradient-top {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 60mm;
+  background: linear-gradient(to bottom, rgba(20,25,32,0.85), transparent);
+  z-index: 1;
+}
+.cover-gradient-bottom {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 145mm;
+  background: linear-gradient(to top, rgba(20,25,32,0.98) 0%, rgba(20,25,32,0.92) 35%, rgba(20,25,32,0.6) 65%, transparent 100%);
+  z-index: 1;
+}
+.cover-brand {
+  position: absolute;
+  top: 16mm; left: 16mm;
+  font-family: var(--sans);
+  font-size: 10pt;
+  font-weight: 600;
+  color: rgba(255,255,255,0.9);
+  letter-spacing: 0.1em;
+  z-index: 2;
+}
+.cover-badge {
+  position: absolute;
+  top: 15mm; right: 16mm;
+  font-family: var(--sans);
+  font-size: 7pt;
+  font-weight: 600;
+  color: rgba(255,255,255,0.9);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border: 0.5px solid rgba(255,255,255,0.5);
+  padding: 5px 11px;
+  z-index: 2;
+}
+.cover-content {
+  position: absolute;
+  bottom: 32mm; left: 16mm; right: 16mm;
+  z-index: 2;
+}
+.cover-eyebrow {
+  font-family: var(--sans);
+  font-size: 8pt;
+  font-weight: 500;
+  color: var(--gold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+.cover-title {
+  font-family: var(--serif);
+  font-size: 56pt;
+  font-weight: 300;
+  color: #fff;
+  line-height: 1.05;
+  margin-bottom: 10px;
+  max-width: 170mm;
+}
+.cover-subtitle {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 16pt;
+  font-weight: 300;
+  color: rgba(255,255,255,0.85);
+  line-height: 1.4;
+  margin-bottom: 10px;
+  max-width: 155mm;
+}
+.cover-address {
+  font-family: var(--sans);
+  font-size: 9pt;
+  font-weight: 400;
+  color: rgba(255,255,255,0.5);
+  letter-spacing: 0.04em;
+  margin-bottom: 18px;
+}
+.cover-facts {
+  display: flex;
+  gap: 0;
+  border-top: 0.5px solid rgba(255,255,255,0.2);
+  padding-top: 14px;
+}
+.cover-fact {
+  flex: 1;
+  padding-right: 12px;
+}
+.cover-fact--border {
+  border-right: 0.5px solid rgba(255,255,255,0.15);
+  margin-right: 12px;
+}
+.cover-fact__label {
+  display: block;
+  font-family: var(--sans);
+  font-size: 7pt;
+  font-weight: 600;
+  color: rgba(255,255,255,0.45);
+  letter-spacing: 0.08em;
+  margin-bottom: 4px;
+}
+.cover-fact__value {
+  display: block;
+  font-family: var(--serif);
+  font-size: 22pt;
+  font-weight: 400;
+  color: #fff;
+  line-height: 1.1;
+}
+.cover-footer {
+  position: absolute;
+  bottom: 10mm; left: 16mm; right: 16mm;
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--sans);
+  font-size: 7pt;
+  color: rgba(255,255,255,0.35);
+  z-index: 2;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   TWO-COLUMN LAYOUTS
+   ══════════════════════════════════════════════════════════════ */
+.two-col {
+  display: flex;
+  gap: 20px;
+  margin-bottom: 16px;
+}
+.two-col__left { flex: 1; min-width: 0; }
+.two-col__right { flex: 1; min-width: 0; }
+
+.two-col-text {
+  column-count: 2;
+  column-gap: 20px;
+  font-family: var(--sans);
+  font-size: 9.5pt;
+  color: var(--ink);
+  line-height: 1.65;
+  margin-bottom: 16px;
+}
+.two-col-text p { margin-bottom: 10px; }
+
+/* ── Highlights List ─────────────────────────────────────────── */
+.highlights-list {
+  list-style: none;
+  padding: 0;
+}
+.highlights-list li {
+  font-family: var(--sans);
+  font-size: 9pt;
+  color: var(--ink);
+  line-height: 1.55;
+  padding: 5px 0;
+  border-bottom: 0.5px solid var(--line-soft);
+}
+.highlights-list li:last-child { border-bottom: none; }
+
+/* ── Facts Panel ─────────────────────────────────────────────── */
+.facts-panel {
+  background: var(--paper);
+  border: 0.5px solid var(--line);
+  padding: 14px 16px;
+  overflow: hidden;
+}
+.fact-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 5px 0;
+  border-bottom: 0.3px solid var(--line-soft);
+}
+.fact-row:last-child { border-bottom: none; }
+.fact-row__label {
+  font-family: var(--sans);
+  font-size: 8.5pt;
+  color: var(--ink-soft);
+}
+.fact-row__value {
+  font-family: var(--sans);
+  font-size: 8.5pt;
+  font-weight: 600;
+  color: var(--ink);
+  text-align: right;
+  max-width: 55%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Eckdaten Panel ──────────────────────────────────────────── */
+.eckdaten-panel {
+  background: var(--paper);
+  border: 0.5px solid var(--line);
+  padding: 14px 16px;
+  margin-bottom: 18px;
+}
+
+/* ── Attributes ──────────────────────────────────────────────── */
+.attr-section { margin-top: 18px; }
+.attr-label {
+  font-family: var(--sans);
+  font-size: 7pt;
+  font-weight: 700;
+  color: var(--gold);
+  letter-spacing: 0.06em;
+  margin-bottom: 10px;
+}
+.attr-item {
+  font-family: var(--sans);
+  font-size: 9pt;
+  color: var(--ink);
+  padding: 5px 0;
+  border-bottom: 0.3px solid var(--line-soft);
+}
+.attr-item:last-child { border-bottom: none; }
+.attr-dash { color: var(--gold); }
+
+/* ── Specifications ──────────────────────────────────────────── */
+.spec-item { margin-bottom: 12px; }
+.spec-item__label {
+  font-family: var(--sans);
+  font-size: 8pt;
+  font-weight: 700;
+  color: var(--ink);
+  margin-bottom: 3px;
+}
+.spec-item__value {
+  font-family: var(--sans);
+  font-size: 8.5pt;
+  color: var(--ink-soft);
+  line-height: 1.5;
+}
+.building-desc {
+  font-family: var(--sans);
+  font-size: 9pt;
+  color: var(--ink-soft);
+  line-height: 1.6;
+  margin-bottom: 16px;
+}
+.not-in-scope {
+  margin-top: 18px;
+  padding-top: 12px;
+  border-top: 0.5px solid var(--line);
+}
+.not-in-scope__label {
+  font-family: var(--sans);
+  font-size: 7pt;
+  font-weight: 700;
+  color: var(--gold);
+  letter-spacing: 0.06em;
+  margin-bottom: 6px;
+}
+.not-in-scope p {
+  font-family: var(--sans);
+  font-size: 8.5pt;
+  color: var(--ink-soft);
+  line-height: 1.5;
+}
+
+/* ── Location ────────────────────────────────────────────────── */
+.location-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px 20px;
+  margin-top: 14px;
+}
+.location-grid__item { }
+.location-grid__label {
+  font-family: var(--sans);
+  font-size: 7pt;
+  font-weight: 700;
+  color: var(--gold);
+  letter-spacing: 0.06em;
+  margin-bottom: 5px;
+}
+.location-grid__text {
+  font-family: var(--sans);
+  font-size: 9pt;
+  color: var(--ink-soft);
+  line-height: 1.55;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   UNITS TABLE
+   ══════════════════════════════════════════════════════════════ */
+.units-table, .price-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 14px;
+  font-family: var(--sans);
+  font-size: 9pt;
+}
+.units-table th, .price-table th {
+  font-size: 7pt;
+  font-weight: 700;
+  color: var(--ink-faint);
+  letter-spacing: 0.06em;
+  text-align: left;
+  padding: 6px 0;
+  border-bottom: 0.5px solid var(--line);
+}
+.units-table td, .price-table td {
+  padding: 8px 0;
+  border-bottom: 0.3px solid var(--line-soft);
+  color: var(--ink);
+  vertical-align: baseline;
+}
+.units-table tfoot td, .price-table tfoot td {
+  border-top: 1px solid var(--ink);
+  border-bottom: none;
+  background: var(--paper);
+  padding: 10px 4px;
+}
+.cell-label { font-weight: 700; }
+.cell-price { text-align: right; font-family: var(--serif); font-style: italic; }
+.cell-price--accent { color: var(--gold); font-weight: 600; font-style: normal; }
+.price-inquiry { color: var(--gold); }
+.units-note {
+  font-family: var(--sans);
+  font-size: 8.5pt;
+  color: var(--ink-soft);
+  margin-top: 8px;
+}
+.units-table th:last-child, .units-table td:last-child,
+.price-table th:last-child, .price-table td:last-child {
+  text-align: right;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   FLOOR PLAN PAGE
+   ══════════════════════════════════════════════════════════════ */
+.floorplan-page { background: #fff; }
+.floorplan-subtitle {
+  font-family: var(--serif);
+  font-size: 18pt;
+  font-weight: 400;
+  color: var(--ink);
+  margin-bottom: 14px;
+}
+.floorplan-container {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px;
+}
+.floorplan-img {
+  max-width: 100%;
+  max-height: 210mm;
+  object-fit: contain;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   UNIT DIVIDER PAGE
+   ══════════════════════════════════════════════════════════════ */
+.unit-divider-page {
+  display: flex;
+  flex-direction: column;
+}
+.unit-divider__number {
+  font-family: var(--serif);
+  font-size: 100pt;
+  font-weight: 300;
+  color: var(--line);
+  line-height: 1;
+  margin: 10px 0 4px 0;
+}
+.unit-divider__tag {
+  font-family: var(--sans);
+  font-size: 8pt;
+  font-weight: 500;
+  color: var(--gold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+.unit-divider__title {
+  font-family: var(--serif);
+  font-size: 38pt;
+  font-weight: 300;
+  color: var(--ink);
+  line-height: 1.15;
+  margin-bottom: 20px;
+}
+.unit-stats {
+  display: flex;
+  gap: 0;
+  border-top: 0.5px solid var(--line);
+  border-bottom: 0.5px solid var(--line);
+  padding: 12px 0;
+  margin-bottom: 20px;
+}
+.unit-stat {
+  flex: 1;
+  padding-right: 10px;
+}
+.unit-stat--border {
+  border-right: 0.5px solid var(--line);
+  margin-right: 10px;
+}
+.unit-stat__label {
+  display: block;
+  font-family: var(--sans);
+  font-size: 6.5pt;
+  font-weight: 600;
+  color: var(--ink-faint);
+  letter-spacing: 0.08em;
+  margin-bottom: 4px;
+}
+.unit-stat__value {
+  display: block;
+  font-family: var(--serif);
+  font-size: 16pt;
+  font-weight: 400;
+  color: var(--ink);
+}
+
+/* ── Room Program ────────────────────────────────────────────── */
+.room-program {
+  margin-top: 6px;
+}
+.room-program--standalone {
+  max-width: 120mm;
+}
+.room-program__label {
+  font-family: var(--sans);
+  font-size: 7pt;
+  font-weight: 700;
+  color: var(--gold);
+  letter-spacing: 0.06em;
+  margin-bottom: 10px;
+}
+.rp-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 5px 0;
+  border-bottom: 0.3px solid var(--line-soft);
+}
+.rp-row:last-child { border-bottom: none; }
+.rp-row--total {
+  border-top: 1px solid var(--ink);
+  border-bottom: none;
+  margin-top: 2px;
+  padding-top: 6px;
+}
+.rp-row__name {
+  font-family: var(--sans);
+  font-size: 8.5pt;
+  color: var(--ink-soft);
+}
+.rp-row--total .rp-row__name {
+  font-weight: 700;
+  color: var(--ink);
+}
+.rp-row__area {
+  font-family: var(--serif);
+  font-size: 9pt;
+  font-weight: 600;
+  color: var(--ink);
+}
+.rp-row--total .rp-row__area {
+  font-size: 10pt;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   PHOTO PAGES — individual image with caption + description
+   ══════════════════════════════════════════════════════════════ */
+.img-hero-container {
+  width: 100%;
+  aspect-ratio: 3/2;
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+.img-hero {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.room-caption {
+  margin-bottom: 14px;
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+.room-name {
+  font-family: var(--serif);
+  font-size: 14pt;
+  font-weight: 400;
+  color: var(--ink);
+}
+.room-meta {
+  font-family: var(--sans);
+  font-size: 8pt;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+.img-note {
+  background: #faf8f4;
+  border-left: 2px solid var(--gold);
+  padding: 14px 18px;
+  font-size: 9pt;
+  color: #4a5260;
+  line-height: 1.55;
+  margin-top: 6px;
+}
+.img-note strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   ENERGY
+   ══════════════════════════════════════════════════════════════ */
+.energy-box {
+  background: var(--paper);
+  border: 0.5px solid var(--line);
+  padding: 16px 18px;
+  margin-bottom: 14px;
+}
+.energy-box__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+  font-family: var(--serif);
+  font-size: 12pt;
+  font-weight: 600;
+  color: var(--ink);
+}
+.energy-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 32px;
+  color: #fff;
+  font-family: var(--serif);
+  font-size: 20pt;
+  font-weight: 600;
+  border-radius: 3px;
+}
+.energy-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 4px 0;
+  border-bottom: 0.3px solid var(--line-soft);
+}
+.energy-row:last-child { border-bottom: none; }
+.energy-row__label {
+  font-family: var(--sans);
+  font-size: 8.5pt;
+  color: var(--ink-soft);
+}
+.energy-row__value {
+  font-family: var(--sans);
+  font-size: 8.5pt;
+  font-weight: 600;
+  color: var(--ink);
+}
+.energy-warning {
+  font-family: var(--sans);
+  font-size: 8pt;
+  color: var(--ink-soft);
+  line-height: 1.5;
+  background: var(--paper);
+  border-left: 2px solid var(--gold);
+  padding: 10px 14px;
+  margin-top: 8px;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   SALES OPTIONS
+   ══════════════════════════════════════════════════════════════ */
+.option-cards {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+.option-card {
+  flex: 1;
+  background: var(--paper);
+  border: 0.5px solid var(--line);
+  padding: 14px 16px;
+}
+.option-card__label {
+  font-family: var(--sans);
+  font-size: 7pt;
+  font-weight: 700;
+  color: var(--gold);
+  letter-spacing: 0.06em;
+  margin-bottom: 6px;
+}
+.option-card__title {
+  font-family: var(--sans);
+  font-size: 11pt;
+  font-weight: 700;
+  color: var(--ink);
+  margin-bottom: 6px;
+}
+.option-card p {
+  font-family: var(--sans);
+  font-size: 8.5pt;
+  color: var(--ink-soft);
+  line-height: 1.55;
+}
+
+/* ── Nebenkosten ─────────────────────────────────────────────── */
+.nebenkosten-box {
+  background: var(--paper);
+  border: 0.5px solid var(--line);
+  padding: 14px 16px;
+  margin-top: 16px;
+  margin-bottom: 10px;
+}
+.nebenkosten-box__title {
+  font-family: var(--serif);
+  font-size: 12pt;
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: 12px;
+}
+.nk-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 4px 0;
+  font-family: var(--sans);
+  font-size: 8.5pt;
+  color: var(--ink-soft);
+  border-bottom: 0.3px solid var(--line-soft);
+}
+.nk-row:last-child { border-bottom: none; }
+.nk-row__value {
+  font-weight: 600;
+  color: var(--ink);
+}
+.nk-row--total {
+  border-top: 0.5px solid var(--ink);
+  border-bottom: none;
+  margin-top: 4px;
+  padding-top: 6px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.nk-row--total .nk-row__value {
+  font-family: var(--serif);
+  font-size: 11pt;
+  font-weight: 700;
+}
+.nk-note {
+  font-family: var(--sans);
+  font-size: 8pt;
+  color: var(--ink-soft);
+  line-height: 1.5;
+  margin-top: 6px;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   CONTACT
+   ══════════════════════════════════════════════════════════════ */
+.contact-card {
+  display: flex;
+  background: var(--ink);
+  color: var(--paper);
+  margin-bottom: 20px;
+}
+.contact-card__left, .contact-card__right {
+  flex: 1;
+  padding: 18px 20px;
+}
+.contact-card__right {
+  border-left: 0.5px solid rgba(255,255,255,0.1);
+}
+.contact-card__sublabel {
+  font-family: var(--sans);
+  font-size: 7pt;
+  font-weight: 500;
+  color: rgba(255,255,255,0.45);
+  letter-spacing: 0.06em;
+  margin-bottom: 12px;
+}
+.contact-card__name {
+  font-family: var(--serif);
+  font-size: 16pt;
+  font-weight: 400;
+  color: var(--paper);
+  margin-bottom: 12px;
+}
+.contact-card__row {
+  font-family: var(--sans);
+  font-size: 9pt;
+  color: rgba(255,255,255,0.85);
+  margin-bottom: 6px;
+  display: flex;
+  gap: 8px;
+}
+.contact-card__row-label {
+  font-size: 7pt;
+  font-weight: 500;
+  color: rgba(255,255,255,0.45);
+  min-width: 55px;
+  padding-top: 1px;
+}
+.contact-card__cta-title {
+  font-family: var(--serif);
+  font-size: 16pt;
+  font-weight: 400;
+  color: var(--paper);
+  line-height: 1.3;
+  margin-bottom: 10px;
+}
+.contact-card__cta-text {
+  font-family: var(--sans);
+  font-size: 8.5pt;
+  color: rgba(255,255,255,0.7);
+  line-height: 1.55;
+}
+
+/* ── Legal Section ───────────────────────────────────────────── */
+.legal-section {
+  margin-top: 8px;
+}
+.legal-section__label {
+  font-family: var(--sans);
+  font-size: 7pt;
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: 0.06em;
+  margin-bottom: 8px;
+}
+.legal-section p {
+  font-family: var(--sans);
+  font-size: 7.5pt;
+  color: var(--ink-soft);
+  line-height: 1.55;
+  margin-bottom: 6px;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   BACK COVER
+   ══════════════════════════════════════════════════════════════ */
+.back-cover {
+  background: var(--ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  width: 100%;
+  height: 100vh;
+}
+.back-cover__content {
+  text-align: center;
+}
+.back-cover__brand {
+  font-family: var(--sans);
+  font-size: 28pt;
+  font-weight: 700;
+  color: var(--paper);
+  letter-spacing: 0.06em;
+}
+.back-cover__rule {
+  width: 45px;
+  height: 2px;
+  background: var(--gold);
+  margin: 14px auto;
+}
+.back-cover__tagline {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 14pt;
+  font-weight: 300;
+  color: rgba(255,255,255,0.65);
+}
+.back-cover__footer {
+  position: absolute;
+  bottom: 16mm;
+  left: 20mm;
+  right: 20mm;
+  text-align: center;
+  font-family: var(--sans);
+  font-size: 7pt;
+  color: rgba(255,255,255,0.35);
+}
+
+@media print {
+  .page { overflow: hidden !important; page-break-after: always !important; }
+  .page:last-child { page-break-after: auto !important; }
+}
+</style>
+</head>
+<body>
+${sections.join("\n")}
+</body>
+</html>`;
+}
+
+// ── PDF generation ───────────────────────────────────────────────────
+
+export async function generateExposePdf(data: ExposeData): Promise<Buffer> {
+  const html = buildExposeHtml(data);
+
+  const browser = await puppeteer.launch({
+    headless: true,
+    args: ["--no-sandbox", "--disable-setuid-sandbox"],
+  });
+
+  try {
+    const page = await browser.newPage();
+    await page.setContent(html, { waitUntil: "domcontentloaded", timeout: 60000 });
+    await new Promise(r => setTimeout(r, 2000));
+
+    const pdf = await page.pdf({
+      format: "A4",
+      printBackground: true,
+      preferCSSPageSize: true,
+      margin: { top: "0", right: "0", bottom: "0", left: "0" },
+    });
+
+    return Buffer.from(pdf);
+  } finally {
+    await browser.close();
+  }
 }

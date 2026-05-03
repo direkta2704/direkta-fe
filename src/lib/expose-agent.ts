@@ -80,6 +80,8 @@ export interface PhotoClassification {
   rotation?: 0 | 90 | 180 | 270;
   features?: string[];      // e.g. ["modern_kitchen", "parquet_floor", "balcony_view"]
   suggestion?: string;      // improvement hint for the seller
+  caption?: string;         // room name for exposé (e.g. "Wohn-/Essbereich mit Küchenanschlüssen")
+  description?: string;     // 2-3 sentence exposé description of what's visible
 }
 
 export interface PhotoUpload {
@@ -731,13 +733,17 @@ async function tool_photoAnalyse(memory: WorkingMemory, photoIndex: number): Pro
     finger (Finger/Hand im Bild), poor_composition (schlechter Bildausschnitt),
   "qualityScore": 0-100 (Bewertung für Immobilieninserat: Belichtung, Schärfe, Komposition, Aufgeräumtheit),
   "features": Array erkannter Merkmale z.B. ["einbaukueche", "parkettboden", "balkon", "dachschraege", "kamin", "fussbodenheizung", "garten", "terrasse", "garage", "aufzug", "neubau", "altbau"],
-  "suggestion": kurzer Verbesserungshinweis für den Verkäufer (nur wenn qualityScore < 70, sonst null)
+  "suggestion": kurzer Verbesserungshinweis für den Verkäufer (nur wenn qualityScore < 70, sonst null),
+  "caption": präziser Raumname für das Exposé, z.B. "Wohn-/Essbereich mit Küchenanschlüssen", "Schlafzimmer mit Blick zur Ankleide", "Bad mit bodengleicher Dusche", "Fassade Straßenseite",
+  "description": 2-3 Sätze für ein hochwertiges Immobilienexposé. Beschreibe sachlich was im Foto sichtbar ist: Materialien, Oberflächen, Raumgefühl, Lichtverhältnisse, besondere Merkmale. Stil: professionell, wertschätzend, konkret. Beispiel: "Großformat-Feinsteinzeug 60 × 120 cm in warmem Sandton an Boden und Duschnische — perfekte Fugenführung. Alle Anschlüsse für WC, bodengleiche Dusche und Waschtisch sind fachgerecht gesetzt."
 }
 Regeln:
 - "floorplan" NUR wenn das Bild ein technischer Grundriss/Bauplan ist.
 - "exterior" für Außenansichten des Gebäudes, Fassade, Eingang.
 - "features" soll sichtbare Ausstattungsmerkmale der Immobilie auflisten — nur was im Foto erkennbar ist.
 - "suggestion" soll kurz und hilfreich sein, z.B. "Bitte bei Tageslicht erneut fotografieren" oder "Persönliche Gegenstände entfernen".
+- "caption" soll ein präziser, spezifischer Raumtitel sein — nicht generisch wie "Zimmer" sondern beschreibend wie "Offene Wohnküche mit Gartenblick".
+- "description" soll NUR beschreiben was tatsächlich sichtbar ist. Keine Vermutungen, keine erfundenen Details. Sachlich und wertschätzend.
 - Bewerte streng: Professionelle Immobilienfotos erhalten 80+, gute Smartphone-Fotos 60-80, problematische Fotos unter 60.`;
 
   const apiKey = process.env.OPENROUTER_API_KEY;
@@ -794,10 +800,12 @@ Regeln:
   const qualityScore = typeof parsed.qualityScore === "number" ? Math.max(0, Math.min(100, parsed.qualityScore)) : 50;
   const features = Array.isArray(parsed.features) ? parsed.features.map(String) : [];
   const suggestion = typeof parsed.suggestion === "string" ? parsed.suggestion : undefined;
+  const caption = typeof parsed.caption === "string" ? parsed.caption : undefined;
+  const description = typeof parsed.description === "string" ? parsed.description : undefined;
 
   return {
     ok: true,
-    classification: { roomType, qualityFlags, qualityScore, features, suggestion },
+    classification: { roomType, qualityFlags, qualityScore, features, suggestion, caption, description },
     costCents,
     index: photoIndex,
   };
