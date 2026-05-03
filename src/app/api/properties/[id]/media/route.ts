@@ -6,6 +6,7 @@ import path from "path";
 import { randomUUID } from "crypto";
 import sharp from "sharp";
 import { isS3Enabled, uploadToS3 } from "@/lib/s3";
+import { detectImageRotation } from "@/lib/image-rotation";
 
 export const dynamic = "force-dynamic";
 
@@ -102,7 +103,7 @@ export async function POST(
     let height: number | undefined;
 
     if (isImage) {
-      const image = sharp(rawBuffer);
+      const image = sharp(rawBuffer).rotate();
       const meta = await image.metadata();
       const maxDim = kind === "FLOORPLAN" ? 2400 : 1920;
       const needsResize = (meta.width && meta.width > maxDim) || (meta.height && meta.height > maxDim);
@@ -127,6 +128,13 @@ export async function POST(
         finalBuffer = await pipeline.jpeg({ quality: 82, mozjpeg: true }).toBuffer();
         finalExt = "jpg";
         finalMime = "image/jpeg";
+      }
+
+      if (kind === "PHOTO") {
+        const rotation = await detectImageRotation(finalBuffer);
+        if (rotation !== 0) {
+          finalBuffer = await sharp(finalBuffer).rotate(rotation).jpeg({ quality: 82, mozjpeg: true }).toBuffer();
+        }
       }
 
       const outMeta = await sharp(finalBuffer).metadata();

@@ -6,6 +6,7 @@ import path from "path";
 import { randomUUID } from "crypto";
 import sharp from "sharp";
 import { isS3Enabled, uploadToS3 } from "@/lib/s3";
+import { detectImageRotation } from "@/lib/image-rotation";
 import { executeTool, rebuildMemory, MAX_COST_CENTS } from "@/lib/expose-agent";
 import type { PhotoUpload } from "@/lib/expose-agent";
 import type { Prisma } from "@prisma/client";
@@ -124,6 +125,14 @@ export async function POST(
         finalExt = "jpg";
         finalMime = "image/jpeg";
       }
+
+      if (kind === "PHOTO") {
+        const rotation = await detectImageRotation(finalBuffer);
+        if (rotation !== 0) {
+          finalBuffer = (await sharp(finalBuffer).rotate(rotation).jpeg({ quality: 82, mozjpeg: true }).toBuffer()) as Buffer;
+        }
+      }
+
       const outMeta = await sharp(finalBuffer).metadata();
       width = outMeta.width;
       height = outMeta.height;
@@ -172,8 +181,15 @@ export async function POST(
       }))?.turns ?? []);
       const photoIndex = memAfterUpload.uploads.length - 1;
       const currentCost = agentRun.costCents ?? 0;
+      let rotationCorrected = 0;
       if (photoIndex >= 0 && currentCost < MAX_COST_CENTS) {
         const tr = await executeTool("photo_analyse", { photoIndex }, memAfterUpload);
+
+        const classification = (tr.output as Record<string, unknown>)?.classification as
+          { rotation?: number } | undefined;
+        if (classification?.rotation && classification.rotation !== 0) {
+          rotationCorrected = classification.rotation;
+        }
 
         await prisma.conversationTurn.create({
           data: {
@@ -223,6 +239,7 @@ export async function POST(
         memory: newMem,
         autoContinue: hasMinPhotos && allFieldsReady,
         photoCount,
+        rotationCorrected,
       });
     }
 

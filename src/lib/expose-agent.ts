@@ -77,6 +77,9 @@ export interface PhotoClassification {
   roomType: PhotoRoomType;
   qualityFlags: string[];   // e.g. ["blur", "dark", "saturated"]
   qualityScore: number;     // 0–100
+  rotation?: 0 | 90 | 180 | 270;
+  features?: string[];      // e.g. ["modern_kitchen", "parquet_floor", "balcony_view"]
+  suggestion?: string;      // improvement hint for the seller
 }
 
 export interface PhotoUpload {
@@ -717,13 +720,25 @@ async function tool_photoAnalyse(memory: WorkingMemory, photoIndex: number): Pro
     : loaded.bytes;
   const dataUrl = `data:${loaded.mimeType};base64,${Buffer.from(data).toString("base64")}`;
 
-  const sysPrompt = `Du bist ein Bildklassifikator für deutsche Immobilieninserate. Klassifiziere das Foto nach Raumtyp und bewerte die Qualität. Antworte als JSON, ohne Markdown:
+  const sysPrompt = `Du bist ein Experte für Immobilienfotografie und analysierst Fotos für deutsche Immobilieninserate. Antworte als JSON, ohne Markdown:
 {
   "roomType": einer aus [${PHOTO_ROOM_TYPES.join(", ")}],
-  "qualityFlags": Array aus [blur, dark, saturated, oversharp, tilted, cluttered, watermark],
-  "qualityScore": 0-100 (höher = besser, 60+ ist akzeptabel für Inserat)
+  "qualityFlags": Array aus möglichen Mängeln — nur die zutreffenden angeben:
+    blur (unscharf/verwackelt), dark (zu dunkel), overexposed (überbelichtet),
+    saturated (übersättigt), oversharp (überschärft), tilted (schief/gekippt),
+    cluttered (unaufgeräumt/persönliche Gegenstände sichtbar), watermark (Wasserzeichen),
+    low_resolution (geringe Auflösung), noisy (Bildrauschen), reflection (störende Spiegelung),
+    finger (Finger/Hand im Bild), poor_composition (schlechter Bildausschnitt),
+  "qualityScore": 0-100 (Bewertung für Immobilieninserat: Belichtung, Schärfe, Komposition, Aufgeräumtheit),
+  "features": Array erkannter Merkmale z.B. ["einbaukueche", "parkettboden", "balkon", "dachschraege", "kamin", "fussbodenheizung", "garten", "terrasse", "garage", "aufzug", "neubau", "altbau"],
+  "suggestion": kurzer Verbesserungshinweis für den Verkäufer (nur wenn qualityScore < 70, sonst null)
 }
-"floorplan" nur wenn das Bild ein technischer Grundriss ist. "exterior" für Außenansichten des Gebäudes.`;
+Regeln:
+- "floorplan" NUR wenn das Bild ein technischer Grundriss/Bauplan ist.
+- "exterior" für Außenansichten des Gebäudes, Fassade, Eingang.
+- "features" soll sichtbare Ausstattungsmerkmale der Immobilie auflisten — nur was im Foto erkennbar ist.
+- "suggestion" soll kurz und hilfreich sein, z.B. "Bitte bei Tageslicht erneut fotografieren" oder "Persönliche Gegenstände entfernen".
+- Bewerte streng: Professionelle Immobilienfotos erhalten 80+, gute Smartphone-Fotos 60-80, problematische Fotos unter 60.`;
 
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) return { ok: false, error: "OPENROUTER_API_KEY fehlt", costCents: 0, index: photoIndex };
@@ -749,7 +764,7 @@ async function tool_photoAnalyse(memory: WorkingMemory, photoIndex: number): Pro
         },
       ],
       response_format: { type: "json_object" },
-      max_tokens: 200,
+      max_tokens: 400,
       temperature: 0,
       usage: { include: true },
     }),
@@ -777,10 +792,12 @@ async function tool_photoAnalyse(memory: WorkingMemory, photoIndex: number): Pro
     : "other";
   const qualityFlags = Array.isArray(parsed.qualityFlags) ? parsed.qualityFlags.map(String) : [];
   const qualityScore = typeof parsed.qualityScore === "number" ? Math.max(0, Math.min(100, parsed.qualityScore)) : 50;
+  const features = Array.isArray(parsed.features) ? parsed.features.map(String) : [];
+  const suggestion = typeof parsed.suggestion === "string" ? parsed.suggestion : undefined;
 
   return {
     ok: true,
-    classification: { roomType, qualityFlags, qualityScore },
+    classification: { roomType, qualityFlags, qualityScore, features, suggestion },
     costCents,
     index: photoIndex,
   };

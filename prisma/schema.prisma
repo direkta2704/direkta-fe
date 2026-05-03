@@ -189,9 +189,10 @@ model MediaAsset {
   sizeBytes  Int?
   width      Int?
   height     Int?
-  enhanced   Boolean   @default(false)
-  ordering   Int       @default(0)
-  createdAt  DateTime  @default(now())
+  enhanced       Boolean   @default(false)
+  ordering       Int       @default(0)
+  classification Json?
+  createdAt      DateTime  @default(now())
 
   property Property? @relation(fields: [propertyId], references: [id], onDelete: Cascade)
   listing  Listing?  @relation(fields: [listingId], references: [id], onDelete: Cascade)
