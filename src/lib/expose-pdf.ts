@@ -771,6 +771,7 @@ function buildExposeHtml(data: ExposeData): string {
     let optionsHtml = "";
     let priceTableHtml = "";
     let nebenkostenHtml = "";
+    let unitPriceSum = 0;
 
     if (isBundle) {
       let sumArea = 0;
@@ -788,9 +789,12 @@ function buildExposeHtml(data: ExposeData): string {
         `;
       }).join("");
 
-      const bundlePrice = data.askingPrice
-        ? fmtPriceEuro(data.askingPrice)
-        : "Paketpreis auf Anfrage";
+      unitPriceSum = data.units!.reduce((s, u) => s + (u.askingPrice || 0), 0);
+      const bundlePrice = unitPriceSum > 0
+        ? fmtPriceEuro(unitPriceSum)
+        : data.askingPrice
+          ? fmtPriceEuro(data.askingPrice)
+          : "Paketpreis auf Anfrage";
 
       optionsHtml = `
         <div class="option-cards">
@@ -824,19 +828,20 @@ function buildExposeHtml(data: ExposeData): string {
       `;
     }
 
-    if (data.askingPrice && data.postcode) {
+    const effectivePrice = (isBundle && unitPriceSum > 0) ? unitPriceSum : data.askingPrice;
+    if (effectivePrice && data.postcode) {
       const ge = grunderwerbsteuer(data.postcode);
       const notarRate = 2.0;
-      const gestAmt = Math.round(data.askingPrice * ge.rate / 100);
-      const notarAmt = Math.round(data.askingPrice * notarRate / 100);
-      const gesamt = data.askingPrice + gestAmt + notarAmt;
+      const gestAmt = Math.round(effectivePrice * ge.rate / 100);
+      const notarAmt = Math.round(effectivePrice * notarRate / 100);
+      const gesamt = effectivePrice + gestAmt + notarAmt;
 
       nebenkostenHtml = `
         <div class="nebenkosten-box">
           <h3 class="nebenkosten-box__title">Kaufnebenkosten (gesch&auml;tzt)</h3>
           <div class="nk-row">
             <span>Kaufpreis</span>
-            <span class="nk-row__value">${fmtPriceEuro(data.askingPrice)}</span>
+            <span class="nk-row__value">${fmtPriceEuro(effectivePrice)}</span>
           </div>
           <div class="nk-row">
             <span>Grunderwerbsteuer (${esc(ge.land)}, ${ge.rate.toFixed(1)} %)</span>
@@ -2045,7 +2050,12 @@ export async function generateExposePdf(data: ExposeData): Promise<Buffer> {
 
   const browser = await puppeteer.launch({
     headless: true,
-    args: ["--no-sandbox", "--disable-setuid-sandbox"],
+    args: [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--force-color-profile=srgb",
+      "--disable-features=ColorCorrectRendering",
+    ],
   });
 
   try {

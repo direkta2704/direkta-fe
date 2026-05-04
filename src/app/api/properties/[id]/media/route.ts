@@ -112,12 +112,9 @@ export async function POST(
         ? image.resize({ width: maxDim, height: maxDim, fit: "inside", withoutEnlargement: true })
         : image;
 
-      // F-M1-05: Auto-enhance photos (brightness, contrast, white balance)
       if (kind === "PHOTO") {
         pipeline = pipeline
-          .normalize()  // auto white balance + contrast stretch
-          .sharpen({ sigma: 0.8 })  // subtle sharpening
-          .modulate({ brightness: 1.02 });  // slight brightness boost
+          .sharpen({ sigma: 0.8 });
       }
 
       if (meta.format === "png" && kind === "FLOORPLAN") {

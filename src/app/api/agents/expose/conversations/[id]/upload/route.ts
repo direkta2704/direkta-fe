@@ -107,13 +107,9 @@ export async function POST(
         ? image.resize({ width: maxDim, height: maxDim, fit: "inside", withoutEnlargement: true })
         : image;
 
-      // F-M1-05: Auto-enhance photos (brightness, white balance, light normalization)
-      // Does NOT add, remove, or modify objects — only adjusts colour, exposure and geometry.
       if (kind === "PHOTO") {
         pipeline = pipeline
-          .normalize()                    // auto white balance + contrast stretch
-          .sharpen({ sigma: 0.8 })        // subtle sharpening for clarity
-          .modulate({ brightness: 1.02 }); // slight brightness boost for darker interiors
+          .sharpen({ sigma: 0.8 });
       }
 
       if (kind === "FLOORPLAN" && meta.format === "png") {
