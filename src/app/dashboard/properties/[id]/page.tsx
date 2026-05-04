@@ -47,6 +47,7 @@ interface Property {
   roomProgram: unknown;
   specifications: unknown;
   buildingInfo: unknown;
+  extras: unknown;
   parentId: string | null;
   unitLabel: string | null;
   createdAt: string;
@@ -99,6 +100,9 @@ export default function PropertyDetailPage() {
   const [energySaving, setEnergySaving] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [pdfDownloading, setPdfDownloading] = useState(false);
+  const [extrasEditing, setExtrasEditing] = useState(false);
+  const [extraForm, setExtraForm] = useState({ name: "", quantity: "1", pricePerUnit: "", description: "" });
+  const [extrasSaving, setExtrasSaving] = useState(false);
   const [energyPdfUploading, setEnergyPdfUploading] = useState(false);
   const [energyPdfName, setEnergyPdfName] = useState<string | null>(null);
   const [energyPdfAssetId, setEnergyPdfAssetId] = useState<string | null>(null);
@@ -258,6 +262,37 @@ export default function PropertyDetailPage() {
 
   async function deleteMedia(mediaId: string) {
     await fetch(`/api/media/${mediaId}`, { method: "DELETE" });
+    fetchProperty();
+  }
+
+  async function addExtra() {
+    if (!extraForm.name) return;
+    setExtrasSaving(true);
+    const currentExtras = (property?.extras as { name: string; quantity: number; pricePerUnit: number; description: string }[]) || [];
+    const newExtra = {
+      name: extraForm.name,
+      quantity: parseInt(extraForm.quantity) || 1,
+      pricePerUnit: parseFloat(extraForm.pricePerUnit) || 0,
+      description: extraForm.description,
+    };
+    await fetch(`/api/properties/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ extras: [...currentExtras, newExtra] }),
+    });
+    setExtraForm({ name: "", quantity: "1", pricePerUnit: "", description: "" });
+    setExtrasSaving(false);
+    fetchProperty();
+  }
+
+  async function removeExtra(idx: number) {
+    const currentExtras = (property?.extras as { name: string; quantity: number; pricePerUnit: number; description: string }[]) || [];
+    const updated = currentExtras.filter((_, i) => i !== idx);
+    await fetch(`/api/properties/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ extras: updated }),
+    });
     fetchProperty();
   }
 
@@ -856,6 +891,124 @@ export default function PropertyDetailPage() {
               )}
             </div>
           )}
+
+          {/* Extras & Stellplätze */}
+          <div className="bg-white rounded-2xl border border-slate-200 p-7">
+            <div className="flex items-center justify-between mb-5">
+              <div>
+                <h2 className="text-lg font-black text-blueprint">Extras & Stellplätze</h2>
+                <p className="text-xs text-slate-500 mt-0.5">Zusätzliche Leistungen mit separater Bepreisung</p>
+              </div>
+              <button
+                onClick={() => setExtrasEditing(!extrasEditing)}
+                className="text-xs font-black uppercase tracking-widest text-primary hover:text-primary-dark transition-colors"
+              >
+                {extrasEditing ? "Fertig" : "Bearbeiten"}
+              </button>
+            </div>
+
+            {(() => {
+              const extras = (property?.extras as { name: string; quantity: number; pricePerUnit: number; description: string }[]) || [];
+              return extras.length === 0 && !extrasEditing ? (
+                <div className="border-2 border-dashed border-slate-200 rounded-xl p-6 text-center">
+                  <span className="material-symbols-outlined text-2xl text-slate-300 mb-1 block">local_parking</span>
+                  <p className="text-sm text-slate-500 font-bold">Keine Extras angelegt</p>
+                  <p className="text-xs text-slate-400 mt-1">z.B. Tiefgaragen-Stellplätze, Außenstellplätze, Kellerabteile</p>
+                  <button
+                    onClick={() => setExtrasEditing(true)}
+                    className="mt-3 text-xs font-black uppercase tracking-widest text-primary hover:text-primary-dark"
+                  >
+                    Extra hinzufügen
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {extras.map((extra, idx) => (
+                    <div key={idx} className="flex items-center gap-4 p-4 rounded-xl border border-slate-200 bg-slate-50/50">
+                      <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                        <span className="material-symbols-outlined text-lg text-primary">
+                          {extra.name.toLowerCase().includes("garage") || extra.name.toLowerCase().includes("stellplatz") || extra.name.toLowerCase().includes("parking")
+                            ? "local_parking"
+                            : extra.name.toLowerCase().includes("keller")
+                              ? "warehouse"
+                              : "add_box"}
+                        </span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-black text-blueprint">{extra.name}</span>
+                          <span className="text-[10px] text-slate-400">× {extra.quantity}</span>
+                        </div>
+                        {extra.description && <p className="text-xs text-slate-500 mt-0.5">{extra.description}</p>}
+                      </div>
+                      <div className="text-right flex-shrink-0">
+                        {extra.pricePerUnit > 0 && (
+                          <span className="text-sm font-black text-blueprint">
+                            {extra.pricePerUnit.toLocaleString("de-DE")} € <span className="text-[10px] font-normal text-slate-400">/ Stk.</span>
+                          </span>
+                        )}
+                        {extra.pricePerUnit > 0 && extra.quantity > 1 && (
+                          <p className="text-[10px] text-slate-400">
+                            Gesamt: {(extra.pricePerUnit * extra.quantity).toLocaleString("de-DE")} €
+                          </p>
+                        )}
+                      </div>
+                      {extrasEditing && (
+                        <button
+                          onClick={() => removeExtra(idx)}
+                          className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors"
+                        >
+                          <span className="material-symbols-outlined text-base">delete</span>
+                        </button>
+                      )}
+                    </div>
+                  ))}
+
+                  {extrasEditing && (
+                    <div className="p-4 rounded-xl border border-dashed border-slate-300 bg-white">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3">Neues Extra hinzufügen</p>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+                        <input
+                          className="col-span-2 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary"
+                          placeholder="Name (z.B. TG-Stellplatz)"
+                          value={extraForm.name}
+                          onChange={(e) => setExtraForm({ ...extraForm, name: e.target.value })}
+                        />
+                        <input
+                          className="border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary"
+                          placeholder="Anzahl"
+                          type="number"
+                          min="1"
+                          value={extraForm.quantity}
+                          onChange={(e) => setExtraForm({ ...extraForm, quantity: e.target.value })}
+                        />
+                        <input
+                          className="border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary"
+                          placeholder="Preis pro Stk. (€)"
+                          type="number"
+                          value={extraForm.pricePerUnit}
+                          onChange={(e) => setExtraForm({ ...extraForm, pricePerUnit: e.target.value })}
+                        />
+                      </div>
+                      <input
+                        className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary mb-3"
+                        placeholder="Beschreibung (optional)"
+                        value={extraForm.description}
+                        onChange={(e) => setExtraForm({ ...extraForm, description: e.target.value })}
+                      />
+                      <button
+                        onClick={addExtra}
+                        disabled={!extraForm.name || extrasSaving}
+                        className="bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition-colors disabled:opacity-60"
+                      >
+                        {extrasSaving ? "Wird gespeichert..." : "Hinzufügen"}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
 
           {/* Selling Mode — for parent properties with units */}
           {!isUnit && property.units && property.units.length > 0 && (

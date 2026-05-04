@@ -57,6 +57,7 @@ export interface ExposeData {
   units?: ExposeUnit[];
   specifications?: Record<string, string>;
   buildingDescription?: string;
+  extras?: { name: string; quantity: number; pricePerUnit: number; description?: string }[];
   lat?: number;
   lng?: number;
   mapImage?: string;
@@ -323,12 +324,22 @@ function buildExposeHtml(data: ExposeData): string {
     if (data.plotArea) factRows.push({ label: "Grundstücksfläche", value: fmtAreaShort(data.plotArea) });
     if (data.yearBuilt) factRows.push({ label: "Baujahr", value: String(data.yearBuilt) });
     if (data.condition) factRows.push({ label: "Zustand", value: esc(data.condition) });
-    if (data.askingPrice) factRows.push({
-      label: "Kaufpreis",
-      value: isBundle
-        ? `${fmtPriceEuro(data.askingPrice)} (Paket)`
-        : fmtPriceEuro(data.askingPrice),
-    });
+    {
+      const extTotal = (data.extras || []).reduce((s, ex) => s + ex.pricePerUnit * ex.quantity, 0);
+      const unitSum = isBundle ? (data.units || []).reduce((s, u) => s + (u.askingPrice || 0), 0) : 0;
+      const priceBase = isBundle && unitSum > 0 ? unitSum : data.askingPrice;
+      if (priceBase) {
+        const total = priceBase + extTotal;
+        factRows.push({
+          label: "Kaufpreis",
+          value: extTotal > 0
+            ? `${fmtPriceEuro(total)} (inkl. Extras)`
+            : isBundle
+              ? `${fmtPriceEuro(priceBase)} (Paket)`
+              : fmtPriceEuro(priceBase),
+        });
+      }
+    }
 
     const factsRowsHtml = factRows.map(r => `
       <div class="fact-row">
@@ -895,7 +906,10 @@ function buildExposeHtml(data: ExposeData): string {
       `;
     }
 
-    const effectivePrice = (isBundle && unitPriceSum > 0) ? unitPriceSum : data.askingPrice;
+    const basePrice = (isBundle && unitPriceSum > 0) ? unitPriceSum : data.askingPrice;
+    const extrasTotal = (data.extras || []).reduce((s, ex) => s + (ex.pricePerUnit * ex.quantity), 0);
+    const effectivePrice = basePrice ? basePrice + extrasTotal : null;
+
     if (effectivePrice && data.postcode) {
       const ge = grunderwerbsteuer(data.postcode);
       const notarRate = 2.0;
@@ -907,9 +921,15 @@ function buildExposeHtml(data: ExposeData): string {
         <div class="nebenkosten-box">
           <h3 class="nebenkosten-box__title">Kaufnebenkosten (gesch&auml;tzt)</h3>
           <div class="nk-row">
-            <span>Kaufpreis</span>
-            <span class="nk-row__value">${fmtPriceEuro(effectivePrice)}</span>
+            <span>Kaufpreis (Wohnungen)</span>
+            <span class="nk-row__value">${fmtPriceEuro(basePrice!)}</span>
           </div>
+          ${extrasTotal > 0 ? `
+            <div class="nk-row">
+              <span>Extras (Stellpl&auml;tze etc.)</span>
+              <span class="nk-row__value">${fmtPriceEuro(extrasTotal)}</span>
+            </div>
+          ` : ""}
           <div class="nk-row">
             <span>Grunderwerbsteuer (${esc(ge.land)}, ${ge.rate.toFixed(1)} %)</span>
             <span class="nk-row__value">${fmtPriceEuro(gestAmt)}</span>
@@ -938,6 +958,28 @@ function buildExposeHtml(data: ExposeData): string {
         <div class="gold-rule"></div>
         ${optionsHtml}
         ${priceTableHtml}
+        ${data.extras && data.extras.length > 0 ? (() => {
+          const extTotal = data.extras!.reduce((s, ex) => s + ex.pricePerUnit * ex.quantity, 0);
+          const grandTotal = (basePrice || 0) + extTotal;
+          return `
+          <div class="extras-table">
+            <h4 class="extras-table__title">Zzgl. Stellpl&auml;tze &amp; Extras</h4>
+            ${data.extras!.map(ex => `
+              <div class="extras-row">
+                <span class="extras-row__name">${esc(ex.name)}${ex.quantity > 1 ? ` <span class="extras-row__qty">&times; ${ex.quantity}</span>` : ""}</span>
+                <span class="extras-row__price">${ex.pricePerUnit > 0 ? fmtPriceEuro(ex.pricePerUnit * ex.quantity) : "inkl."}</span>
+              </div>
+            `).join("")}
+            <div class="extras-row extras-row--subtotal">
+              <span class="extras-row__name">Summe Extras</span>
+              <span class="extras-row__price">${fmtPriceEuro(extTotal)}</span>
+            </div>
+            <div class="extras-row extras-row--grand">
+              <span class="extras-row__name">Gesamtkaufpreis (Wohnungen + Extras)</span>
+              <span class="extras-row__price">${fmtPriceEuro(grandTotal)}</span>
+            </div>
+          </div>`;
+        })() : ""}
         ${nebenkostenHtml}
         <div class="page-footer">
           <span class="footer-brand">DIREKTA<span class="accent">.</span></span>
@@ -2073,6 +2115,50 @@ html::-webkit-scrollbar { display: none; }
 }
 
 /* ── Nebenkosten ─────────────────────────────────────────────── */
+.extras-table {
+  margin-top: 14px;
+  margin-bottom: 14px;
+}
+.extras-table__title {
+  font-family: var(--sans);
+  font-size: 7pt;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--gold);
+  margin-bottom: 8px;
+}
+.extras-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 6px 0;
+  border-bottom: 0.5px solid var(--line-soft);
+  font-family: var(--sans);
+  font-size: 9pt;
+}
+.extras-row:last-child { border-bottom: none; }
+.extras-row__name { color: var(--ink); }
+.extras-row__qty { color: var(--ink-faint); font-size: 8pt; }
+.extras-row__price { font-weight: 600; color: var(--ink); }
+.extras-row--subtotal {
+  border-top: 0.5px solid var(--line);
+  border-bottom: none;
+  margin-top: 4px;
+  padding-top: 8px;
+  font-size: 8.5pt;
+  color: var(--ink-soft);
+}
+.extras-row--grand {
+  border-top: 1.5px solid var(--ink);
+  border-bottom: none;
+  margin-top: 4px;
+  padding-top: 8px;
+  font-size: 10pt;
+  font-weight: 700;
+}
+.extras-row--grand .extras-row__name { font-weight: 700; }
+.extras-row--grand .extras-row__price { font-weight: 700; font-size: 10pt; }
 .nebenkosten-box {
   background: var(--paper);
   border: 0.5px solid var(--line);

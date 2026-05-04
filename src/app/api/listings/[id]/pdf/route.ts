@@ -320,6 +320,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       units: unitData,
       specifications: p.specifications && typeof p.specifications === "object" && !Array.isArray(p.specifications) ? (p.specifications as Record<string, string>) : undefined,
       buildingDescription: listing.buildingDescription || undefined,
+      extras: Array.isArray(p.extras) ? (p.extras as { name: string; quantity: number; pricePerUnit: number; description?: string }[]) : undefined,
       lat: lat || undefined,
       lng: lng || undefined,
       mapImage: mapImageBase64,

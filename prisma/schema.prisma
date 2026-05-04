@@ -138,6 +138,7 @@ model Property {
   roomProgram    Json?
   specifications Json?
   buildingInfo   Json?
+  extras         Json?
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt
 
