@@ -494,7 +494,7 @@ export default function PropertyDetailPage() {
                       Fotos hierher ziehen
                     </p>
                     <p className="text-sm text-slate-400">
-                      oder klicken Sie auf &quot;Fotos hinzufügen&quot; · JPEG/PNG · max. 25 MB · mind. 6 Fotos
+                      oder klicken Sie auf &quot;Fotos hinzufügen&quot; · JPEG/PNG · max. 25 MB
                     </p>
                   </>
                 )}
@@ -547,10 +547,10 @@ export default function PropertyDetailPage() {
                   </label>
                 </div>
 
-                {photos.length < 6 && (
+                {photos.length === 0 && (
                   <p className="text-xs text-amber-600 mt-3 flex items-center gap-1">
                     <span className="material-symbols-outlined text-sm">warning</span>
-                    Mindestens 6 Fotos erforderlich zum Veröffentlichen (noch {6 - photos.length} nötig)
+                    Mindestens 1 Foto erforderlich zum Veröffentlichen
                   </p>
                 )}
               </>
@@ -834,9 +834,9 @@ export default function PropertyDetailPage() {
 
                         {/* Unit readiness indicators */}
                         <div className="px-4 pb-3 flex items-center gap-3 flex-wrap">
-                          <span className={`inline-flex items-center gap-1 text-[10px] font-bold ${unitPhotos.length >= 6 ? "text-emerald-600" : "text-amber-600"}`}>
-                            <span className="material-symbols-outlined text-xs">{unitPhotos.length >= 6 ? "check_circle" : "warning"}</span>
-                            {unitPhotos.length}/6 Fotos
+                          <span className={`inline-flex items-center gap-1 text-[10px] font-bold ${unitPhotos.length >= 1 ? "text-emerald-600" : "text-amber-600"}`}>
+                            <span className="material-symbols-outlined text-xs">{unitPhotos.length >= 1 ? "check_circle" : "warning"}</span>
+                            {unitPhotos.length} Fotos
                           </span>
                           <span className={`inline-flex items-center gap-1 text-[10px] font-bold ${unitFloorplans.length > 0 ? "text-emerald-600" : "text-slate-400"}`}>
                             <span className="material-symbols-outlined text-xs">{unitFloorplans.length > 0 ? "check_circle" : "radio_button_unchecked"}</span>
@@ -1319,7 +1319,7 @@ export default function PropertyDetailPage() {
             <div className="space-y-3">
               <StatusRow label="Immobilie gespeichert" done />
               <StatusRow label="Energieausweis" done={!!property.energyCert} />
-              <StatusRow label="Fotos hochgeladen" done={photos.length >= 6} detail={`${photos.length}/6 mind.`} />
+              <StatusRow label="Fotos hochgeladen" done={photos.length >= 1} detail={`${photos.length} Fotos`} />
               {hasUnits ? (
                 <>
                   <StatusRow label="Wohnungen angelegt" done={property.units.length > 0} detail={`${property.units.length} WE`} />

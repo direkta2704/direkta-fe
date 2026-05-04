@@ -9,6 +9,8 @@ export interface ExposePhoto {
   caption?: string;
   description?: string;
   features?: string[];
+  lighting?: string;
+  estimatedArea?: number;
 }
 
 export interface ExposeUnit {
@@ -99,6 +101,16 @@ const ROOM_TYPE_DE: Record<string, string> = {
 function photoCaption(photo: ExposePhoto): string {
   if (photo.caption) return photo.caption;
   return ROOM_TYPE_DE[photo.roomType || "other"] || "Impressionen";
+}
+
+function photoDetailsStrip(photo: ExposePhoto): string {
+  const details: { label: string; value: string }[] = [];
+  if (photo.estimatedArea) details.push({ label: "ROOM AREA", value: `${photo.estimatedArea.toLocaleString("de-DE")} m²` });
+  details.push({ label: "ASPECT", value: "Landscape 3:2" });
+  if (photo.lighting) details.push({ label: "LIGHTING", value: esc(photo.lighting) });
+  return `<div class="photo-details">${details.map(d =>
+    `<div class="photo-detail"><span class="photo-detail__label">${d.label}</span><span class="photo-detail__value">${d.value}</span></div>`
+  ).join("")}</div>`;
 }
 
 // ── Formatting helpers ───────────────────────────────────────────────
@@ -287,6 +299,30 @@ function buildExposeHtml(data: ExposeData): string {
             <div class="facts-panel">${factsRowsHtml}</div>
           </div>
         </div>
+        ${isBundle && data.units && data.units.length > 0 ? `
+          <table class="units-table">
+            <thead>
+              <tr>
+                <th>APARTMENT</th>
+                <th>LAYOUT</th>
+                <th>AREA</th>
+                <th>PERSONA</th>
+                <th>SHOTS</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${data.units.map(u => `
+                <tr>
+                  <td class="unit-label">${esc(u.label)}</td>
+                  <td>${u.rooms ? `${u.rooms} Zi.` : ""}</td>
+                  <td>${fmtAreaShort(u.livingArea)}</td>
+                  <td>${esc(u.titleShort || "")}</td>
+                  <td>${u.photos.length}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        ` : ""}
         <div class="page-footer">
           <span class="footer-brand">DIREKTA<span class="accent">.</span></span>
           <span class="footer-section">Auf einen Blick</span>
@@ -437,71 +473,7 @@ function buildExposeHtml(data: ExposeData): string {
     `);
   }
 
-  // ────────────────────────────── WOHNUNGSÜBERSICHT
-  if (isBundle) {
-    sectionIdx++;
-    const num = String(sectionIdx).padStart(2, "0");
-    let sumArea = 0;
-
-    const rowsHtml = data.units!.map(unit => {
-      sumArea += unit.livingArea;
-      const flTxt = unit.floor != null ? floorLabel(unit.floor) : "&ndash;";
-      const prTxt = unit.askingPrice
-        ? fmtPriceEuro(unit.askingPrice)
-        : `<span class="price-inquiry">auf Anfrage</span>`;
-      return `
-        <tr>
-          <td class="cell-label">${esc(unit.label)}</td>
-          <td>${fmtAreaShort(unit.livingArea)}</td>
-          <td>${unit.rooms ? unit.rooms : "&ndash;"}</td>
-          <td>${flTxt}</td>
-          <td class="cell-price">${prTxt}</td>
-        </tr>
-      `;
-    }).join("");
-
-    const bundlePrice = data.askingPrice
-      ? fmtPriceEuro(data.askingPrice)
-      : "auf Anfrage";
-
-    sections.push(`
-      <div class="page content-page">
-        <div class="page-header">
-          <span class="header-brand">DIREKTA<span class="accent">.</span></span>
-          <span class="header-address">${esc(data.address)} &middot; ${esc(data.city)}</span>
-        </div>
-        <div class="section-eyebrow">${num} &mdash; Wohnungs&uuml;bersicht</div>
-        <h2 class="section-title">Die Wohnungen im &Uuml;berblick</h2>
-        <div class="gold-rule"></div>
-        <table class="units-table">
-          <thead>
-            <tr>
-              <th>EINHEIT</th>
-              <th>WOHNFL&Auml;CHE</th>
-              <th>ZIMMER</th>
-              <th>ETAGE</th>
-              <th>KAUFPREIS</th>
-            </tr>
-          </thead>
-          <tbody>${rowsHtml}</tbody>
-          <tfoot>
-            <tr class="units-table__total">
-              <td class="cell-label">Paket &middot; alle ${data.units!.length} WE</td>
-              <td>${fmtAreaShort(sumArea)}</td>
-              <td></td>
-              <td></td>
-              <td class="cell-price cell-price--accent">${bundlePrice}</td>
-            </tr>
-          </tfoot>
-        </table>
-        <p class="units-note">Erwerb einzeln je Einheit oder als Gesamtpaket m&ouml;glich. Konditionen auf Anfrage.</p>
-        <div class="page-footer">
-          <span class="footer-brand">DIREKTA<span class="accent">.</span></span>
-          <span class="footer-section">Wohnungs&uuml;bersicht</span>
-        </div>
-      </div>
-    `);
-  }
+  // Wohnungsübersicht removed — apartment info is shown in the "Auf einen Blick" table
 
   // ────────────────────────────── FLOOR PLANS (building-level)
   if (data.floorPlans && data.floorPlans.length > 0) {
@@ -605,35 +577,43 @@ function buildExposeHtml(data: ExposeData): string {
         `);
       }
 
-      // UNIT PHOTOS — individual pages per photo
+      // UNIT PHOTOS — individual pages per photo (brief-style layout)
       if (unit.photos.length > 0) {
         unit.photos.forEach((photo, pIdx) => {
           const cap = esc(photoCaption(photo));
           const desc = photo.description ? esc(photo.description) : "";
-          const roomMeta = ROOM_TYPE_DE[photo.roomType || "other"] || "";
+          const roomType = ROOM_TYPE_DE[photo.roomType || "other"] || "";
+          const isHero = pIdx === 0;
 
           sections.push(`
-            <div class="page content-page">
-              <div class="page-header">
-                <span class="header-brand">DIREKTA<span class="accent">.</span></span>
-                <span class="header-address">${esc(data.address)} &middot; ${esc(unit.label)}</span>
+            <div class="page content-page shot-page">
+              <div class="shot-header">
+                <div class="shot-header__left">
+                  <span class="shot-unit">${esc(unit.label)}</span>
+                </div>
+                <div class="shot-header__right">
+                  ${isHero ? `<span class="shot-badge">HERO SHOT</span>` : ""}
+                </div>
               </div>
-              ${pIdx === 0 ? `<div class="section-eyebrow">${esc(unit.label)} &middot; Eindr&uuml;cke</div>` : ""}
+              <div class="shot-meta">
+                <span>${esc(unit.titleShort || "")}${unit.livingArea ? ` &middot; ${fmtAreaShort(unit.livingArea)}` : ""}</span>
+                <span>Shot ${pIdx + 1} of ${unit.photos.length}</span>
+              </div>
+              <h2 class="shot-title">${cap}</h2>
+              ${roomType ? `<p class="shot-subtitle">${roomType}</p>` : ""}
+              ${desc ? `
+                <div class="shot-notes">
+                  <span class="shot-notes__label">VISUAL NOTES</span>
+                  <p>${desc}</p>
+                </div>
+              ` : ""}
               <div class="img-hero-container">
                 <img class="img-hero" src="${toDataUrl(photo)}" alt="${cap}" />
               </div>
-              <div class="room-caption">
-                <span class="room-name">${cap}</span>
-                ${roomMeta && roomMeta !== cap ? `<span class="room-meta">${esc(roomMeta)}</span>` : ""}
-              </div>
-              ${desc ? `
-                <div class="img-note">
-                  ${desc}
-                </div>
-              ` : ""}
+              ${photoDetailsStrip(photo)}
               <div class="page-footer">
                 <span class="footer-brand">DIREKTA<span class="accent">.</span></span>
-                <span class="footer-section">${esc(unit.label)} &middot; ${pIdx + 1}/${unit.photos.length}</span>
+                <span class="footer-section">${esc(unit.label)} &middot; Shot ${pIdx + 1}/${unit.photos.length}</span>
               </div>
             </div>
           `);
@@ -673,32 +653,38 @@ function buildExposeHtml(data: ExposeData): string {
       gallery.forEach((photo, idx) => {
         const cap = esc(photoCaption(photo));
         const desc = photo.description ? esc(photo.description) : "";
-        const roomMeta = ROOM_TYPE_DE[photo.roomType || "other"] || "";
+        const roomType = ROOM_TYPE_DE[photo.roomType || "other"] || "";
+        const isHero = idx === 0;
 
         sections.push(`
-          <div class="page content-page">
-            <div class="page-header">
-              <span class="header-brand">DIREKTA<span class="accent">.</span></span>
-              <span class="header-address">${esc(data.address)} &middot; ${esc(data.city)}</span>
+          <div class="page content-page shot-page">
+            <div class="shot-header">
+              <div class="shot-header__left">
+                <span class="shot-unit">${esc(data.titleShort)}</span>
+              </div>
+              <div class="shot-header__right">
+                ${isHero ? `<span class="shot-badge">HERO SHOT</span>` : ""}
+              </div>
             </div>
-            ${idx === 0 ? `
-              <div class="section-eyebrow">${num} &mdash; Eindr&uuml;cke</div>
+            <div class="shot-meta">
+              <span>${esc(data.propertyType)} &middot; ${fmtAreaShort(data.livingArea)}</span>
+              <span>Shot ${idx + 1} of ${gallery.length}</span>
+            </div>
+            <h2 class="shot-title">${cap}</h2>
+            ${roomType ? `<p class="shot-subtitle">${roomType}</p>` : ""}
+            ${desc ? `
+              <div class="shot-notes">
+                <span class="shot-notes__label">VISUAL NOTES</span>
+                <p>${desc}</p>
+              </div>
             ` : ""}
             <div class="img-hero-container">
               <img class="img-hero" src="${toDataUrl(photo)}" alt="${cap}" />
             </div>
-            <div class="room-caption">
-              <span class="room-name">${cap}</span>
-              ${roomMeta && roomMeta !== cap ? `<span class="room-meta">${esc(roomMeta)}</span>` : ""}
-            </div>
-            ${desc ? `
-              <div class="img-note">
-                ${desc}
-              </div>
-            ` : ""}
+            ${photoDetailsStrip(photo)}
             <div class="page-footer">
               <span class="footer-brand">DIREKTA<span class="accent">.</span></span>
-              <span class="footer-section">Eindr&uuml;cke &middot; ${idx + 1}/${gallery.length}</span>
+              <span class="footer-section">Eindr&uuml;cke &middot; Shot ${idx + 1}/${gallery.length}</span>
             </div>
           </div>
         `);
@@ -1327,6 +1313,37 @@ html::-webkit-scrollbar { display: none; }
   padding: 14px 16px;
   overflow: hidden;
 }
+
+/* ── Units Table ────────────────────────────────────────────── */
+.units-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 16px;
+  font-family: var(--sans);
+  font-size: 8.5pt;
+}
+.units-table thead th {
+  text-align: left;
+  font-size: 6.5pt;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  padding: 6px 8px 6px 0;
+  border-bottom: 1px solid var(--ink);
+}
+.units-table thead th:last-child { text-align: right; }
+.units-table tbody td {
+  padding: 8px 8px 8px 0;
+  border-bottom: 0.5px solid var(--line-soft);
+  color: var(--ink-soft);
+  vertical-align: top;
+}
+.units-table tbody td:last-child { text-align: right; }
+.units-table .unit-label {
+  font-weight: 600;
+  color: var(--ink);
+}
 .fact-row {
   display: flex;
   justify-content: space-between;
@@ -1346,10 +1363,8 @@ html::-webkit-scrollbar { display: none; }
   font-weight: 600;
   color: var(--ink);
   text-align: right;
-  max-width: 55%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
 }
 
 /* ── Eckdaten Panel ──────────────────────────────────────────── */
@@ -1629,51 +1644,111 @@ html::-webkit-scrollbar { display: none; }
 }
 
 /* ══════════════════════════════════════════════════════════════
-   PHOTO PAGES — individual image with caption + description
+   SHOT PAGES — brief-style photo layout
    ══════════════════════════════════════════════════════════════ */
-.img-hero-container {
-  width: 100%;
-  aspect-ratio: 3/2;
-  overflow: hidden;
-  margin-bottom: 16px;
-}
-.img-hero {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-.room-caption {
-  margin-bottom: 14px;
+.shot-page { padding-top: 16mm; }
+.shot-header {
   display: flex;
-  align-items: baseline;
-  gap: 12px;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 2px;
 }
-.room-name {
-  font-family: var(--serif);
-  font-size: 14pt;
-  font-weight: 400;
+.shot-unit {
+  font-family: var(--sans);
+  font-size: 12pt;
+  font-weight: 700;
   color: var(--ink);
 }
-.room-meta {
+.shot-badge {
+  font-family: var(--sans);
+  font-size: 7pt;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #e65100;
+}
+.shot-meta {
+  display: flex;
+  justify-content: space-between;
   font-family: var(--sans);
   font-size: 8pt;
+  color: var(--ink-faint);
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 0.5px solid var(--line-soft);
+}
+.shot-title {
+  font-family: var(--serif);
+  font-size: 22pt;
+  font-weight: 400;
+  color: var(--ink);
+  line-height: 1.1;
+  margin-bottom: 2px;
+}
+.shot-subtitle {
+  font-family: var(--serif);
+  font-size: 12pt;
+  font-style: italic;
+  color: var(--ink-soft);
+  margin-bottom: 8px;
+}
+.shot-notes {
+  margin-bottom: 10px;
+}
+.shot-notes__label {
+  display: block;
+  font-family: var(--sans);
+  font-size: 6.5pt;
+  font-weight: 700;
   letter-spacing: 0.15em;
   text-transform: uppercase;
   color: var(--gold);
+  margin-bottom: 3px;
 }
-.img-note {
-  background: #faf8f4;
-  border-left: 2px solid var(--gold);
-  padding: 14px 18px;
+.shot-notes p {
+  font-family: var(--sans);
+  font-size: 8.5pt;
+  color: var(--ink-soft);
+  line-height: 1.5;
+  margin: 0;
+}
+.img-hero-container {
+  width: 100%;
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+.img-hero {
+  width: 100%;
+  display: block;
+}
+.photo-details {
+  display: flex;
+  gap: 0;
+  border-top: 0.5px solid var(--line);
+  padding-top: 10px;
+  margin-bottom: 8px;
+}
+.photo-detail {
+  flex: 1;
+  padding-right: 14px;
+}
+.photo-detail__label {
+  display: block;
+  font-family: var(--sans);
+  font-size: 6pt;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--gold);
+  margin-bottom: 3px;
+}
+.photo-detail__value {
+  display: block;
+  font-family: var(--sans);
   font-size: 9pt;
-  color: #4a5260;
-  line-height: 1.55;
-  margin-top: 6px;
-}
-.img-note strong {
+  font-weight: 400;
   color: var(--ink);
-  font-weight: 600;
+  line-height: 1.3;
 }
 
 /* ══════════════════════════════════════════════════════════════

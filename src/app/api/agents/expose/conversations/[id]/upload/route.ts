@@ -231,7 +231,7 @@ export async function POST(
       });
       const newMem = rebuildMemory(refreshed?.turns ?? []);
       const photoCount = newMem.uploads.filter((u) => u.kind === "PHOTO" && !u.unitLabel).length;
-      const hasMinPhotos = photoCount >= 6;
+      const hasMinPhotos = photoCount >= 1;
       const allFieldsReady = !!(newMem.type && newMem.street && newMem.houseNumber && newMem.postcode && newMem.city && newMem.livingArea && newMem.condition);
       return NextResponse.json({
         ok: true,

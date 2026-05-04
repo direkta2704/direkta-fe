@@ -49,10 +49,9 @@ export async function POST(
       return NextResponse.json({ error: "Kein Entwurf vorhanden" }, { status: 412 });
     }
 
-    // Photos: F-M1-04 / rubric requires ≥6 — already enforced by rubric, but double-check
     const photoCount = memory.uploads.filter((u) => u.kind === "PHOTO").length;
-    if (photoCount < 6) {
-      return NextResponse.json({ error: `Nur ${photoCount} Fotos vorhanden (Soll: ≥6)` }, { status: 412 });
+    if (photoCount < 1) {
+      return NextResponse.json({ error: "Mindestens 1 Foto erforderlich" }, { status: 412 });
     }
 
     const citySlug = memory.city!.toLowerCase().replace(/[^a-z0-9]+/g, "-");

@@ -685,7 +685,7 @@ export default function ExposeAgentPage() {
                 !memory?.street ? "z.B. Marktstraße 12" :
                 !memory?.livingArea ? "z.B. 250" :
                 !memory?.condition ? "z.B. Gepflegt" :
-                photoCount < 6 ? "Fotos mit dem 📷-Button links hochladen oder Nachricht eingeben..." :
+                photoCount < 1 ? "Fotos mit dem 📷-Button links hochladen oder Nachricht eingeben..." :
                 "Ihre Antwort eingeben..."
               }
               disabled={loading}

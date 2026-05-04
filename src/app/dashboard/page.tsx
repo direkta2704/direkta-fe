@@ -76,7 +76,7 @@ export default async function DashboardPage() {
   const hasPhotos = properties.some(
     (p) => p.media.length > 0 && p.listings.length > 0
   );
-  const photosComplete = properties.some((p) => p.media.length >= 6);
+  const photosComplete = properties.some((p) => p.media.length >= 1);
   const hasEnergy = properties.some((p) => p.energyCert !== null);
   const hasPublished = activeListings > 0;
   const hasPortal = portalCredentials > 0;
@@ -301,7 +301,7 @@ export default async function DashboardPage() {
             <div className="space-y-4">
               <ChecklistItem done label="Konto erstellt" />
               <ChecklistItem done={totalProperties > 0} label="Immobilie hinzufügen" href="/dashboard/properties/new" />
-              <ChecklistItem done={photosComplete} label="Fotos hochladen (mind. 6)" />
+              <ChecklistItem done={photosComplete} label="Fotos hochladen" />
               <ChecklistItem done={hasEnergy} label="Energieausweis hochladen" />
               <ChecklistItem done={hasPublished} label="Inserat veröffentlichen" href="/dashboard/listings" />
               <ChecklistItem done={hasPortal} label="ImmobilienScout24 verbinden" href="/dashboard/syndication" />

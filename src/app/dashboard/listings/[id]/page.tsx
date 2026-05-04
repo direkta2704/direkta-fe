@@ -206,7 +206,7 @@ export default function ListingDetailPage() {
 
   const photos = listing.property.media.filter((m) => m.kind === "PHOTO");
   const hasEnergy = !!listing.property.energyCert;
-  const hasMinPhotos = photos.length >= 6;
+  const hasMinPhotos = photos.length >= 1;
   const hasDescription = !!descriptionLong;
   const hasPrice = !!askingPrice && parseFloat(askingPrice) > 0;
   const canPublish = hasEnergy && hasMinPhotos && hasDescription && hasPrice;
@@ -607,7 +607,7 @@ export default function ListingDetailPage() {
           <h2 className="text-lg font-black text-blueprint mb-4">Veröffentlichungs-Check</h2>
           <div className="space-y-3">
             <CheckItem ok={hasEnergy} label="Energieausweis vorhanden" />
-            <CheckItem ok={hasMinPhotos} label={`Mindestens 6 Fotos (${photos.length}/6)`} />
+            <CheckItem ok={hasMinPhotos} label={`Fotos vorhanden (${photos.length})`} />
             <CheckItem ok={hasDescription} label="Beschreibung vorhanden" />
             <CheckItem ok={hasPrice} label="Angebotspreis festgelegt" />
           </div>

@@ -82,6 +82,8 @@ export interface PhotoClassification {
   suggestion?: string;      // improvement hint for the seller
   caption?: string;         // room name for exposé (e.g. "Wohn-/Essbereich mit Küchenanschlüssen")
   description?: string;     // 2-3 sentence exposé description of what's visible
+  lighting?: string;        // e.g. "Nachmittagslicht", "Neutrales Tageslicht"
+  estimatedArea?: number;   // estimated room area in m² (from visual cues)
 }
 
 export interface PhotoUpload {
@@ -386,7 +388,7 @@ const FIELD_PRIORITY: FieldSpec[] = [
   { field: "energyValue",  group: "energy", blocksPricing: false, blocksPublish: true,  infoValue: 0.5, optional: false, isFilled: wm => !wm.hasEnergyCert || wm.energyValue != null, prompt: "Wie hoch ist der Energieverbrauch in kWh/(m²·a)?" },
   { field: "energySource", group: "energy", blocksPricing: false, blocksPublish: true,  infoValue: 0.5, optional: false, isFilled: wm => !wm.hasEnergyCert || !!wm.energySource, prompt: "Was ist der wesentliche Energieträger? (Gas, Öl, Fernwärme, …)" },
   // ── media: uploads + enrichment, last group ──
-  { field: "photos",        group: "media", blocksPricing: false, blocksPublish: true,  infoValue: 0.5, optional: false, isFilled: wm => wm.uploads.filter(u => u.kind === "PHOTO").length >= 6, prompt: "Bitte laden Sie mindestens 6 Fotos hoch. Nutzen Sie den 📷-Button links unten." },
+  { field: "photos",        group: "media", blocksPricing: false, blocksPublish: true,  infoValue: 0.5, optional: false, isFilled: wm => wm.uploads.filter(u => u.kind === "PHOTO").length >= 1, prompt: "Bitte laden Sie Fotos hoch. Nutzen Sie den 📷-Button links unten." },
   { field: "floorPlan",     group: "media", blocksPricing: false, blocksPublish: false, infoValue: 0.6, optional: true,  isFilled: wm => wm.hasFloorPlan || wm.uploads.some(u => u.kind === "FLOORPLAN"), prompt: "Haben Sie einen Grundriss? Nutzen Sie den 📐-Button." },
   { field: "roomProgram",   group: "media", blocksPricing: false, blocksPublish: false, infoValue: 0.3, optional: true,  isFilled: wm => wm.roomProgram.length > 0, prompt: "Möchten Sie die einzelnen Räume mit Größe angeben? Z.B. Wohnzimmer 25m², Küche 12m²" },
   { field: "sellerContact", group: "media", blocksPricing: false, blocksPublish: false, infoValue: 0.3, optional: true,  isFilled: wm => !!(wm.sellerContact?.name || wm.sellerContact?.company || wm.sellerContact?.phone || wm.sellerContact?.email), prompt: "Welche Kontaktdaten sollen im Exposé stehen? (Name, Telefon, E-Mail)" },
@@ -398,7 +400,7 @@ export function nextQuestion(wm: WorkingMemory): QuestionResult {
   const photoCount = wm.uploads.filter(u => u.kind === "PHOTO").length;
   const ready = isReadyForDraft(wm);
 
-  if (ready && photoCount >= 6 && !wm.priceBand) return { action: "trigger_pricing", priority: 100 };
+  if (ready && photoCount >= 1 && !wm.priceBand) return { action: "trigger_pricing", priority: 100 };
   if (wm.priceBand && !wm.draft) return { action: "trigger_draft", priority: 100 };
   if (wm.draft && wm.lastRubric?.passed) return { action: "wait_confirm", priority: 100 };
 
@@ -439,13 +441,13 @@ export function completenessScore(wm: WorkingMemory): number {
     [wm.yearBuilt != null, 4],
     [!!wm.condition, 6],
     [wm.hasEnergyCert !== null && (wm.hasEnergyCert === false || !!(wm.energyClass && wm.energyValue && wm.energySource)), 10],
-    [wm.uploads.filter(u => u.kind === "PHOTO").length >= 6, 20],
+    [wm.uploads.filter(u => u.kind === "PHOTO").length >= 1, 20],
     [wm.uploads.some(u => u.kind === "FLOORPLAN") || wm.hasFloorPlan, 6],
     [!!wm.priceBand, 10],
     [!!wm.draft, 10],
   ];
   const photoCount = wm.uploads.filter(u => u.kind === "PHOTO").length;
-  const photoPartial = Math.min(photoCount / 6, 1) * 20;
+  const photoPartial = Math.min(photoCount / 1, 1) * 20;
   let score = 0;
   for (const [filled, weight] of weights) {
     if (weight === 20) { score += photoPartial; continue; } // photos: partial credit
@@ -735,7 +737,9 @@ async function tool_photoAnalyse(memory: WorkingMemory, photoIndex: number): Pro
   "features": Array erkannter Merkmale z.B. ["einbaukueche", "parkettboden", "balkon", "dachschraege", "kamin", "fussbodenheizung", "garten", "terrasse", "garage", "aufzug", "neubau", "altbau"],
   "suggestion": kurzer Verbesserungshinweis für den Verkäufer (nur wenn qualityScore < 70, sonst null),
   "caption": präziser Raumname für das Exposé, z.B. "Wohn-/Essbereich mit Küchenanschlüssen", "Schlafzimmer mit Blick zur Ankleide", "Bad mit bodengleicher Dusche", "Fassade Straßenseite",
-  "description": 2-3 Sätze für ein hochwertiges Immobilienexposé. Beschreibe sachlich was im Foto sichtbar ist: Materialien, Oberflächen, Raumgefühl, Lichtverhältnisse, besondere Merkmale. Stil: professionell, wertschätzend, konkret. Beispiel: "Großformat-Feinsteinzeug 60 × 120 cm in warmem Sandton an Boden und Duschnische — perfekte Fugenführung. Alle Anschlüsse für WC, bodengleiche Dusche und Waschtisch sind fachgerecht gesetzt."
+  "description": 2-3 Sätze für ein hochwertiges Immobilienexposé. Beschreibe sachlich was im Foto sichtbar ist: Materialien, Oberflächen, Raumgefühl, Lichtverhältnisse, besondere Merkmale. Stil: professionell, wertschätzend, konkret.,
+  "lighting": Lichtverhältnisse im Foto, z.B. "Weiches Vormittagslicht", "Neutrales Tageslicht", "Späte Nachmittagssonne", "Kunstlicht", "Diffuses Nordlicht",
+  "estimatedArea": geschätzte Raumfläche in m² basierend auf visuellen Hinweisen (Türgröße ~2m als Referenz). Nur bei Innenräumen, null bei Außenaufnahmen.
 }
 Regeln:
 - "floorplan" NUR wenn das Bild ein technischer Grundriss/Bauplan ist.
@@ -802,10 +806,12 @@ Regeln:
   const suggestion = typeof parsed.suggestion === "string" ? parsed.suggestion : undefined;
   const caption = typeof parsed.caption === "string" ? parsed.caption : undefined;
   const description = typeof parsed.description === "string" ? parsed.description : undefined;
+  const lighting = typeof parsed.lighting === "string" ? parsed.lighting : undefined;
+  const estimatedArea = typeof parsed.estimatedArea === "number" ? parsed.estimatedArea : undefined;
 
   return {
     ok: true,
-    classification: { roomType, qualityFlags, qualityScore, features, suggestion, caption, description },
+    classification: { roomType, qualityFlags, qualityScore, features, suggestion, caption, description, lighting, estimatedArea },
     costCents,
     index: photoIndex,
   };
@@ -1218,20 +1224,11 @@ export async function runRubric(m: WorkingMemory): Promise<{ result: RubricResul
     if (!supDetails.ok) failures.push(`Verbotene Superlative: ${found.join(", ")}`);
   }
 
-  // 5. Photos: ≥6, AND ≥1 non-interior photo OR floorplan.
-  // "Non-interior" = any classification that isn't a room inside the property.
-  // This catches exterior, garden, garage, balcony, other, floorplan — all provide
-  // building context that pure interior shots don't. Avoids false negatives from
-  // classifier labeling a street view as "garden" due to visible trees.
-  const INTERIOR_TYPES = new Set(["living", "kitchen", "bathroom", "bedroom", "office", "hallway", "basement"]);
+  // 5. Photos: ≥1
   const photos = m.uploads.filter((u) => u.kind === "PHOTO" || u.kind === "FLOORPLAN");
   const photoCount = photos.length;
-  const hasNonInteriorOrFloorplan =
-    photos.some((u) => u.kind === "FLOORPLAN") ||
-    photos.some((u) => u.classification?.roomType && !INTERIOR_TYPES.has(u.classification.roomType));
-  const photosOk = photoCount >= 6 && hasNonInteriorOrFloorplan;
-  if (photoCount < 6) failures.push(`Nur ${photoCount} Fotos hochgeladen (Soll: ≥6)`);
-  else if (!hasNonInteriorOrFloorplan) failures.push("Mindestens ein Außenfoto oder Grundriss fehlt");
+  const photosOk = photoCount >= 1;
+  if (photoCount < 1) failures.push("Mindestens 1 Foto erforderlich");
 
   // 6. Asking price within band, OR explicit override
   let priceOk = true;
@@ -1288,9 +1285,7 @@ export function rubricFailureToQuestions(rubric: RubricResult, wm?: WorkingMemor
     questions.push(`Der Text enthält unzulässige Superlative (${rubric.details.noSuperlatives.found.join(", ")}). Soll ich diese ersetzen?`);
   }
   if (!rubric.details.photos.ok) {
-    const c = rubric.details.photos.count || 0;
-    if (c < 6) questions.push(`Es fehlen noch ${6 - c} Fotos (mindestens 6 benötigt). Bitte laden Sie weitere Fotos über den 📷-Button hoch.`);
-    else questions.push("Mindestens ein Außenfoto oder Grundriss wird benötigt. Bitte laden Sie ein Foto vom Gebäude von außen hoch — z.B. Fassade, Eingang oder Straßenansicht.");
+    questions.push("Bitte laden Sie mindestens ein Foto hoch. Nutzen Sie den 📷-Button links unten.");
   }
   if (!rubric.details.priceInBand.ok && wm) {
     const price = wm.askingPrice ? wm.askingPrice.toLocaleString("de-DE") : "?";
@@ -1597,7 +1592,7 @@ function derivePhase(m: WorkingMemory): WorkingMemory["phase"] {
   if (!m.street || !m.city) return "basics";
   if (!m.livingArea || !m.condition) return "details";
   if (m.hasEnergyCert === null) return "energy";
-  if (m.uploads.filter((u) => u.kind === "PHOTO").length < 6) return "photos";
+  if (m.uploads.filter((u) => u.kind === "PHOTO").length < 1) return "photos";
   if (!m.draft) return "draft";
   return "confirm";
 }
@@ -1643,7 +1638,7 @@ WICHTIG FÜR MFH: Frage nach Einheiten und Verkaufsart BEVOR du nach Fotos frags
 
 Rufe Tools SOFORT auf — frage NICHT erst um Erlaubnis:
 • address_validate → wenn Adresse komplett im Memory
-• pricing_recommend → wenn ALLE Pflichtfelder gesetzt (Typ, Adresse, Fläche, Zustand) UND ≥6 Fotos hochgeladen
+• pricing_recommend → wenn ALLE Pflichtfelder gesetzt (Typ, Adresse, Fläche, Zustand) UND Fotos hochgeladen
 • listing_draft → SOFORT nach erfolgreichem pricing_recommend
 • listing_review → SOFORT nach listing_draft
 • handoff_commit → NUR wenn rubric bestanden UND Verkäufer "ja" sagt
@@ -1661,14 +1656,14 @@ NACH FOTO-UPLOAD:
 NACH GRUNDRISS-UPLOAD:
 - "Grundriss erhalten! ✓"
 - Wenn Energieausweis fehlt: "Jetzt fehlt noch der Energieausweis. Nutzen Sie den ⚡-Button, oder teilen Sie mir die Daten mit (Typ, Klasse, Verbrauch, Energieträger)."
-- Wenn Fotos < 6: "Es fehlen noch Fotos (mindestens 6). Nutzen Sie den 📷-Button."
+- Wenn keine Fotos: "Bitte laden Sie Fotos hoch. Nutzen Sie den 📷-Button."
 
 NACH ENERGIEAUSWEIS-UPLOAD:
 - Prüfe die erkannten Werte im Memory: "Energieausweis erkannt: [Typ], Klasse [X], [Y] kWh/(m²·a). Stimmt das?"
 - Wenn Werte fehlen: "Einige Werte konnten nicht ausgelesen werden. Bitte ergänzen Sie: [fehlende Felder]"
 
 AUTOMATISCHE PIPELINE:
-Wenn ≥6 Fotos im Memory UND alle Pflichtfelder gesetzt:
+Wenn Fotos im Memory UND alle Pflichtfelder gesetzt:
 → Rufe SOFORT pricing_recommend auf
 → Dann listing_draft
 → Dann listing_review
@@ -1746,7 +1741,7 @@ MFH-INTELLIGENZ:
 ═══ FOTO-ANLEITUNG ═══
 
 Wenn Fotos fehlen, weise auf die Buttons links unten hin UND gib konkrete Foto-Tipps:
-📷 Foto-Button — für Fotos (mind. 6)
+📷 Foto-Button — für Fotos
 ⚡ Energie-Button — für Energieausweis-PDF
 📐 Grundriss-Button — für Grundriss-PDF
 

@@ -48,6 +48,8 @@ interface Classification {
   features: string[];
   caption: string;
   description: string;
+  lighting: string | null;
+  estimatedArea: number | null;
   suggestion: string | null;
 }
 
@@ -69,6 +71,8 @@ async function analyzePhoto(imageBuffer: Buffer): Promise<Classification | null>
   "features": Array erkannter Merkmale z.B. ["einbaukueche", "parkettboden", "balkon", "dachschraege"],
   "caption": präziser Raumname für das Exposé, z.B. "Wohn-/Essbereich mit Küchenanschlüssen", "Schlafzimmer mit Blick zur Ankleide", "Bad mit bodengleicher Dusche", "Fassade Straßenseite",
   "description": 2-3 Sätze für ein hochwertiges Immobilienexposé. Beschreibe sachlich was im Foto sichtbar ist: Materialien, Oberflächen, Raumgefühl, Lichtverhältnisse, besondere Merkmale. Stil: professionell, wertschätzend, konkret.,
+  "lighting": Lichtverhältnisse, z.B. "Weiches Vormittagslicht", "Neutrales Tageslicht", "Späte Nachmittagssonne",
+  "estimatedArea": geschätzte Raumfläche in m² (Türgröße ~2m als Referenz). Nur bei Innenräumen, null bei Außenaufnahmen.,
   "suggestion": kurzer Verbesserungshinweis (nur wenn qualityScore < 70, sonst null)
 }
 Regeln:
@@ -117,6 +121,8 @@ Regeln:
       features: Array.isArray(parsed.features) ? parsed.features : [],
       caption: typeof parsed.caption === "string" ? parsed.caption : "",
       description: typeof parsed.description === "string" ? parsed.description : "",
+      lighting: typeof parsed.lighting === "string" ? parsed.lighting : null,
+      estimatedArea: typeof parsed.estimatedArea === "number" ? parsed.estimatedArea : null,
       suggestion: typeof parsed.suggestion === "string" ? parsed.suggestion : null,
     };
   } catch {

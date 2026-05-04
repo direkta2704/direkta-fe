@@ -130,13 +130,15 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     for (const m of photoMedia) {
       const data = await loadMediaBytes(m.storageKey, m.mimeType);
       if (data) {
-        const cls = m.classification as { roomType?: string; caption?: string; description?: string; features?: string[] } | null;
+        const cls = m.classification as { roomType?: string; caption?: string; description?: string; features?: string[]; lighting?: string; estimatedArea?: number } | null;
         photos.push({
           ...data,
           roomType: cls?.roomType,
           caption: cls?.caption,
           description: cls?.description,
           features: cls?.features,
+          lighting: cls?.lighting,
+          estimatedArea: cls?.estimatedArea,
         });
       }
     }
@@ -165,8 +167,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
         for (const m of unit.media.filter((m) => m.kind === "PHOTO")) {
           const d = await loadMediaBytes(m.storageKey, m.mimeType);
           if (d) {
-            const cls = m.classification as { roomType?: string; caption?: string; description?: string; features?: string[] } | null;
-            uPhotos.push({ ...d, roomType: cls?.roomType, caption: cls?.caption, description: cls?.description, features: cls?.features });
+            const cls = m.classification as { roomType?: string; caption?: string; description?: string; features?: string[]; lighting?: string; estimatedArea?: number } | null;
+            uPhotos.push({ ...d, roomType: cls?.roomType, caption: cls?.caption, description: cls?.description, features: cls?.features, lighting: cls?.lighting, estimatedArea: cls?.estimatedArea });
           }
         }
         const uFP: ExposePhoto[] = [];
