@@ -99,25 +99,20 @@ export async function POST(
     let height: number | undefined;
 
     if (file.type.startsWith("image/")) {
-      const image = sharp(rawBuffer).rotate(); // EXIF-based rotation correction
+      const image = sharp(rawBuffer).rotate().withIccProfile("srgb");
       const meta = await image.metadata();
       const maxDim = kind === "FLOORPLAN" ? 2400 : 1920;
       const needsResize = (meta.width && meta.width > maxDim) || (meta.height && meta.height > maxDim);
-      let pipeline = needsResize
+      const pipeline = needsResize
         ? image.resize({ width: maxDim, height: maxDim, fit: "inside", withoutEnlargement: true })
         : image;
-
-      if (kind === "PHOTO") {
-        pipeline = pipeline
-          .sharpen({ sigma: 0.8 });
-      }
 
       if (kind === "FLOORPLAN" && meta.format === "png") {
         finalBuffer = (await pipeline.png({ quality: 85, compressionLevel: 9 }).toBuffer()) as Buffer;
         finalExt = "png";
         finalMime = "image/png";
       } else {
-        finalBuffer = (await pipeline.jpeg({ quality: 82, mozjpeg: true }).toBuffer()) as Buffer;
+        finalBuffer = (await pipeline.jpeg({ quality: 90, mozjpeg: true }).toBuffer()) as Buffer;
         finalExt = "jpg";
         finalMime = "image/jpeg";
       }
