@@ -115,6 +115,70 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     if (!listing) return new Response("Not found", { status: 404 });
 
     const p = listing.property;
+
+    let lat = p.lat;
+    let lng = p.lng;
+    if (!lat || !lng) {
+      const cityLower = p.city.toLowerCase().split("-")[0].trim();
+      const streetLower = p.street.toLowerCase();
+      const queries = [
+        { q: `${p.street} ${p.houseNumber} ${p.postcode} ${p.city}`, checkStreet: true },
+        { q: `${p.street} ${p.city}`, checkStreet: true },
+        { q: `${p.city} Rathaus`, checkStreet: false },
+        { q: `${p.postcode} ${p.city}`, checkStreet: false },
+      ];
+      for (const { q, checkStreet } of queries) {
+        try {
+          const res = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=3&lang=de`, {
+            headers: { "User-Agent": "Direkta/1.0" },
+          });
+          if (!res.ok) continue;
+          const geo = await res.json();
+          for (const feat of geo.features || []) {
+            const props = feat.properties || {};
+            const resultCity = (props.city || "").toLowerCase();
+            const resultStreet = (props.street || "").toLowerCase();
+            if (!resultCity.includes(cityLower) && !cityLower.includes(resultCity)) continue;
+            if (checkStreet && !resultStreet.includes(streetLower)) continue;
+            if (feat.geometry?.coordinates) {
+              lng = feat.geometry.coordinates[0];
+              lat = feat.geometry.coordinates[1];
+              await prisma.property.update({ where: { id: p.id }, data: { lat, lng } });
+              break;
+            }
+          }
+          if (lat && lng) break;
+        } catch { /* try next */ }
+      }
+    }
+    let mapImageBase64: string | undefined;
+    if (lat && lng) {
+      try {
+        const mapHtml = `<!DOCTYPE html><html><head>
+          <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+          <style>*{margin:0;padding:0}html,body,#map{width:100%;height:100%}</style>
+        </head><body><div id="map"></div>
+        <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"><\/script>
+        <script>
+          var map=L.map('map',{zoomControl:false,attributionControl:false}).setView([${lat},${lng}],15);
+          L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+          L.marker([${lat},${lng}]).addTo(map);
+        <\/script></body></html>`;
+        const mapBrowser = await puppeteer.launch({ headless: true, args: ["--no-sandbox", "--disable-setuid-sandbox"] });
+        try {
+          const mapPage = await mapBrowser.newPage();
+          await mapPage.setViewport({ width: 800, height: 400 });
+          await mapPage.setContent(mapHtml, { waitUntil: "networkidle0", timeout: 20000 });
+          await new Promise(r => setTimeout(r, 1000));
+          const screenshot = await mapPage.screenshot({ type: "png" });
+          mapImageBase64 = `data:image/png;base64,${Buffer.from(screenshot).toString("base64")}`;
+        } finally {
+          await mapBrowser.close();
+        }
+      } catch (e) {
+        console.error("Map render failed:", e);
+      }
+    }
     const TYPES_DE: Record<string, string> = {
       ETW: "Eigentumswohnung", EFH: "Einfamilienhaus", MFH: "Mehrfamilienhaus",
       DHH: "Doppelhaushälfte", RH: "Reihenhaus", GRUNDSTUECK: "Grundstück",
@@ -258,6 +322,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       units: unitData,
       specifications: p.specifications && typeof p.specifications === "object" && !Array.isArray(p.specifications) ? (p.specifications as Record<string, string>) : undefined,
       buildingDescription: listing.buildingDescription || undefined,
+      lat: lat || undefined,
+      lng: lng || undefined,
+      mapImage: mapImageBase64,
     });
 
     const fn = p.unitLabel

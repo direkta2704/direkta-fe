@@ -57,6 +57,9 @@ export interface ExposeData {
   units?: ExposeUnit[];
   specifications?: Record<string, string>;
   buildingDescription?: string;
+  lat?: number;
+  lng?: number;
+  mapImage?: string;
 }
 
 // ── Grunderwerbsteuer helper ─────────────────────────────────────────
@@ -482,6 +485,10 @@ function buildExposeHtml(data: ExposeData): string {
         `).join("")}</div>`
       : "";
 
+    const mapHtml = data.mapImage
+      ? `<div class="location-map"><img src="${data.mapImage}" alt="Standort" class="location-map__img" /></div>`
+      : "";
+
     sections.push(`
       <div class="page content-page">
         <div class="page-header">
@@ -494,6 +501,7 @@ function buildExposeHtml(data: ExposeData): string {
         <p class="lead-text">${esc(leadPara)}</p>
         ${plainHtml}
         ${catHtml}
+        ${mapHtml}
         <div class="page-footer">
           <span class="footer-brand">DIREKTA<span class="accent">.</span></span>
           <span class="footer-section">Lage</span>
@@ -1530,6 +1538,16 @@ html::-webkit-scrollbar { display: none; }
   font-size: 9pt;
   color: var(--ink-soft);
   line-height: 1.55;
+}
+.location-map {
+  margin-top: 14px;
+  border: 0.5px solid var(--line);
+  overflow: hidden;
+}
+.location-map__img {
+  width: 100%;
+  height: auto;
+  display: block;
 }
 
 /* ══════════════════════════════════════════════════════════════
