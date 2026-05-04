@@ -270,7 +270,9 @@ export default function PropertyDetailPage() {
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = `Expose_${property?.street || ""}_${property?.houseNumber || ""}.pdf`;
+        a.download = property?.unitLabel
+          ? `Expose_${property.unitLabel.replace(/\s+/g, "_")}.pdf`
+          : `Expose_${property?.street || ""}_${property?.houseNumber || ""}_${property?.city || ""}.pdf`.replace(/\s+/g, "_");
         a.click();
         URL.revokeObjectURL(url);
       } else {

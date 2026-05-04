@@ -260,7 +260,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       buildingDescription: listing.buildingDescription || undefined,
     });
 
-    const fn = `Expose_${p.street}_${p.houseNumber}_${p.city}.pdf`.replace(/\s+/g, "_");
+    const fn = p.unitLabel
+      ? `Expose_${p.unitLabel}.pdf`.replace(/\s+/g, "_")
+      : `Expose_${p.street}_${p.houseNumber}_${p.city}.pdf`.replace(/\s+/g, "_");
     const url = new URL(req.url);
     const inline = url.searchParams.get("inline") === "1";
 
