@@ -42,6 +42,7 @@ export interface ExposeData {
   attributes: string[];
   photos: ExposePhoto[];
   floorPlans?: ExposePhoto[];
+  coverPhoto?: ExposePhoto;
   generatedAt: string;
   postcode?: string;
   contact?: { name?: string; email?: string; phone?: string };
@@ -177,7 +178,8 @@ function buildExposeHtml(data: ExposeData): string {
 
   // ────────────────────────────── COVER PAGE
   {
-    const heroUrl = data.photos.length > 0 ? toDataUrl(data.photos[0]) : "";
+    const heroUrl = data.coverPhoto ? toDataUrl(data.coverPhoto) : "";
+    const isTypoCover = !heroUrl;
     const streetAddress = data.address.split(",")[0].trim();
     const coverTitle = esc(streetAddress);
     const coverSub = data.exposeHeadline
@@ -217,26 +219,53 @@ function buildExposeHtml(data: ExposeData): string {
       ? `<div class="cover-badge">${esc(data.condition)}</div>`
       : "";
 
-    sections.push(`
-      <div class="page cover-page">
-        ${heroUrl ? `<img class="cover-hero" src="${heroUrl}" alt="" />` : `<div class="cover-hero cover-hero--placeholder"></div>`}
-        <div class="cover-gradient-top"></div>
-        <div class="cover-gradient-bottom"></div>
-        <div class="cover-brand">DIREKTA &middot; Verkauf</div>
-        ${conditionBadge}
-        <div class="cover-content">
-          <div class="cover-eyebrow">${eyebrow}</div>
-          <h1 class="cover-title">${coverTitle}</h1>
-          <p class="cover-subtitle">${coverSub}</p>
-          <div class="cover-address">${esc(streetAddress)} &middot; ${esc(data.postcode || "")} ${esc(data.city)}</div>
-          <div class="cover-facts">${factsHtml}</div>
-        </div>
+    const addressLine = `${esc(streetAddress)} &middot; ${esc(data.postcode || "")} ${esc(data.city)}`;
+    const coverFooterHtml = `
         <div class="cover-footer">
           <span>Expos&eacute; &middot; Stand ${esc(data.generatedAt)}</span>
           <span>www.direkta.de</span>
+        </div>`;
+
+    if (isTypoCover) {
+      const localityLine = data.postcode
+        ? `${esc(data.postcode)} ${esc(data.city)}`
+        : esc(data.city);
+      sections.push(`
+        <div class="page cover-page cover-page--typo">
+          <div class="cover-brand">DIREKTA &middot; Verkauf</div>
+          ${conditionBadge}
+          <div class="cover-typo-mark">
+            <div class="cover-typo-eyebrow">${eyebrow}</div>
+            <h1 class="cover-typo-address">${coverTitle}</h1>
+            <div class="cover-typo-rule"></div>
+          </div>
+          <div class="cover-content">
+            <p class="cover-subtitle">${coverSub}</p>
+            <div class="cover-address">${localityLine}</div>
+            <div class="cover-facts">${factsHtml}</div>
+          </div>
+          ${coverFooterHtml}
         </div>
-      </div>
-    `);
+      `);
+    } else {
+      sections.push(`
+        <div class="page cover-page">
+          <img class="cover-hero" src="${heroUrl}" alt="" />
+          <div class="cover-gradient-top"></div>
+          <div class="cover-gradient-bottom"></div>
+          <div class="cover-brand">DIREKTA &middot; Verkauf</div>
+          ${conditionBadge}
+          <div class="cover-content">
+            <div class="cover-eyebrow">${eyebrow}</div>
+            <h1 class="cover-title">${coverTitle}</h1>
+            <p class="cover-subtitle">${coverSub}</p>
+            <div class="cover-address">${addressLine}</div>
+            <div class="cover-facts">${factsHtml}</div>
+          </div>
+          ${coverFooterHtml}
+        </div>
+      `);
+    }
   }
 
   // ────────────────────────────── AUF EINEN BLICK
@@ -266,10 +295,6 @@ function buildExposeHtml(data: ExposeData): string {
       value: isBundle
         ? `${fmtPriceEuro(data.askingPrice)} (Paket)`
         : fmtPriceEuro(data.askingPrice),
-    });
-    if (data.priceBand) factRows.push({
-      label: "Preisempfehlung",
-      value: `${fmtPriceEuro(data.priceBand.low)} – ${fmtPriceEuro(data.priceBand.high)} (${esc(data.priceBand.confidence)})`,
     });
 
     const factsRowsHtml = factRows.map(r => `
@@ -303,19 +328,23 @@ function buildExposeHtml(data: ExposeData): string {
           <table class="units-table">
             <thead>
               <tr>
-                <th>APARTMENT</th>
-                <th>LAYOUT</th>
-                <th>AREA</th>
-                <th>PERSONA</th>
-                <th>SHOTS</th>
+                <th>EINHEIT</th>
+                <th>ZIMMER</th>
+                <th>B&Auml;DER</th>
+                <th>ETAGE</th>
+                <th>WOHNFL&Auml;CHE</th>
+                <th>BESCHREIBUNG</th>
+                <th>FOTOS</th>
               </tr>
             </thead>
             <tbody>
               ${data.units.map(u => `
                 <tr>
                   <td class="unit-label">${esc(u.label)}</td>
-                  <td>${u.rooms ? `${u.rooms} Zi.` : ""}</td>
-                  <td>${fmtAreaShort(u.livingArea)}</td>
+                  <td>${u.rooms ? String(u.rooms) : ""}</td>
+                  <td>${u.bathrooms ? String(u.bathrooms) : ""}</td>
+                  <td>${u.floor != null ? floorLabel(u.floor) : ""}</td>
+                  <td>${fmtArea(u.livingArea)}</td>
                   <td>${esc(u.titleShort || "")}</td>
                   <td>${u.photos.length}</td>
                 </tr>
@@ -645,7 +674,7 @@ function buildExposeHtml(data: ExposeData): string {
 
   // ────────────────────────────── PHOTOS (individual pages per photo)
   {
-    const gallery = data.photos.slice(1);
+    const gallery = data.photos;
     if (gallery.length > 0) {
       sectionIdx++;
       const num = String(sectionIdx).padStart(2, "0");
@@ -1272,6 +1301,44 @@ html::-webkit-scrollbar { display: none; }
   font-size: 7pt;
   color: rgba(255,255,255,0.35);
   z-index: 2;
+}
+
+/* ── Typography-only cover (no exterior photo available) ─── */
+.cover-page--typo {
+  background: var(--ink);
+}
+.cover-typo-mark {
+  position: absolute;
+  top: 60mm;
+  left: 16mm;
+  right: 16mm;
+  z-index: 2;
+}
+.cover-typo-eyebrow {
+  font-family: var(--sans);
+  font-size: 9pt;
+  font-weight: 600;
+  color: var(--gold);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin-bottom: 14px;
+}
+.cover-typo-address {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 72pt;
+  font-weight: 300;
+  color: rgba(255,255,255,0.95);
+  line-height: 1.05;
+  letter-spacing: 0.005em;
+  margin: 0 0 22px 0;
+  max-width: 178mm;
+  word-break: break-word;
+}
+.cover-typo-rule {
+  width: 40mm;
+  height: 1.5px;
+  background: var(--gold);
 }
 
 /* ══════════════════════════════════════════════════════════════

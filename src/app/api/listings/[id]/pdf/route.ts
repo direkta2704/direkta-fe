@@ -126,12 +126,13 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     };
 
     const photoMedia = p.media.filter((m) => m.kind === "PHOTO");
-    const photos: ExposePhoto[] = [];
+    const allPhotos: ExposePhoto[] = [];
+    const allScores: number[] = [];
     for (const m of photoMedia) {
       const data = await loadMediaBytes(m.storageKey, m.mimeType);
       if (data) {
-        const cls = m.classification as { roomType?: string; caption?: string; description?: string; features?: string[]; lighting?: string; estimatedArea?: number } | null;
-        photos.push({
+        const cls = m.classification as { roomType?: string; caption?: string; description?: string; features?: string[]; lighting?: string; estimatedArea?: number; qualityScore?: number } | null;
+        allPhotos.push({
           ...data,
           roomType: cls?.roomType,
           caption: cls?.caption,
@@ -140,8 +141,25 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
           lighting: cls?.lighting,
           estimatedArea: cls?.estimatedArea,
         });
+        allScores.push(typeof cls?.qualityScore === "number" ? cls.qualityScore : 0);
       }
     }
+
+    // Pick the highest-scoring exterior shot for the cover; fall back to a
+    // typography-only cover when no exterior is detected (avoids putting
+    // an empty room or interior on the front of the brochure).
+    let coverIdx = -1;
+    let bestScore = -1;
+    allPhotos.forEach((ph, i) => {
+      if (ph.roomType === "exterior" && allScores[i] > bestScore) {
+        bestScore = allScores[i];
+        coverIdx = i;
+      }
+    });
+    const coverPhoto: ExposePhoto | undefined = coverIdx >= 0 ? allPhotos[coverIdx] : undefined;
+    const photos: ExposePhoto[] = coverIdx >= 0
+      ? allPhotos.filter((_, i) => i !== coverIdx)
+      : allPhotos;
 
     const fpMedia = p.media.filter((m) => m.kind === "FLOORPLAN");
     const floorPlans: ExposePhoto[] = [];
@@ -218,6 +236,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       attributes: (p.attributes as string[]) || [],
       photos,
       floorPlans,
+      coverPhoto,
       generatedAt: new Date().toLocaleDateString("de-DE"),
       postcode: p.postcode,
       contact: (() => {
