@@ -209,9 +209,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       }
     }
 
-    // Pick the highest-scoring exterior shot for the cover; fall back to a
-    // typography-only cover when no exterior is detected (avoids putting
-    // an empty room or interior on the front of the brochure).
+    // Pick cover photo: exterior only, otherwise typography-only cover
     let coverIdx = -1;
     let bestScore = -1;
     allPhotos.forEach((ph, i) => {

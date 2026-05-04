@@ -160,6 +160,14 @@ function floorLabelLong(floor: number): string {
   return `${floor}. Obergeschoss`;
 }
 
+function toRoman(n: number): string {
+  const vals = [1000,900,500,400,100,90,50,40,10,9,5,4,1];
+  const syms = ["M","CM","D","CD","C","XC","L","XL","X","IX","V","IV","I"];
+  let r = "";
+  for (let i = 0; i < vals.length; i++) { while (n >= vals[i]) { r += syms[i]; n -= vals[i]; } }
+  return r;
+}
+
 function energyBadgeColor(cls: string): string {
   const m: Record<string, string> = {
     "A+": "#008000", A: "#4fa84f", B: "#8bc34a", C: "#cddc39",
@@ -230,24 +238,46 @@ function buildExposeHtml(data: ExposeData): string {
         </div>`;
 
     if (isTypoCover) {
-      const localityLine = data.postcode
-        ? `${esc(data.postcode)} ${esc(data.city)}`
-        : esc(data.city);
+      const months = ["JANUAR","FEBRUAR","MÄRZ","APRIL","MAI","JUNI","JULI","AUGUST","SEPTEMBER","OKTOBER","NOVEMBER","DEZEMBER"];
+      const now = new Date();
+      const romanYear = toRoman(now.getFullYear());
+      const monthName = months[now.getMonth()];
+      const regionLine = data.postcode
+        ? `${esc(data.postcode)} ${esc(data.city).toUpperCase()} &middot; BADEN-W&Uuml;RTTEMBERG`
+        : esc(data.city).toUpperCase();
+
+      const energyClass = data.energy?.class || "";
+      const typoFactsHtml = [
+        { value: fmtAreaShort(totalArea), label: "WOHNFLÄCHE" },
+        data.rooms ? { value: String(data.rooms), label: "ZIMMER" } : null,
+        data.yearBuilt ? { value: String(data.yearBuilt), label: "BAUJAHR" } : null,
+        energyClass ? { value: energyClass, label: "ENERGIE" } : null,
+      ].filter(Boolean).map(f => `
+        <div class="tc-fact">
+          <span class="tc-fact__value">${f!.value}</span>
+          <span class="tc-fact__label">${f!.label}</span>
+        </div>
+      `).join("");
+
       sections.push(`
         <div class="page cover-page cover-page--typo">
-          <div class="cover-brand">DIREKTA &middot; Verkauf</div>
-          ${conditionBadge}
-          <div class="cover-typo-mark">
-            <div class="cover-typo-eyebrow">${eyebrow}</div>
-            <h1 class="cover-typo-address">${coverTitle}</h1>
-            <div class="cover-typo-rule"></div>
+          <div class="tc-top">
+            <span class="tc-brand">DIREKTA <span class="tc-brand-dot">&middot;</span> VERKAUF</span>
+            ${data.condition ? `<span class="tc-badge">${esc(data.condition).toUpperCase()}</span>` : ""}
           </div>
-          <div class="cover-content">
-            <p class="cover-subtitle">${coverSub}</p>
-            <div class="cover-address">${localityLine}</div>
-            <div class="cover-facts">${factsHtml}</div>
+          <div class="tc-center">
+            <div class="tc-eyebrow">${eyebrow}</div>
+            <h1 class="tc-title">${coverTitle}</h1>
+            <div class="tc-city">in ${esc(data.city)}</div>
+            <div class="tc-divider"><span class="tc-div-line"></span><span class="tc-div-diamond">&loz;</span><span class="tc-div-line"></span></div>
+            <p class="tc-desc">${coverSub}</p>
           </div>
-          ${coverFooterHtml}
+          <div class="tc-facts">${typoFactsHtml}</div>
+          <div class="tc-footer">
+            <span>${regionLine}</span>
+            <span>NO. 01 &middot; ${monthName} ${romanYear}</span>
+            <span>DIREKTA-IMMOBILIEN.DE</span>
+          </div>
         </div>
       `);
     } else {
@@ -1314,39 +1344,143 @@ html::-webkit-scrollbar { display: none; }
 /* ── Typography-only cover (no exterior photo available) ─── */
 .cover-page--typo {
   background: var(--ink);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18mm 20mm;
+  text-align: center;
 }
-.cover-typo-mark {
-  position: absolute;
-  top: 60mm;
-  left: 16mm;
-  right: 16mm;
-  z-index: 2;
+.tc-top {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
-.cover-typo-eyebrow {
+.tc-brand {
   font-family: var(--sans);
   font-size: 9pt;
-  font-weight: 600;
-  color: var(--gold);
+  font-weight: 700;
+  color: rgba(255,255,255,0.6);
   letter-spacing: 0.12em;
-  text-transform: uppercase;
-  margin-bottom: 14px;
 }
-.cover-typo-address {
+.tc-brand-dot { color: rgba(255,255,255,0.3); }
+.tc-badge {
+  font-family: var(--sans);
+  font-size: 7pt;
+  font-weight: 600;
+  color: rgba(255,255,255,0.7);
+  letter-spacing: 0.1em;
+  border: 0.5px solid rgba(255,255,255,0.3);
+  padding: 5px 14px;
+}
+.tc-center {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 10mm 0;
+}
+.tc-eyebrow {
+  font-family: var(--sans);
+  font-size: 8pt;
+  font-weight: 500;
+  color: var(--gold);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  margin-bottom: 16px;
+}
+.tc-title {
   font-family: var(--serif);
-  font-style: italic;
-  font-size: 72pt;
+  font-size: 52pt;
   font-weight: 300;
   color: rgba(255,255,255,0.95);
   line-height: 1.05;
   letter-spacing: 0.005em;
-  margin: 0 0 22px 0;
-  max-width: 178mm;
+  margin: 0 0 6px 0;
   word-break: break-word;
 }
-.cover-typo-rule {
-  width: 40mm;
-  height: 1.5px;
-  background: var(--gold);
+.tc-city {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 16pt;
+  font-weight: 300;
+  color: var(--gold);
+  margin-bottom: 20px;
+}
+.tc-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+.tc-div-line {
+  display: block;
+  width: 30mm;
+  height: 0.5px;
+  background: rgba(255,255,255,0.2);
+}
+.tc-div-diamond {
+  font-size: 8pt;
+  color: var(--gold);
+  line-height: 1;
+}
+.tc-desc {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 12pt;
+  font-weight: 300;
+  color: rgba(255,255,255,0.6);
+  line-height: 1.5;
+  max-width: 130mm;
+  margin: 0;
+}
+.tc-facts {
+  display: flex;
+  justify-content: center;
+  gap: 0;
+  border-top: 0.5px solid rgba(255,255,255,0.15);
+  padding-top: 14px;
+  width: 100%;
+  max-width: 160mm;
+  margin-bottom: 14px;
+}
+.tc-fact {
+  flex: 1;
+  text-align: center;
+  border-right: 0.5px solid rgba(255,255,255,0.1);
+  padding: 0 10px;
+}
+.tc-fact:last-child { border-right: none; }
+.tc-fact__value {
+  display: block;
+  font-family: var(--serif);
+  font-size: 18pt;
+  font-weight: 400;
+  color: rgba(255,255,255,0.85);
+  line-height: 1.1;
+  margin-bottom: 4px;
+}
+.tc-fact__label {
+  display: block;
+  font-family: var(--sans);
+  font-size: 6pt;
+  font-weight: 600;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.35);
+}
+.tc-footer {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--sans);
+  font-size: 6pt;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.25);
 }
 
 /* ══════════════════════════════════════════════════════════════
