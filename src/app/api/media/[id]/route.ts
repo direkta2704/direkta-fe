@@ -29,6 +29,7 @@ export async function PATCH(
       where: { id },
       data: {
         classification: body.classification ?? undefined,
+        ordering: typeof body.ordering === "number" ? body.ordering : undefined,
       },
     });
 

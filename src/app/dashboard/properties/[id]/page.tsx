@@ -121,6 +121,10 @@ export default function PropertyDetailPage() {
   const [editingPhoto, setEditingPhoto] = useState<MediaItem | null>(null);
   const [photoForm, setPhotoForm] = useState({ caption: "", description: "", roomType: "other" });
   const [photoSaving, setPhotoSaving] = useState(false);
+  const [bulkSelectMode, setBulkSelectMode] = useState(false);
+  const [selectedPhotos, setSelectedPhotos] = useState<Set<string>>(new Set());
+  const [lightboxPhoto, setLightboxPhoto] = useState<MediaItem | null>(null);
+  const [dragPhotoId, setDragPhotoId] = useState<string | null>(null);
   const [extrasEditing, setExtrasEditing] = useState(false);
   const [extraForm, setExtraForm] = useState({ name: "", quantity: "1", pricePerUnit: "", description: "" });
   const [extrasSaving, setExtrasSaving] = useState(false);
@@ -284,6 +288,59 @@ export default function PropertyDetailPage() {
   async function deleteMedia(mediaId: string) {
     await fetch(`/api/media/${mediaId}`, { method: "DELETE" });
     fetchProperty();
+  }
+
+  async function bulkDeletePhotos() {
+    if (selectedPhotos.size === 0) return;
+    if (!confirm(`${selectedPhotos.size} Foto${selectedPhotos.size > 1 ? "s" : ""} löschen?`)) return;
+    for (const photoId of selectedPhotos) {
+      await fetch(`/api/media/${photoId}`, { method: "DELETE" });
+    }
+    setSelectedPhotos(new Set());
+    setBulkSelectMode(false);
+    fetchProperty();
+  }
+
+  function togglePhotoSelect(photoId: string) {
+    setSelectedPhotos(prev => {
+      const next = new Set(prev);
+      if (next.has(photoId)) next.delete(photoId); else next.add(photoId);
+      return next;
+    });
+  }
+
+  async function reorderPhotos(fromId: string, toId: string) {
+    if (fromId === toId || !property) return;
+    const currentPhotos = property.media.filter((m) => m.kind === "PHOTO");
+    const fromIdx = currentPhotos.findIndex(p => p.id === fromId);
+    const toIdx = currentPhotos.findIndex(p => p.id === toId);
+    if (fromIdx < 0 || toIdx < 0) return;
+    const reordered = [...currentPhotos];
+    const [moved] = reordered.splice(fromIdx, 1);
+    reordered.splice(toIdx, 0, moved);
+    for (let i = 0; i < reordered.length; i++) {
+      if (reordered[i].ordering !== i) {
+        await fetch(`/api/media/${reordered[i].id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ordering: i }),
+        });
+      }
+    }
+    fetchProperty();
+  }
+
+  function getBestCoverPhoto(): string | null {
+    const exteriors = photos.filter(p => p.classification?.roomType === "exterior");
+    if (exteriors.length === 0) return null;
+    return exteriors.sort((a, b) => (b.classification?.qualityScore || 0) - (a.classification?.qualityScore || 0))[0].id;
+  }
+
+  function qualityColor(score?: number): string {
+    if (score == null) return "bg-slate-300";
+    if (score >= 80) return "bg-emerald-500";
+    if (score >= 60) return "bg-amber-500";
+    return "bg-red-500";
   }
 
   function openPhotoEdit(photo: MediaItem) {
@@ -594,20 +651,43 @@ export default function PropertyDetailPage() {
           {/* Photo upload */}
           <div className="bg-white rounded-2xl border border-slate-200 p-7">
             <div className="flex items-center justify-between mb-5">
-              <h2 className="text-lg font-black text-blueprint">
-                Fotos ({photos.length}/30)
-              </h2>
-              <label className="bg-blueprint hover:bg-primary text-white px-4 py-2 rounded-xl text-xs font-black uppercase tracking-[0.15em] transition-colors cursor-pointer flex items-center gap-2">
-                <span className="material-symbols-outlined text-base">add_photo_alternate</span>
-                Fotos hinzufügen
-                <input
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  className="hidden"
-                  onChange={(e) => e.target.files && uploadFiles(e.target.files)}
-                />
-              </label>
+              <div>
+                <h2 className="text-lg font-black text-blueprint">
+                  Fotos ({photos.length}/30)
+                </h2>
+                {photos.length > 0 && <p className="text-[10px] text-slate-400 mt-0.5">Ziehen zum Sortieren · Klick zum Bearbeiten</p>}
+              </div>
+              <div className="flex items-center gap-2">
+                {photos.length > 1 && (
+                  <button
+                    onClick={() => { setBulkSelectMode(!bulkSelectMode); setSelectedPhotos(new Set()); }}
+                    className={`px-3 py-2 rounded-xl text-xs font-black uppercase tracking-[0.15em] transition-colors flex items-center gap-1.5 ${bulkSelectMode ? "bg-red-50 text-red-600 border border-red-200" : "bg-slate-50 text-slate-500 border border-slate-200 hover:border-slate-300"}`}
+                  >
+                    <span className="material-symbols-outlined text-sm">{bulkSelectMode ? "close" : "check_box"}</span>
+                    {bulkSelectMode ? "Abbrechen" : "Auswählen"}
+                  </button>
+                )}
+                {bulkSelectMode && selectedPhotos.size > 0 && (
+                  <button
+                    onClick={bulkDeletePhotos}
+                    className="bg-red-500 hover:bg-red-600 text-white px-3 py-2 rounded-xl text-xs font-black uppercase tracking-[0.15em] transition-colors flex items-center gap-1.5"
+                  >
+                    <span className="material-symbols-outlined text-sm">delete</span>
+                    {selectedPhotos.size} löschen
+                  </button>
+                )}
+                <label className="bg-blueprint hover:bg-primary text-white px-4 py-2 rounded-xl text-xs font-black uppercase tracking-[0.15em] transition-colors cursor-pointer flex items-center gap-2">
+                  <span className="material-symbols-outlined text-base">add_photo_alternate</span>
+                  Fotos hinzufügen
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    className="hidden"
+                    onChange={(e) => e.target.files && uploadFiles(e.target.files)}
+                  />
+                </label>
+              </div>
             </div>
 
             {photos.length === 0 ? (
@@ -643,33 +723,70 @@ export default function PropertyDetailPage() {
             ) : (
               <>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {photos.map((photo) => (
-                    <div key={photo.id} className="relative group rounded-xl overflow-hidden bg-slate-100 aspect-[4/3] cursor-pointer" onClick={() => openPhotoEdit(photo)}>
-                      <Image
-                        src={photo.storageKey}
-                        alt={photo.fileName || "Foto"}
-                        fill
-                        className="object-cover"
-                        sizes="(max-width: 768px) 50vw, 33vw"
-                      />
-                      {photo.classification?.caption && (
-                        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent px-2.5 py-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <p className="text-[10px] text-white font-bold truncate">{photo.classification.caption}</p>
-                        </div>
-                      )}
-                      <div className="absolute top-2 left-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <span className="w-6 h-6 bg-white/90 rounded-md flex items-center justify-center shadow">
-                          <span className="material-symbols-outlined text-xs text-blueprint">edit</span>
-                        </span>
-                      </div>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); deleteMedia(photo.id); }}
-                        className="absolute top-2 right-2 w-7 h-7 bg-red-500 hover:bg-red-600 text-white rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                  {photos.map((photo, idx) => {
+                    const isCoverSuggestion = getBestCoverPhoto() === photo.id;
+                    const isSelected = selectedPhotos.has(photo.id);
+                    const isDragTarget = dragPhotoId !== null && dragPhotoId !== photo.id;
+                    return (
+                      <div
+                        key={photo.id}
+                        draggable={!bulkSelectMode}
+                        onDragStart={() => setDragPhotoId(photo.id)}
+                        onDragEnd={() => setDragPhotoId(null)}
+                        onDragOver={(e) => { e.preventDefault(); }}
+                        onDrop={(e) => { e.preventDefault(); if (dragPhotoId) reorderPhotos(dragPhotoId, photo.id); setDragPhotoId(null); }}
+                        onClick={() => {
+                          if (bulkSelectMode) { togglePhotoSelect(photo.id); return; }
+                          setLightboxPhoto(photo);
+                        }}
+                        className={`relative group rounded-xl overflow-hidden bg-slate-100 aspect-[4/3] cursor-pointer transition-all ${
+                          isDragTarget ? "ring-2 ring-primary ring-offset-2" : ""
+                        } ${isSelected ? "ring-2 ring-red-500 ring-offset-2" : ""
+                        } ${dragPhotoId === photo.id ? "opacity-40" : ""}`}
                       >
-                        <span className="material-symbols-outlined text-sm">close</span>
-                      </button>
-                    </div>
-                  ))}
+                        <Image
+                          src={photo.storageKey}
+                          alt={photo.fileName || "Foto"}
+                          fill
+                          className="object-cover"
+                          sizes="(max-width: 768px) 50vw, 33vw"
+                        />
+
+                        {/* Quality dot */}
+                        <div className={`absolute top-2 left-2 w-3 h-3 rounded-full border-2 border-white shadow ${qualityColor(photo.classification?.qualityScore)}`} title={photo.classification?.qualityScore != null ? `Qualität: ${photo.classification.qualityScore}/100` : "Nicht analysiert"} />
+
+                        {/* Cover suggestion badge */}
+                        {isCoverSuggestion && idx !== 0 && (
+                          <div className="absolute top-2 left-7 bg-amber-500 text-white text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded shadow">Cover</div>
+                        )}
+                        {idx === 0 && (
+                          <div className="absolute top-2 left-7 bg-primary text-white text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded shadow">1.</div>
+                        )}
+
+                        {/* Bulk select checkbox */}
+                        {bulkSelectMode && (
+                          <div className={`absolute top-2 right-2 w-6 h-6 rounded-md border-2 flex items-center justify-center transition-colors ${isSelected ? "bg-red-500 border-red-500" : "bg-white/80 border-slate-300"}`}>
+                            {isSelected && <span className="material-symbols-outlined text-xs text-white">check</span>}
+                          </div>
+                        )}
+
+                        {/* Caption + edit overlay on hover (non-bulk mode) */}
+                        {!bulkSelectMode && (
+                          <>
+                            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent px-2.5 py-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <p className="text-[10px] text-white font-bold truncate">{photo.classification?.caption || photo.classification?.roomType || "Klick zum Bearbeiten"}</p>
+                            </div>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); deleteMedia(photo.id); }}
+                              className="absolute top-2 right-2 w-7 h-7 bg-red-500 hover:bg-red-600 text-white rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                            >
+                              <span className="material-symbols-outlined text-sm">close</span>
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
 
                   {/* Add more drop zone */}
                   <label
@@ -1730,6 +1847,48 @@ export default function PropertyDetailPage() {
       </div>
 
       {/* Add Apartment Modal */}
+      {/* Lightbox */}
+      {lightboxPhoto && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90" onClick={() => setLightboxPhoto(null)}>
+          <button onClick={() => setLightboxPhoto(null)} className="absolute top-4 right-4 text-white/60 hover:text-white z-10">
+            <span className="material-symbols-outlined text-3xl">close</span>
+          </button>
+          {/* Prev */}
+          {(() => { const idx = photos.findIndex(p => p.id === lightboxPhoto.id); return idx > 0 ? (
+            <button onClick={(e) => { e.stopPropagation(); setLightboxPhoto(photos[idx - 1]); }} className="absolute left-4 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/10 hover:bg-white/20 rounded-full flex items-center justify-center text-white z-10">
+              <span className="material-symbols-outlined">chevron_left</span>
+            </button>
+          ) : null; })()}
+          {/* Next */}
+          {(() => { const idx = photos.findIndex(p => p.id === lightboxPhoto.id); return idx < photos.length - 1 ? (
+            <button onClick={(e) => { e.stopPropagation(); setLightboxPhoto(photos[idx + 1]); }} className="absolute right-4 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/10 hover:bg-white/20 rounded-full flex items-center justify-center text-white z-10">
+              <span className="material-symbols-outlined">chevron_right</span>
+            </button>
+          ) : null; })()}
+          <div onClick={(e) => e.stopPropagation()} className="relative max-w-[90vw] max-h-[85vh]">
+            <img src={lightboxPhoto.storageKey} alt="" className="max-w-full max-h-[85vh] object-contain rounded-lg" />
+            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4 rounded-b-lg">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-white font-bold text-sm">{lightboxPhoto.classification?.caption || "Kein Titel"}</p>
+                  <p className="text-white/60 text-xs mt-0.5">
+                    {photos.findIndex(p => p.id === lightboxPhoto.id) + 1} / {photos.length}
+                    {lightboxPhoto.classification?.qualityScore != null && ` · Qualität: ${lightboxPhoto.classification.qualityScore}/100`}
+                  </p>
+                </div>
+                <button
+                  onClick={() => { openPhotoEdit(lightboxPhoto); setLightboxPhoto(null); }}
+                  className="bg-white/20 hover:bg-white/30 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors"
+                >
+                  <span className="material-symbols-outlined text-sm">edit</span>
+                  Bearbeiten
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Photo Edit Modal */}
       {editingPhoto && (
         <div className="fixed inset-0 z-[200] overflow-y-auto">
