@@ -95,6 +95,11 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
           include: {
             energyCert: true,
             media: { orderBy: { ordering: "asc" } },
+            parent: {
+              include: {
+                media: { orderBy: { ordering: "asc" } },
+              },
+            },
             units: {
               orderBy: { createdAt: "asc" },
               include: {
@@ -207,6 +212,33 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
         });
         allScores.push(typeof cls?.qualityScore === "number" ? cls.qualityScore : 0);
       }
+    }
+
+    // Apartment listings live as child properties; the building exterior shots
+    // sit on the parent. Pull them in so the apartment PDF shows the building
+    // from outside (and so an exterior shot is eligible as the cover).
+    if (p.parent) {
+      const parentExteriorPhotos: ExposePhoto[] = [];
+      const parentExteriorScores: number[] = [];
+      for (const m of p.parent.media) {
+        if (m.kind !== "PHOTO") continue;
+        const cls = m.classification as { roomType?: string; caption?: string; description?: string; features?: string[]; lighting?: string; estimatedArea?: number; qualityScore?: number } | null;
+        if (cls?.roomType !== "exterior") continue;
+        const data = await loadMediaBytes(m.storageKey, m.mimeType);
+        if (!data) continue;
+        parentExteriorPhotos.push({
+          ...data,
+          roomType: cls.roomType,
+          caption: cls.caption,
+          description: cls.description,
+          features: cls.features,
+          lighting: cls.lighting,
+          estimatedArea: cls.estimatedArea,
+        });
+        parentExteriorScores.push(typeof cls.qualityScore === "number" ? cls.qualityScore : 0);
+      }
+      allPhotos.push(...parentExteriorPhotos);
+      allScores.push(...parentExteriorScores);
     }
 
     // Pick cover photo: exterior only, otherwise typography-only cover
