@@ -60,6 +60,7 @@ export interface ExposeData {
   buildingDescription?: string;
   extras?: { name: string; quantity: number; pricePerUnit: number; description?: string }[];
   tagline?: string;
+  listingSlug?: string;
   lat?: number;
   lng?: number;
   mapImage?: string;
@@ -1164,12 +1165,21 @@ function buildExposeHtml(data: ExposeData): string {
 
   // ────────────────────────────── BACK COVER
   {
+    const listingUrl = data.listingSlug ? `https://direkta.de/immobilien/${data.listingSlug}` : "";
+    const qrUrl = listingUrl ? `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(listingUrl)}&bgcolor=1a1f26&color=ffffff&margin=0` : "";
+
     sections.push(`
       <div class="page back-cover">
         <div class="back-cover__content">
           <div class="back-cover__brand">DIREKTA<span class="accent">.</span></div>
           <div class="back-cover__rule"></div>
           <div class="back-cover__tagline">${data.tagline ? esc(data.tagline) : "Immobilie verkaufen. Direkt."}</div>
+          ${qrUrl ? `
+            <div class="back-cover__qr">
+              <img src="${qrUrl}" alt="QR" width="80" height="80" />
+              <p class="back-cover__qr-label">Online-Inserat aufrufen</p>
+            </div>
+          ` : ""}
         </div>
         <div class="back-cover__footer">
           ${esc(data.address)} &middot; ${esc(data.city)} &middot; Expos&eacute; &middot; Stand ${esc(data.generatedAt)} &middot; www.direkta.de
@@ -2433,6 +2443,23 @@ html::-webkit-scrollbar { display: none; }
   font-size: 14pt;
   font-weight: 300;
   color: rgba(255,255,255,0.65);
+}
+.back-cover__qr {
+  margin-top: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.back-cover__qr img {
+  border-radius: 4px;
+}
+.back-cover__qr-label {
+  font-family: var(--sans);
+  font-size: 6.5pt;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.35);
 }
 .back-cover__footer {
   position: absolute;
