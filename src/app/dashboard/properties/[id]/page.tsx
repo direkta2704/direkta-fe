@@ -6,12 +6,23 @@ import Image from "next/image";
 
 
 
+interface PhotoClassification {
+  roomType?: string;
+  caption?: string;
+  description?: string;
+  lighting?: string;
+  estimatedArea?: number;
+  qualityScore?: number;
+  features?: string[];
+}
+
 interface MediaItem {
   id: string;
   storageKey: string;
   fileName: string | null;
   kind: string;
   ordering: number;
+  classification?: PhotoClassification | null;
 }
 
 interface UnitSummary {
@@ -107,6 +118,9 @@ export default function PropertyDetailPage() {
   const [energySaving, setEnergySaving] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [pdfDownloading, setPdfDownloading] = useState(false);
+  const [editingPhoto, setEditingPhoto] = useState<MediaItem | null>(null);
+  const [photoForm, setPhotoForm] = useState({ caption: "", description: "", roomType: "other" });
+  const [photoSaving, setPhotoSaving] = useState(false);
   const [extrasEditing, setExtrasEditing] = useState(false);
   const [extraForm, setExtraForm] = useState({ name: "", quantity: "1", pricePerUnit: "", description: "" });
   const [extrasSaving, setExtrasSaving] = useState(false);
@@ -269,6 +283,36 @@ export default function PropertyDetailPage() {
 
   async function deleteMedia(mediaId: string) {
     await fetch(`/api/media/${mediaId}`, { method: "DELETE" });
+    fetchProperty();
+  }
+
+  function openPhotoEdit(photo: MediaItem) {
+    const cls = photo.classification || {};
+    setPhotoForm({
+      caption: cls.caption || "",
+      description: cls.description || "",
+      roomType: cls.roomType || "other",
+    });
+    setEditingPhoto(photo);
+  }
+
+  async function savePhotoDescription() {
+    if (!editingPhoto) return;
+    setPhotoSaving(true);
+    const existing = editingPhoto.classification || {};
+    const updated = {
+      ...existing,
+      caption: photoForm.caption || undefined,
+      description: photoForm.description || undefined,
+      roomType: photoForm.roomType,
+    };
+    await fetch(`/api/media/${editingPhoto.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ classification: updated }),
+    });
+    setPhotoSaving(false);
+    setEditingPhoto(null);
     fetchProperty();
   }
 
@@ -600,7 +644,7 @@ export default function PropertyDetailPage() {
               <>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   {photos.map((photo) => (
-                    <div key={photo.id} className="relative group rounded-xl overflow-hidden bg-slate-100 aspect-[4/3]">
+                    <div key={photo.id} className="relative group rounded-xl overflow-hidden bg-slate-100 aspect-[4/3] cursor-pointer" onClick={() => openPhotoEdit(photo)}>
                       <Image
                         src={photo.storageKey}
                         alt={photo.fileName || "Foto"}
@@ -608,8 +652,18 @@ export default function PropertyDetailPage() {
                         className="object-cover"
                         sizes="(max-width: 768px) 50vw, 33vw"
                       />
+                      {photo.classification?.caption && (
+                        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent px-2.5 py-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <p className="text-[10px] text-white font-bold truncate">{photo.classification.caption}</p>
+                        </div>
+                      )}
+                      <div className="absolute top-2 left-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <span className="w-6 h-6 bg-white/90 rounded-md flex items-center justify-center shadow">
+                          <span className="material-symbols-outlined text-xs text-blueprint">edit</span>
+                        </span>
+                      </div>
                       <button
-                        onClick={() => deleteMedia(photo.id)}
+                        onClick={(e) => { e.stopPropagation(); deleteMedia(photo.id); }}
                         className="absolute top-2 right-2 w-7 h-7 bg-red-500 hover:bg-red-600 text-white rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
                       >
                         <span className="material-symbols-outlined text-sm">close</span>
@@ -1676,6 +1730,80 @@ export default function PropertyDetailPage() {
       </div>
 
       {/* Add Apartment Modal */}
+      {/* Photo Edit Modal */}
+      {editingPhoto && (
+        <div className="fixed inset-0 z-[200] overflow-y-auto">
+          <div className="fixed inset-0 bg-blueprint/60 backdrop-blur-sm" onClick={() => setEditingPhoto(null)} />
+          <div className="relative flex justify-center p-4 min-h-full items-center">
+            <div className="relative w-full max-w-lg bg-white rounded-3xl shadow-2xl p-8">
+              <button onClick={() => setEditingPhoto(null)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600">
+                <span className="material-symbols-outlined">close</span>
+              </button>
+              <div className="rounded-xl overflow-hidden bg-slate-100 aspect-[4/3] mb-6 relative">
+                <Image src={editingPhoto.storageKey} alt="" fill className="object-cover" sizes="500px" />
+              </div>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 mb-1.5">Raumtyp</label>
+                  <select
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary"
+                    value={photoForm.roomType}
+                    onChange={(e) => setPhotoForm({ ...photoForm, roomType: e.target.value })}
+                  >
+                    <option value="exterior">Außenansicht</option>
+                    <option value="living">Wohnzimmer</option>
+                    <option value="kitchen">Küche</option>
+                    <option value="bathroom">Badezimmer</option>
+                    <option value="bedroom">Schlafzimmer</option>
+                    <option value="office">Arbeitszimmer</option>
+                    <option value="hallway">Flur</option>
+                    <option value="balcony">Balkon</option>
+                    <option value="garden">Garten</option>
+                    <option value="garage">Garage / Stellplatz</option>
+                    <option value="basement">Keller</option>
+                    <option value="other">Sonstiges</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 mb-1.5">Titel / Caption</label>
+                  <input
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary"
+                    placeholder="z.B. Wohn-/Essbereich mit Küchenanschlüssen"
+                    value={photoForm.caption}
+                    onChange={(e) => setPhotoForm({ ...photoForm, caption: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 mb-1.5">Beschreibung</label>
+                  <textarea
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary resize-none"
+                    rows={3}
+                    placeholder="Beschreiben Sie, was in diesem Foto zu sehen ist..."
+                    value={photoForm.description}
+                    onChange={(e) => setPhotoForm({ ...photoForm, description: e.target.value })}
+                  />
+                </div>
+                <div className="flex gap-3 pt-2">
+                  <button
+                    onClick={() => setEditingPhoto(null)}
+                    className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-50 transition-colors"
+                  >
+                    Abbrechen
+                  </button>
+                  <button
+                    onClick={savePhotoDescription}
+                    disabled={photoSaving}
+                    className="flex-1 px-4 py-2.5 rounded-xl bg-primary hover:bg-primary-dark text-white text-sm font-black uppercase tracking-widest transition-colors disabled:opacity-60"
+                  >
+                    {photoSaving ? "Speichert..." : "Speichern"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {addUnitOpen && (
         <div className="fixed inset-0 z-[200] overflow-y-auto">
           <div className="fixed inset-0 bg-blueprint/60 backdrop-blur-sm" onClick={() => setAddUnitOpen(false)} />

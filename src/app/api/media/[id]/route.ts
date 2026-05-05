@@ -7,6 +7,38 @@ import { extractS3Key, deleteFromS3 } from "@/lib/s3";
 
 export const dynamic = "force-dynamic";
 
+export async function PATCH(
+  req: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const user = await getRequiredUser();
+    const { id } = await params;
+    const body = await req.json();
+
+    const asset = await prisma.mediaAsset.findFirst({
+      where: { id },
+      include: { property: { select: { userId: true } } },
+    });
+
+    if (!asset || asset.property?.userId !== user.id) {
+      return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
+    }
+
+    const updated = await prisma.mediaAsset.update({
+      where: { id },
+      data: {
+        classification: body.classification ?? undefined,
+      },
+    });
+
+    return NextResponse.json(updated);
+  } catch (err) {
+    console.error("Update media error:", err);
+    return NextResponse.json({ error: "Aktualisierung fehlgeschlagen" }, { status: 500 });
+  }
+}
+
 export async function DELETE(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
