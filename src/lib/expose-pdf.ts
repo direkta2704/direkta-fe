@@ -201,8 +201,12 @@ function buildExposeHtml(data: ExposeData): string {
         ? esc(data.exposeSubheadline)
         : esc(data.descriptionLong.split("\n")[0].slice(0, 160));
 
-    const eyebrowParts: string[] = [esc(data.propertyType)];
-    if (isBundle) eyebrowParts.push(`${data.units!.length} Wohneinheiten`);
+    const eyebrowParts: string[] = [];
+    if (isBundle) {
+      eyebrowParts.push(`${data.units!.length} Eigentumswohnungen`);
+    } else {
+      eyebrowParts.push(esc(data.propertyType));
+    }
     eyebrowParts.push(esc(data.city));
     const eyebrow = eyebrowParts.join(" &middot; ");
 

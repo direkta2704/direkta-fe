@@ -283,7 +283,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       descriptionLong: listing.descriptionLong || "",
       address: `${p.street} ${p.houseNumber}, ${p.postcode}`,
       city: p.city,
-      propertyType: TYPES_DE[p.type] || p.type,
+      propertyType: isBundle ? `${p.units.length} Eigentumswohnungen` : (TYPES_DE[p.type] || p.type),
       livingArea: p.livingArea,
       rooms: p.rooms,
       yearBuilt: p.yearBuilt,
