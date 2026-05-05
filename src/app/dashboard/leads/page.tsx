@@ -63,6 +63,8 @@ export default function LeadsPage() {
   const [loading, setLoading] = useState(true);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [filter, setFilter] = useState("ALL");
+  const [awayMode, setAwayMode] = useState(false);
+  const [awayMessage, setAwayMessage] = useState("Vielen Dank für Ihre Anfrage. Ich bin derzeit nicht erreichbar und melde mich schnellstmöglich bei Ihnen zurück.");
 
   useEffect(() => {
     fetch("/api/leads")
@@ -96,7 +98,39 @@ export default function LeadsPage() {
             {leads.length} Interessent{leads.length !== 1 ? "en" : ""} · Qualifiziert und nach Bewertung sortiert.
           </p>
         </div>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setAwayMode(!awayMode)}
+            className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-[0.15em] transition-colors flex items-center gap-2 ${
+              awayMode
+                ? "bg-amber-50 border border-amber-200 text-amber-700"
+                : "bg-white border border-slate-200 text-slate-500 hover:border-slate-300"
+            }`}
+          >
+            <span className="material-symbols-outlined text-base">{awayMode ? "flight" : "notifications_active"}</span>
+            {awayMode ? "Abwesend" : "Verfügbar"}
+          </button>
+        </div>
       </div>
+
+      {/* Away mode banner */}
+      {awayMode && (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5 mb-6">
+          <div className="flex items-start gap-3">
+            <span className="material-symbols-outlined text-amber-500 text-xl mt-0.5">flight</span>
+            <div className="flex-1">
+              <p className="text-sm font-bold text-amber-800 mb-2">Abwesenheitsmodus aktiv</p>
+              <p className="text-xs text-amber-700 mb-3">Neue Anfragen erhalten automatisch folgende Nachricht:</p>
+              <textarea
+                value={awayMessage}
+                onChange={(e) => setAwayMessage(e.target.value)}
+                className="w-full text-xs text-amber-900 bg-white border border-amber-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:border-amber-400"
+                rows={3}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Score legend + filters */}
       <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
@@ -210,6 +244,31 @@ export default function LeadsPage() {
                     </div>
                   </div>
                 )}
+
+                {/* Quick-reply templates */}
+                <div className="mb-6">
+                  <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-2">Schnellantwort</div>
+                  <div className="space-y-1.5">
+                    {[
+                      { label: "Danke & Besichtigung", icon: "calendar_month", text: `Guten Tag ${selectedLead.name || ""},\n\nvielen Dank für Ihr Interesse an unserer Immobilie in ${selectedLead.listing.property.street} ${selectedLead.listing.property.houseNumber}, ${selectedLead.listing.property.city}.\n\nGerne möchte ich Ihnen die Möglichkeit einer Besichtigung anbieten. Bitte teilen Sie mir mit, wann es Ihnen zeitlich passt.\n\nMit freundlichen Grüßen` },
+                      { label: "Unterlagen anfordern", icon: "description", text: `Guten Tag ${selectedLead.name || ""},\n\nvielen Dank für Ihre Anfrage. Um Ihnen weitere Informationen zur Immobilie zukommen zu lassen, benötige ich folgende Angaben:\n\n- Finanzierungsnachweis oder Budgetrahmen\n- Gewünschter Einzugstermin\n- Kurze Vorstellung (Selbstnutzer/Kapitalanleger)\n\nMit freundlichen Grüßen` },
+                      { label: "Absage (freundlich)", icon: "close", text: `Guten Tag ${selectedLead.name || ""},\n\nvielen Dank für Ihr Interesse an unserer Immobilie. Leider können wir Ihre Anfrage derzeit nicht berücksichtigen.\n\nWir wünschen Ihnen viel Erfolg bei der weiteren Suche.\n\nMit freundlichen Grüßen` },
+                    ].map((tpl) => (
+                      <button
+                        key={tpl.label}
+                        onClick={() => {
+                          const subject = `Re: Anfrage ${selectedLead.listing.property.street} ${selectedLead.listing.property.houseNumber}`;
+                          window.open(`mailto:${selectedLead.emailRaw}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(tpl.text)}`, "_self");
+                        }}
+                        className="w-full text-left bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg px-3 py-2 text-xs transition-colors flex items-center gap-2"
+                      >
+                        <span className="material-symbols-outlined text-sm text-slate-400">{tpl.icon}</span>
+                        <span className="font-bold text-slate-600">{tpl.label}</span>
+                        <span className="material-symbols-outlined text-xs text-slate-300 ml-auto">mail</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
                 <div className="space-y-2">
                   {selectedLead.status !== "QUALIFIED" && selectedLead.status !== "DECLINED" && selectedLead.status !== "VIEWING_SCHEDULED" && (

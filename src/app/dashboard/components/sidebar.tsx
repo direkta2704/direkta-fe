@@ -85,7 +85,7 @@ export default function Sidebar({ userName, userEmail }: SidebarProps) {
               </span>
               {item.label}
               {item.label === "Interessenten" && newLeadCount > 0 && (
-                <span className="ml-auto text-[10px] font-black bg-primary/20 text-primary px-2 py-0.5 rounded-full">
+                <span className="ml-auto text-[10px] font-black bg-red-500 text-white px-2 py-0.5 rounded-full animate-pulse">
                   {newLeadCount}
                 </span>
               )}
