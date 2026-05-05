@@ -472,6 +472,7 @@ const CONDITION_DE: Record<string, string> = {
   RENOVIERUNGS_BEDUERFTIG: "Renovierungsbedürftig",
   SANIERUNGS_BEDUERFTIG: "Sanierungsbedürftig",
   ROHBAU: "Rohbau",
+  KERNSANIERT: "Kernsaniert",
 };
 
 function summarizeProperty(m: WorkingMemory): string {

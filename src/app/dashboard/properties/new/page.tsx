@@ -20,6 +20,7 @@ const CONDITIONS = [
   { value: "RENOVIERUNGS_BEDUERFTIG", label: "Renovierungsbedürftig", sub: "Teilsanierung nötig" },
   { value: "SANIERUNGS_BEDUERFTIG", label: "Sanierungsbedürftig", sub: "Umfangreiche Arbeiten" },
   { value: "ROHBAU", label: "Rohbau", sub: "Nur Gebäudehülle" },
+  { value: "KERNSANIERT", label: "Kernsaniert", sub: "Vollständig saniert" },
 ];
 
 const ENERGY_CLASSES = ["A+", "A", "B", "C", "D", "E", "F", "G", "H"];

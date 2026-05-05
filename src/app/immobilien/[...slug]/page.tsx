@@ -77,7 +77,7 @@ export default async function PublicListingPage({ params }: Props) {
   };
   const COND_DE: Record<string, string> = {
     ERSTBEZUG: "Erstbezug", NEUBAU: "Neubau", GEPFLEGT: "Gepflegt",
-    RENOVIERUNGS_BEDUERFTIG: "Renovierungsbedarf", SANIERUNGS_BEDUERFTIG: "Sanierungsbedarf", ROHBAU: "Rohbau",
+    RENOVIERUNGS_BEDUERFTIG: "Renovierungsbedarf", SANIERUNGS_BEDUERFTIG: "Sanierungsbedarf", ROHBAU: "Rohbau", KERNSANIERT: "Kernsaniert",
   };
 
   return (

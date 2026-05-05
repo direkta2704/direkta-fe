@@ -48,6 +48,7 @@ interface Property {
   specifications: unknown;
   buildingInfo: unknown;
   extras: unknown;
+  tagline: string | null;
   parentId: string | null;
   unitLabel: string | null;
   createdAt: string;
@@ -64,6 +65,11 @@ interface Property {
   units: UnitSummary[];
 }
 
+const TYPE_DE: Record<string, string> = {
+  ETW: "Eigentumswohnung", EFH: "Einfamilienhaus", MFH: "Mehrfamilienhaus",
+  DHH: "Doppelhaushälfte", RH: "Reihenhaus", GRUNDSTUECK: "Grundstück",
+};
+
 const CONDITION_DE: Record<string, string> = {
   ERSTBEZUG: "Erstbezug",
   NEUBAU: "Neubau",
@@ -71,6 +77,7 @@ const CONDITION_DE: Record<string, string> = {
   RENOVIERUNGS_BEDUERFTIG: "Renovierungsbedürftig",
   SANIERUNGS_BEDUERFTIG: "Sanierungsbedürftig",
   ROHBAU: "Rohbau",
+  KERNSANIERT: "Kernsaniert",
 };
 
 export default function PropertyDetailPage() {
@@ -435,8 +442,79 @@ export default function PropertyDetailPage() {
           <p className="text-slate-500 mt-1">
             {property.postcode} {property.city}
           </p>
+          <div className="mt-2 flex items-center gap-3">
+            <select
+              className="text-xs font-bold text-primary bg-primary/5 border border-primary/20 rounded-lg px-2.5 py-1.5 cursor-pointer hover:bg-primary/10 transition-colors focus:outline-none focus:ring-1 focus:ring-primary"
+              value={property.type}
+              onChange={async (e) => {
+                await fetch(`/api/properties/${id}`, {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ type: e.target.value }),
+                });
+                fetchProperty();
+              }}
+            >
+              {Object.entries(TYPE_DE).map(([k, v]) => (
+                <option key={k} value={k}>{v}</option>
+              ))}
+            </select>
+            <select
+              className="text-xs font-bold text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 cursor-pointer hover:bg-slate-100 transition-colors focus:outline-none focus:ring-1 focus:ring-primary"
+              value={property.condition}
+              onChange={async (e) => {
+                await fetch(`/api/properties/${id}`, {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ condition: e.target.value }),
+                });
+                fetchProperty();
+              }}
+            >
+              {Object.entries(CONDITION_DE).map(([k, v]) => (
+                <option key={k} value={k}>{v}</option>
+              ))}
+            </select>
+          </div>
+          <div className="mt-2 flex items-center gap-2">
+            <span className="material-symbols-outlined text-sm text-slate-400">format_quote</span>
+            <input
+              className="text-sm italic text-slate-600 bg-transparent border-b border-dashed border-slate-200 focus:border-primary focus:outline-none px-1 py-0.5 min-w-[200px] max-w-[500px] placeholder:text-slate-300"
+              placeholder="Tagline eingeben (z.B. Drei Wohnungen. Ein Standard.)"
+              defaultValue={property.tagline || ""}
+              onBlur={async (e) => {
+                const val = e.target.value.trim();
+                if (val !== (property.tagline || "")) {
+                  await fetch(`/api/properties/${id}`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ tagline: val || null }),
+                  });
+                  fetchProperty();
+                }
+              }}
+            />
+          </div>
         </div>
         <div className="flex items-center gap-3">
+          <button
+            onClick={analyzePhotos}
+            disabled={analyzing}
+            className="bg-white border border-slate-200 hover:border-primary text-blueprint px-5 py-3 rounded-xl text-sm font-black uppercase tracking-[0.18em] transition-colors flex items-center gap-2 disabled:opacity-60"
+          >
+            <span className="material-symbols-outlined text-lg text-primary">{analyzing ? "hourglass_top" : "auto_awesome"}</span>
+            {analyzing ? "Analysiert..." : "Fotos analysieren"}
+          </button>
+          {hasListing && (
+            <button
+              onClick={() => downloadPdf(property.listings[0].id)}
+              disabled={pdfDownloading}
+              className="bg-white border border-slate-200 hover:border-primary text-blueprint px-5 py-3 rounded-xl text-sm font-black uppercase tracking-[0.18em] transition-colors flex items-center gap-2 disabled:opacity-60"
+            >
+              <span className="material-symbols-outlined text-lg text-primary">{pdfDownloading ? "hourglass_top" : "download"}</span>
+              {pdfDownloading ? "Wird erstellt..." : "PDF"}
+            </button>
+          )}
           {showTopListingButton && (
             <>
               {!hasListing ? (
@@ -449,31 +527,13 @@ export default function PropertyDetailPage() {
                   {creating ? "Wird erstellt..." : hasUnits ? "Paket-Inserat erstellen" : "Inserat erstellen"}
                 </button>
               ) : (
-                <>
-                  <button
-                    onClick={analyzePhotos}
-                    disabled={analyzing}
-                    className="bg-white border border-slate-200 hover:border-primary text-blueprint px-5 py-3 rounded-xl text-sm font-black uppercase tracking-[0.18em] transition-colors flex items-center gap-2 disabled:opacity-60"
-                  >
-                    <span className="material-symbols-outlined text-lg text-primary">{analyzing ? "hourglass_top" : "auto_awesome"}</span>
-                    {analyzing ? "Analysiert..." : "Fotos analysieren"}
-                  </button>
-                  <button
-                    onClick={() => downloadPdf(property.listings[0].id)}
-                    disabled={pdfDownloading}
-                    className="bg-white border border-slate-200 hover:border-primary text-blueprint px-5 py-3 rounded-xl text-sm font-black uppercase tracking-[0.18em] transition-colors flex items-center gap-2 disabled:opacity-60"
-                  >
-                    <span className="material-symbols-outlined text-lg text-primary">{pdfDownloading ? "hourglass_top" : "download"}</span>
-                    {pdfDownloading ? "Wird erstellt..." : "PDF"}
-                  </button>
-                  <button
-                    onClick={() => router.push(`/dashboard/listings/${property.listings[0].id}`)}
-                    className="bg-blueprint hover:bg-primary text-white px-5 py-3 rounded-xl text-sm font-black uppercase tracking-[0.18em] transition-colors flex items-center gap-2"
-                  >
-                    <span className="material-symbols-outlined text-lg">description</span>
-                    Inserat bearbeiten
-                  </button>
-                </>
+                <button
+                  onClick={() => router.push(`/dashboard/listings/${property.listings[0].id}`)}
+                  className="bg-blueprint hover:bg-primary text-white px-5 py-3 rounded-xl text-sm font-black uppercase tracking-[0.18em] transition-colors flex items-center gap-2"
+                >
+                  <span className="material-symbols-outlined text-lg">description</span>
+                  Inserat bearbeiten
+                </button>
               )}
             </>
           )}

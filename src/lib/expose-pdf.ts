@@ -58,6 +58,7 @@ export interface ExposeData {
   specifications?: Record<string, string>;
   buildingDescription?: string;
   extras?: { name: string; quantity: number; pricePerUnit: number; description?: string }[];
+  tagline?: string;
   lat?: number;
   lng?: number;
   mapImage?: string;
@@ -271,6 +272,7 @@ function buildExposeHtml(data: ExposeData): string {
             <h1 class="tc-title">${coverTitle}</h1>
             <div class="tc-city">in ${esc(data.city)}</div>
             <div class="tc-divider"><span class="tc-div-line"></span><span class="tc-div-diamond">&loz;</span><span class="tc-div-line"></span></div>
+            ${data.tagline ? `<p class="tc-tagline">${esc(data.tagline)}</p>` : ""}
             <p class="tc-desc">${coverSub}</p>
           </div>
           <div class="tc-facts">${typoFactsHtml}</div>
@@ -292,7 +294,7 @@ function buildExposeHtml(data: ExposeData): string {
           <div class="cover-content">
             <div class="cover-eyebrow">${eyebrow}</div>
             <h1 class="cover-title">${coverTitle}</h1>
-            <p class="cover-subtitle">${coverSub}</p>
+            ${data.tagline ? `<p class="cover-tagline">${esc(data.tagline)}</p>` : `<p class="cover-subtitle">${coverSub}</p>`}
             <div class="cover-address">${addressLine}</div>
             <div class="cover-facts">${factsHtml}</div>
           </div>
@@ -1094,7 +1096,7 @@ function buildExposeHtml(data: ExposeData): string {
         <div class="back-cover__content">
           <div class="back-cover__brand">DIREKTA<span class="accent">.</span></div>
           <div class="back-cover__rule"></div>
-          <div class="back-cover__tagline">Immobilie verkaufen. Direkt.</div>
+          <div class="back-cover__tagline">${data.tagline ? esc(data.tagline) : "Immobilie verkaufen. Direkt."}</div>
         </div>
         <div class="back-cover__footer">
           ${esc(data.address)} &middot; ${esc(data.city)} &middot; Expos&eacute; &middot; Stand ${esc(data.generatedAt)} &middot; www.direkta.de
@@ -1308,11 +1310,12 @@ html::-webkit-scrollbar { display: none; }
 .cover-eyebrow {
   font-family: var(--sans);
   font-size: 8pt;
-  font-weight: 500;
-  color: var(--gold);
-  letter-spacing: 0.08em;
+  font-weight: 600;
+  color: #e8d9b8;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   margin-bottom: 10px;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.7);
 }
 .cover-title {
   font-family: var(--serif);
@@ -1332,6 +1335,16 @@ html::-webkit-scrollbar { display: none; }
   line-height: 1.4;
   margin-bottom: 10px;
   max-width: 155mm;
+}
+.cover-tagline {
+  font-family: var(--serif);
+  font-size: 18pt;
+  font-weight: 400;
+  color: #fff;
+  line-height: 1.3;
+  margin-bottom: 10px;
+  max-width: 155mm;
+  letter-spacing: 0.01em;
 }
 .cover-address {
   font-family: var(--sans);
@@ -1467,6 +1480,16 @@ html::-webkit-scrollbar { display: none; }
   font-size: 8pt;
   color: var(--gold);
   line-height: 1;
+}
+.tc-tagline {
+  font-family: var(--serif);
+  font-size: 16pt;
+  font-weight: 400;
+  color: rgba(255,255,255,0.9);
+  line-height: 1.35;
+  max-width: 140mm;
+  margin: 0 0 10px 0;
+  letter-spacing: 0.01em;
 }
 .tc-desc {
   font-family: var(--serif);

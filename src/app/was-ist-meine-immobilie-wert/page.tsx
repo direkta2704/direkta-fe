@@ -19,6 +19,7 @@ const CONDITIONS = [
   { value: "GEPFLEGT", label: "Gepflegt" },
   { value: "RENOVIERUNGS_BEDUERFTIG", label: "Renovierungsbedürftig" },
   { value: "SANIERUNGS_BEDUERFTIG", label: "Sanierungsbedürftig" },
+  { value: "KERNSANIERT", label: "Kernsaniert" },
 ];
 
 interface ValuationResult {

@@ -186,7 +186,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     const COND_DE: Record<string, string> = {
       ERSTBEZUG: "Erstbezug", NEUBAU: "Neubau", GEPFLEGT: "Gepflegt",
       RENOVIERUNGS_BEDUERFTIG: "Renovierungsbedürftig",
-      SANIERUNGS_BEDUERFTIG: "Sanierungsbedürftig", ROHBAU: "Rohbau",
+      SANIERUNGS_BEDUERFTIG: "Sanierungsbedürftig", ROHBAU: "Rohbau", KERNSANIERT: "Kernsaniert",
     };
 
     const photoMedia = p.media.filter((m) => m.kind === "PHOTO");
@@ -321,6 +321,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       specifications: p.specifications && typeof p.specifications === "object" && !Array.isArray(p.specifications) ? (p.specifications as Record<string, string>) : undefined,
       buildingDescription: listing.buildingDescription || undefined,
       extras: Array.isArray(p.extras) ? (p.extras as { name: string; quantity: number; pricePerUnit: number; description?: string }[]) : undefined,
+      tagline: (p as unknown as { tagline?: string }).tagline || undefined,
       lat: lat || undefined,
       lng: lng || undefined,
       mapImage: mapImageBase64,

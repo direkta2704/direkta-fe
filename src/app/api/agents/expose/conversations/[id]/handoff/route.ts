@@ -271,7 +271,7 @@ export async function POST(
       const CONDITION_DE: Record<string, string> = {
         ERSTBEZUG: "Erstbezug", NEUBAU: "Neubau", GEPFLEGT: "Gepflegt",
         RENOVIERUNGS_BEDUERFTIG: "Renovierungsbedürftig",
-        SANIERUNGS_BEDUERFTIG: "Sanierungsbedürftig", ROHBAU: "Rohbau",
+        SANIERUNGS_BEDUERFTIG: "Sanierungsbedürftig", ROHBAU: "Rohbau", KERNSANIERT: "Kernsaniert",
       };
 
       // Load up to 6 photo bytes for the PDF
