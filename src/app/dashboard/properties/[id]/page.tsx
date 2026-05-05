@@ -126,6 +126,9 @@ export default function PropertyDetailPage() {
   const [lightboxPhoto, setLightboxPhoto] = useState<MediaItem | null>(null);
   const [dragPhotoId, setDragPhotoId] = useState<string | null>(null);
   const [saveToast, setSaveToast] = useState(false);
+  const [undoDelete, setUndoDelete] = useState<{ id: string; timer: ReturnType<typeof setTimeout> } | null>(null);
+  const [showActivity, setShowActivity] = useState(false);
+  const [showMobileQR, setShowMobileQR] = useState(false);
   const [extrasEditing, setExtrasEditing] = useState(false);
   const [extraForm, setExtraForm] = useState({ name: "", quantity: "1", pricePerUnit: "", description: "" });
   const [extrasSaving, setExtrasSaving] = useState(false);
@@ -176,6 +179,19 @@ export default function PropertyDetailPage() {
       });
     }
   }, [property?.energyCert]);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    function handleKey(e: KeyboardEvent) {
+      if ((e.ctrlKey || e.metaKey) && e.key === "p") {
+        e.preventDefault();
+        const listing = property?.listings?.[0];
+        if (listing) downloadPdf(listing.id);
+      }
+    }
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [property]);
 
   async function saveEnergyCert() {
     if (!energyForm.energyClass || !energyForm.energyValue || !energyForm.primarySource || !energyForm.validUntil) return;
@@ -287,7 +303,27 @@ export default function PropertyDetailPage() {
   }
 
   async function deleteMedia(mediaId: string) {
-    await fetch(`/api/media/${mediaId}`, { method: "DELETE" });
+    // Soft-delete with 5 second undo window
+    if (undoDelete) {
+      clearTimeout(undoDelete.timer);
+      await fetch(`/api/media/${undoDelete.id}`, { method: "DELETE" });
+    }
+    // Hide it immediately in UI
+    if (property) {
+      setProperty({ ...property, media: property.media.filter(m => m.id !== mediaId) });
+    }
+    const timer = setTimeout(async () => {
+      await fetch(`/api/media/${mediaId}`, { method: "DELETE" });
+      setUndoDelete(null);
+      fetchProperty();
+    }, 5000);
+    setUndoDelete({ id: mediaId, timer });
+  }
+
+  function undoLastDelete() {
+    if (!undoDelete) return;
+    clearTimeout(undoDelete.timer);
+    setUndoDelete(null);
     fetchProperty();
   }
 
@@ -788,6 +824,13 @@ export default function PropertyDetailPage() {
                     {selectedPhotos.size} löschen
                   </button>
                 )}
+                <button
+                  onClick={() => setShowMobileQR(true)}
+                  className="bg-white border border-slate-200 hover:border-slate-300 text-slate-500 px-2.5 py-2 rounded-xl transition-colors flex items-center"
+                  title="Vom Handy hochladen"
+                >
+                  <span className="material-symbols-outlined text-base">qr_code_2</span>
+                </button>
                 <label className="bg-blueprint hover:bg-primary text-white px-4 py-2 rounded-xl text-xs font-black uppercase tracking-[0.15em] transition-colors cursor-pointer flex items-center gap-2">
                   <span className="material-symbols-outlined text-base">add_photo_alternate</span>
                   Fotos hinzufügen
@@ -1829,6 +1872,44 @@ export default function PropertyDetailPage() {
             </div>
           </div>
 
+          {/* Activity log */}
+          <div className="bg-white rounded-2xl border border-slate-200 p-5">
+            <button
+              onClick={() => setShowActivity(!showActivity)}
+              className="w-full flex items-center justify-between"
+            >
+              <h3 className="text-sm font-black text-blueprint flex items-center gap-2">
+                <span className="material-symbols-outlined text-base">history</span>
+                Aktivitäten
+              </h3>
+              <span className="material-symbols-outlined text-slate-400 text-sm">{showActivity ? "expand_less" : "expand_more"}</span>
+            </button>
+            {showActivity && (
+              <div className="mt-4 space-y-3">
+                {[
+                  ...(property.createdAt ? [{ icon: "add_home", text: "Immobilie erstellt", date: property.createdAt }] : []),
+                  ...(property.energyCert ? [{ icon: "bolt", text: "Energieausweis hinzugefügt", date: property.createdAt }] : []),
+                  ...photos.slice(0, 3).map(p => ({ icon: "photo_camera", text: `Foto hochgeladen: ${p.fileName || "Foto"}`, date: p.ordering === 0 ? property.createdAt : property.createdAt })),
+                  ...(hasListing ? [{ icon: "description", text: "Inserat erstellt", date: property.listings[0]?.slug ? property.createdAt : property.createdAt }] : []),
+                  ...(property.units.length > 0 ? [{ icon: "apartment", text: `${property.units.length} Wohnungen angelegt`, date: property.createdAt }] : []),
+                ].slice(0, 8).map((event, i) => (
+                  <div key={i} className="flex items-start gap-3">
+                    <div className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+                      <span className="material-symbols-outlined text-xs text-slate-400">{event.icon}</span>
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-600">{event.text}</p>
+                      <p className="text-[10px] text-slate-400">{new Date(event.date).toLocaleDateString("de-DE", { day: "numeric", month: "short", year: "numeric" })}</p>
+                    </div>
+                  </div>
+                ))}
+                {photos.length === 0 && !property.energyCert && !hasListing && (
+                  <p className="text-xs text-slate-400">Noch keine Aktivitäten.</p>
+                )}
+              </div>
+            )}
+          </div>
+
           {/* Price consistency warning */}
           {hasUnits && sellingMode === "BOTH" && (() => {
             const packagePrice = property.listings[0]?.askingPrice ? Number(property.listings[0].askingPrice) : 0;
@@ -1959,6 +2040,30 @@ export default function PropertyDetailPage() {
       </div>
 
       {/* Add Apartment Modal */}
+      {/* Mobile QR Upload Modal */}
+      {showMobileQR && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center">
+          <div className="fixed inset-0 bg-blueprint/60 backdrop-blur-sm" onClick={() => setShowMobileQR(false)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl p-8 max-w-sm w-full mx-4 text-center">
+            <button onClick={() => setShowMobileQR(false)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600">
+              <span className="material-symbols-outlined">close</span>
+            </button>
+            <span className="material-symbols-outlined text-4xl text-primary mb-3 block">phone_iphone</span>
+            <h3 className="text-lg font-black text-blueprint mb-2">Vom Handy hochladen</h3>
+            <p className="text-sm text-slate-500 mb-5">Scannen Sie den QR-Code mit Ihrem Handy, um direkt Fotos hochzuladen.</p>
+            <div className="bg-white p-3 rounded-xl border border-slate-200 inline-block mb-4">
+              <img
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(`${typeof window !== "undefined" ? window.location.origin : ""}/dashboard/properties/${id}`)}`}
+                alt="QR Code"
+                width={200}
+                height={200}
+              />
+            </div>
+            <p className="text-[10px] text-slate-400">Öffnet diese Seite auf Ihrem Handy — dort können Sie Fotos direkt von der Kamera hochladen.</p>
+          </div>
+        </div>
+      )}
+
       {/* Lightbox */}
       {lightboxPhoto && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90" onClick={() => setLightboxPhoto(null)}>
@@ -2269,6 +2374,20 @@ export default function PropertyDetailPage() {
         <div className="fixed bottom-6 right-6 z-[300] bg-emerald-600 text-white px-4 py-2.5 rounded-xl shadow-lg flex items-center gap-2 animate-in fade-in slide-in-from-bottom-4 duration-200">
           <span className="material-symbols-outlined text-base">check_circle</span>
           <span className="text-sm font-bold">Gespeichert</span>
+        </div>
+      )}
+
+      {/* Undo delete toast */}
+      {undoDelete && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[300] bg-blueprint text-white px-5 py-3 rounded-xl shadow-lg flex items-center gap-3">
+          <span className="material-symbols-outlined text-base">delete</span>
+          <span className="text-sm">Foto gelöscht</span>
+          <button
+            onClick={undoLastDelete}
+            className="text-sm font-black text-primary hover:text-white underline underline-offset-2 transition-colors"
+          >
+            Rückgängig
+          </button>
         </div>
       )}
     </>
