@@ -125,6 +125,7 @@ export default function PropertyDetailPage() {
   const [selectedPhotos, setSelectedPhotos] = useState<Set<string>>(new Set());
   const [lightboxPhoto, setLightboxPhoto] = useState<MediaItem | null>(null);
   const [dragPhotoId, setDragPhotoId] = useState<string | null>(null);
+  const [saveToast, setSaveToast] = useState(false);
   const [extrasEditing, setExtrasEditing] = useState(false);
   const [extraForm, setExtraForm] = useState({ name: "", quantity: "1", pricePerUnit: "", description: "" });
   const [extrasSaving, setExtrasSaving] = useState(false);
@@ -288,6 +289,55 @@ export default function PropertyDetailPage() {
   async function deleteMedia(mediaId: string) {
     await fetch(`/api/media/${mediaId}`, { method: "DELETE" });
     fetchProperty();
+  }
+
+  function showSaveToast() {
+    setSaveToast(true);
+    setTimeout(() => setSaveToast(false), 2000);
+  }
+
+  function calcProgress(): number {
+    if (!property) return 0;
+    const checks = [
+      !!property.type,
+      !!(property.street && property.houseNumber && property.postcode && property.city),
+      !!property.livingArea,
+      !!property.condition,
+      property.rooms != null,
+      property.yearBuilt != null,
+      !!property.energyCert,
+      photos.length >= 1,
+      property.media.some(m => m.kind === "FLOORPLAN"),
+      hasListing,
+    ];
+    return Math.round(checks.filter(Boolean).length / checks.length * 100);
+  }
+
+  async function duplicateProperty() {
+    if (!property) return;
+    const res = await fetch("/api/properties", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: property.type,
+        street: property.street,
+        houseNumber: property.houseNumber,
+        postcode: property.postcode,
+        city: property.city,
+        livingArea: property.livingArea,
+        plotArea: property.plotArea,
+        yearBuilt: property.yearBuilt,
+        rooms: property.rooms,
+        bathrooms: property.bathrooms,
+        floor: property.floor,
+        condition: property.condition,
+        attributes: property.attributes,
+      }),
+    });
+    if (res.ok) {
+      const newProp = await res.json();
+      router.push(`/dashboard/properties/${newProp.id}`);
+    }
   }
 
   async function bulkDeletePhotos() {
@@ -535,6 +585,17 @@ export default function PropertyDetailPage() {
         </button>
       )}
 
+      {/* Progress bar */}
+      <div className="mb-4">
+        <div className="flex items-center justify-between mb-1.5">
+          <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Vollständigkeit</span>
+          <span className="text-[10px] font-black text-primary">{calcProgress()}%</span>
+        </div>
+        <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+          <div className="h-full bg-primary rounded-full transition-all duration-500" style={{ width: `${calcProgress()}%` }} />
+        </div>
+      </div>
+
       <div className="flex items-start justify-between mb-8">
         <div>
           <h1 className="text-3xl font-black text-blueprint tracking-tight">
@@ -554,6 +615,7 @@ export default function PropertyDetailPage() {
                   body: JSON.stringify({ type: e.target.value }),
                 });
                 fetchProperty();
+                showSaveToast();
               }}
             >
               {Object.entries(TYPE_DE).map(([k, v]) => (
@@ -570,6 +632,7 @@ export default function PropertyDetailPage() {
                   body: JSON.stringify({ condition: e.target.value }),
                 });
                 fetchProperty();
+                showSaveToast();
               }}
             >
               {Object.entries(CONDITION_DE).map(([k, v]) => (
@@ -592,12 +655,30 @@ export default function PropertyDetailPage() {
                     body: JSON.stringify({ tagline: val || null }),
                   });
                   fetchProperty();
+                  showSaveToast();
                 }
               }}
             />
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap justify-end">
+          <button
+            onClick={duplicateProperty}
+            className="bg-white border border-slate-200 hover:border-slate-300 text-slate-500 px-3 py-3 rounded-xl text-sm transition-colors flex items-center gap-1.5"
+            title="Immobilie duplizieren"
+          >
+            <span className="material-symbols-outlined text-lg">content_copy</span>
+          </button>
+          {hasListing && (
+            <a
+              href={`/immobilien/${property.listings[0].slug}`}
+              target="_blank"
+              className="bg-white border border-slate-200 hover:border-slate-300 text-slate-500 px-3 py-3 rounded-xl text-sm transition-colors flex items-center gap-1.5"
+              title="Vorschau als Käufer"
+            >
+              <span className="material-symbols-outlined text-lg">visibility</span>
+            </a>
+          )}
           <button
             onClick={analyzePhotos}
             disabled={analyzing}
@@ -2149,6 +2230,14 @@ export default function PropertyDetailPage() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Auto-save toast */}
+      {saveToast && (
+        <div className="fixed bottom-6 right-6 z-[300] bg-emerald-600 text-white px-4 py-2.5 rounded-xl shadow-lg flex items-center gap-2 animate-in fade-in slide-in-from-bottom-4 duration-200">
+          <span className="material-symbols-outlined text-base">check_circle</span>
+          <span className="text-sm font-bold">Gespeichert</span>
         </div>
       )}
     </>
