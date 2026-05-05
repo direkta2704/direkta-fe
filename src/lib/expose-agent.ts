@@ -371,7 +371,7 @@ const FIELD_PRIORITY: FieldSpec[] = [
   { field: "city",        group: "identity", blocksPricing: true,  blocksPublish: true,  infoValue: 1,   optional: false, isFilled: wm => !!wm.city,        prompt: "In welcher Stadt?" },
   // ── core: mandatory for pricing pipeline ──
   { field: "livingArea",  group: "core",     blocksPricing: true,  blocksPublish: true,  infoValue: 1,   optional: false, isFilled: wm => !!wm.livingArea,  prompt: "Wie groß ist die Wohnfläche in m²?" },
-  { field: "condition",   group: "core",     blocksPricing: true,  blocksPublish: true,  infoValue: 0.8, optional: false, isFilled: wm => !!wm.condition,   prompt: "In welchem Zustand ist die Immobilie? (Gepflegt, Erstbezug, Renovierungsbedürftig, …)" },
+  { field: "condition",   group: "core",     blocksPricing: true,  blocksPublish: true,  infoValue: 0.8, optional: false, isFilled: wm => !!wm.condition,   prompt: "In welchem Zustand ist die Immobilie? (Gepflegt, Erstbezug, Kernsaniert, Neubau, Renovierungsbedürftig, …)" },
   // ── details: improve listing quality, asked before energy/media ──
   { field: "rooms",       group: "details",  blocksPricing: false, blocksPublish: false, infoValue: 0.8, optional: true,  isFilled: wm => wm.rooms != null, prompt: "Wie viele Zimmer hat die Immobilie?" },
   { field: "yearBuilt",   group: "details",  blocksPricing: false, blocksPublish: false, infoValue: 0.7, optional: true,  isFilled: wm => wm.yearBuilt != null, prompt: "Wann wurde das Gebäude gebaut (Baujahr)?" },
@@ -1730,14 +1730,48 @@ MFH-INTELLIGENZ:
 • Plausibilitätsprüfung: Gesamtfläche aller Einheiten sollte ungefähr der Gebäude-Wohnfläche entsprechen
 • Bei "Weiß ich nicht" für optionale Unit-Felder → überspringen, kein Problem
 
-═══ INTELLIGENZ ═══
+═══ INTELLIGENZ & ANTI-LOOP ═══
 
-• "Weiß ich nicht" / "skip" → Pflichtfeld: Standardwert vorschlagen. Optional: überspringen.
-• "Gleiche wie oben" / "selbe" → vorherige Werte übernehmen
-• Plausibilität prüfen: 250m² + 3 Zimmer bei MFH? → nachfragen
+DATEN-INTELLIGENZ:
+• "Weiß ich nicht" / "skip" / "keine Ahnung" → Pflichtfeld: Standardwert vorschlagen. Optional: überspringen. Frage NICHT nochmal nach demselben Feld!
+• "Gleiche wie oben" / "selbe" / "wie vorher" → vorherige Werte übernehmen
+• Plausibilität prüfen: 250m² + 3 Zimmer bei MFH? → nachfragen. 10m² Wohnfläche? → "Meinten Sie 100 m²?"
 • Energieausweis-PDF nicht lesbar → manuelle Eingabe akzeptieren, weiter
 • Adresse nicht validierbar → akzeptieren, weiter
 • Pricing fehlgeschlagen → zeige fehlende Felder
+
+ANTI-LOOP — VERMEIDE ENDLOSSCHLEIFEN:
+• Wenn du bereits 2x nach demselben Feld gefragt hast → überspringen oder Standardwert setzen. NIEMALS ein drittes Mal fragen.
+• Wenn der Verkäufer "weiter" / "nächste" / "egal" sagt → akzeptiere es und gehe zum nächsten Schritt.
+• Wenn der Verkäufer eine Frage ignoriert und stattdessen etwas anderes sagt → extrahiere was er gesagt hat und gehe weiter.
+• Wenn alle Pflichtfelder gefüllt sind aber der Verkäufer weiter chattet → erkenne dass er fertig ist und starte die Pipeline.
+• MAXIMAL 3 Nachfragen zu optionalen Feldern insgesamt. Danach: "Die restlichen Details können Sie später im Inserat ergänzen."
+
+KONFUSION ERKENNEN:
+• Wenn der Verkäufer widersprüchliche Angaben macht (z.B. "4 Zimmer" dann "nein, 3 Zimmer") → nimm die LETZTE Angabe und sage "Verstanden, ich habe 3 Zimmer notiert."
+• Wenn der Verkäufer Unsinn schreibt oder testet → antworte freundlich: "Ich konnte diese Eingabe leider nicht zuordnen. Könnten Sie mir [konkretes fehlendes Feld] mitteilen?"
+• Wenn der Verkäufer auf Englisch schreibt → antworte auf Deutsch, extrahiere die Daten trotzdem
+• Wenn der Verkäufer "hallo" oder Smalltalk schreibt → kurz grüßen, dann direkt zum nächsten fehlenden Feld
+• Wenn der Verkäufer den Prozess nicht versteht → EINMAL kurz erklären (max 3 Sätze), dann weitermachen
+
+FRUSTRIERTE VERKÄUFER:
+• "Das dauert zu lange" / "zu viele Fragen" → "Verstanden! Lassen Sie uns abkürzen. Ich brauche nur noch: [1-2 fehlende Pflichtfelder]. Den Rest können Sie später ergänzen."
+• "Ich will nur schnell ein Inserat" → überspringe ALLE optionalen Felder, frage nur Pflichtfelder
+• "Vergessen Sie es" / "Abbrechen" → "Kein Problem! Ihre bisherigen Daten sind gespeichert. Sie können jederzeit hier fortfahren oder das Formular nutzen."
+• Leere Nachricht oder nur Leerzeichen → "Möchten Sie fortfahren? Ich brauche noch [nächstes Pflichtfeld]."
+
+NEU STARTEN:
+• "Von vorne" / "nochmal" / "reset" / "neu anfangen" → "Alles klar, wir starten neu! Was für eine Immobilie möchten Sie verkaufen?"
+  ABER: Lösche KEINE Daten aus dem Working Memory. Der Verkäufer meint meistens "andere Frage stellen", nicht "alle Daten löschen".
+
+COPY-PASTE ERKENNEN:
+• Wenn der Nutzer einen langen Text schickt (>500 Zeichen) mit vielen Daten → BULK-MODUS: Extrahiere ALLES, zeige ✓-Liste
+• Wenn es wie ein Inserat aussieht (enthält "Exposé", "Objektbeschreibung", "Energieausweis") → "Ich sehe, Sie haben ein bestehendes Inserat. Ich übernehme die Daten daraus."
+
+FORTSCHRITT SICHERSTELLEN:
+• Nach jeder Antwort: prüfe das Working Memory. Wenn sich NICHTS geändert hat → versuche einen anderen Ansatz oder überspringe optionale Felder.
+• Wenn completeness > 80% → fokussiere nur noch auf fehlende Pflichtfelder (Energie, Fotos)
+• Wenn der Verkäufer seit 3 Nachrichten keine neuen Daten liefert → zusammenfassen was fehlt und fragen "Möchten Sie die restlichen Felder überspringen?"
 
 ═══ FOTO-ANLEITUNG ═══
 
@@ -1784,7 +1818,7 @@ Wenn "nein" oder "skip" → überspringen.
 ═══ REFERENZ ═══
 
 IMMOBILIENTYPEN: ETW, EFH, MFH, DHH, RH, GRUNDSTUECK
-ZUSTAND: ERSTBEZUG, NEUBAU, GEPFLEGT, RENOVIERUNGS_BEDUERFTIG, SANIERUNGS_BEDUERFTIG, ROHBAU
+ZUSTAND: ERSTBEZUG, NEUBAU, GEPFLEGT, RENOVIERUNGS_BEDUERFTIG, SANIERUNGS_BEDUERFTIG, ROHBAU, KERNSANIERT
 ENERGIEKLASSEN: A+, A, B, C, D, E, F, G, H
 VERKAUFSART: INDIVIDUAL (einzeln), BUNDLE (Paket), BOTH (beides)`;
 
@@ -1893,26 +1927,65 @@ function normalizeUserPatch(data: Record<string, unknown>, turnNumber: number): 
   if (typeof data.city === "string") patch.city = data.city;
   if (typeof data.livingArea === "number") patch.livingArea = data.livingArea;
   if (typeof data.plotArea === "number") patch.plotArea = data.plotArea;
-  if (typeof data.yearBuilt === "number") patch.yearBuilt = data.yearBuilt;
+  if (typeof data.yearBuilt === "number") {
+    patch.yearBuilt = data.yearBuilt < 100 ? 1900 + data.yearBuilt : data.yearBuilt;
+  }
   if (typeof data.rooms === "number") patch.rooms = data.rooms;
   if (typeof data.bathrooms === "number") patch.bathrooms = data.bathrooms;
   if (typeof data.floor === "number") patch.floor = data.floor;
+  else if (typeof data.floor === "string") {
+    const floorMap: Record<string, number> = {
+      eg: 0, erdgeschoss: 0, parterre: 0,
+      "1. og": 1, "1.og": 1, "1 og": 1,
+      "2. og": 2, "2.og": 2, "2 og": 2,
+      "3. og": 3, "3.og": 3, "3 og": 3,
+      dg: 99, dachgeschoss: 99,
+      ug: -1, untergeschoss: -1, keller: -1,
+    };
+    const fl = floorMap[data.floor.toLowerCase().trim()];
+    if (fl !== undefined) patch.floor = fl;
+    else { const n = parseInt(data.floor); if (!isNaN(n)) patch.floor = n; }
+  }
   if (typeof data.condition === "string") {
     const map: Record<string, string> = {
       erstbezug: "ERSTBEZUG", neubau: "NEUBAU", gepflegt: "GEPFLEGT",
       "renovierungsbedürftig": "RENOVIERUNGS_BEDUERFTIG", renovierungsbeduerftig: "RENOVIERUNGS_BEDUERFTIG",
       "sanierungsbedürftig": "SANIERUNGS_BEDUERFTIG", sanierungsbeduerftig: "SANIERUNGS_BEDUERFTIG",
       rohbau: "ROHBAU",
+      kernsaniert: "KERNSANIERT", "kern-saniert": "KERNSANIERT", "komplett saniert": "KERNSANIERT",
     };
     patch.condition = map[data.condition.toLowerCase()] || data.condition.toUpperCase();
   }
-  if (Array.isArray(data.attributes)) patch.attributes = data.attributes.map(String);
+  if (Array.isArray(data.attributes)) {
+    const abbrMap: Record<string, string> = {
+      fbh: "Fußbodenheizung", blk: "Balkon", tg: "Tiefgarage",
+      ga: "Garten", stpl: "Stellplatz", "tg-stellplatz": "Tiefgaragen-Stellplatz",
+      ev: "Aufzug", keller: "Keller", terrasse: "Terrasse",
+    };
+    patch.attributes = data.attributes.map((a: unknown) => {
+      const s = String(a).trim();
+      return abbrMap[s.toLowerCase()] || s;
+    });
+  }
   if (typeof data.hasEnergyCert === "boolean") patch.hasEnergyCert = data.hasEnergyCert;
   if (typeof data.energyCertType === "string") patch.energyCertType = data.energyCertType.toUpperCase();
   if (typeof data.energyClass === "string") patch.energyClass = data.energyClass;
   if (typeof data.energyValue === "number") patch.energyValue = data.energyValue;
   if (typeof data.energySource === "string") patch.energySource = data.energySource;
   if (typeof data.askingPrice === "number") patch.askingPrice = data.askingPrice;
+  else if (typeof data.askingPrice === "string") {
+    const priceStr = data.askingPrice.toLowerCase().replace(/[€\s]/g, "");
+    if (/mio/i.test(priceStr)) {
+      const n = parseFloat(priceStr.replace(/[^0-9.,]/g, "").replace(",", "."));
+      if (!isNaN(n)) patch.askingPrice = Math.round(n * 1_000_000);
+    } else if (/k$/i.test(priceStr)) {
+      const n = parseFloat(priceStr.replace(/[^0-9.,]/g, "").replace(",", "."));
+      if (!isNaN(n)) patch.askingPrice = Math.round(n * 1000);
+    } else {
+      const n = parseInt(priceStr.replace(/\./g, "").replace(",", "."));
+      if (!isNaN(n) && n > 0) patch.askingPrice = n;
+    }
+  }
   if (typeof data.priceOverride === "boolean") patch.priceOverride = data.priceOverride;
   if (Array.isArray(data.assumptions)) patch.assumptions = data.assumptions.map(String);
   if (typeof data.unitCount === "number") patch.unitCount = data.unitCount;
@@ -2023,9 +2096,35 @@ Nutzer antwortete: "${userMessage}"
 
 WICHTIG: Extrahiere ALLE erkennbaren Daten aus der Antwort. Bei Bulk-Eingaben mit vielen Daten, extrahiere ALLES auf einmal.
 
+FORMATE ERKENNEN:
+- "BJ 99" oder "Baujahr 99" → yearBuilt: 1999 (zweistellig = 1900er)
+- "BJ 2020" → yearBuilt: 2020
+- "3ZKB" oder "3 ZKB" → rooms: 3, bathrooms: 1
+- "4ZKBB" → rooms: 4, bathrooms: 2
+- "EG" / "Erdgeschoss" / "Parterre" → floor: 0
+- "1. OG" / "1.OG" / "erster Stock" → floor: 1
+- "DG" / "Dachgeschoss" → floor: -1 (Sonderwert für DG)
+- "UG" / "Untergeschoss" / "Keller" → floor: -1
+- "ca. 250" / "~250" / "ungefähr 250" / "250qm" / "250 Quadratmeter" → livingArea: 250
+- "500k" / "500K" → askingPrice: 500000
+- "eine halbe Million" → askingPrice: 500000
+- "1,2 Mio" / "1.2 Mio" → askingPrice: 1200000
+- "500.000" (mit Tausenderpunkt) → 500000
+- "FBH" → attributes: ["Fußbodenheizung"]
+- "BLK" → attributes: ["Balkon"]
+- "TG" / "TG-Stellplatz" → attributes: ["Tiefgarage"]
+- "GA" → attributes: ["Garten"]
+- "Marktstr." → street: "Marktstraße" (Abkürzungen auflösen)
+- "Str." → "Straße", "Pl." → "Platz", "Weg" bleibt "Weg"
+
 Beispiele für einzelne Antworten:
 - Agent: "Wohnfläche?" → Nutzer: "250" → { "livingArea": 250 }
 - Agent: "Zustand?" → Nutzer: "Gepflegt" → { "condition": "GEPFLEGT" }
+- Agent: "Zustand?" → Nutzer: "kernsaniert" → { "condition": "KERNSANIERT" }
+- Agent: "Baujahr?" → Nutzer: "99" → { "yearBuilt": 1999 }
+- Agent: "Etage?" → Nutzer: "EG" → { "floor": 0 }
+- Agent: "Zimmer?" → Nutzer: "3ZKB" → { "rooms": 3, "bathrooms": 1 }
+- Agent: "Preis?" → Nutzer: "500k" → { "askingPrice": 500000 }
 
 Beispiel für Bulk-Eingabe:
 - Nutzer: "MFH, Marktstraße 12, 76571 Gaggenau, 250m², 8 Zimmer, 3 Bäder, Bj 1999, gepflegt. 3 Wohnungen: WE1 95m² 3Zi EG, WE2 55m² 2Zi 1.OG. Verkauf: beides. Energie: Verbrauch B 70kWh Gas. Preis: 525000"
@@ -2037,6 +2136,10 @@ WICHTIGE REGELN:
 - street und houseNumber GETRENNT: "Marktstraße 12" → street: "Marktstraße", houseNumber: "12"
 - postcode und city GETRENNT: "76571 Gaggenau" → postcode: "76571", city: "Gaggenau"
 - postcode ist IMMER nur die 5-stellige Zahl, city ist IMMER nur der Ortsname
+- Bei widersprüchlichen Angaben: nimm die NEUESTE (was der Nutzer JETZT sagt, nicht was vorher bekannt war)
+- "Weiß ich nicht" / "skip" / "keine Ahnung" / "egal" / "weiter" → extrahiere NICHTS für dieses Feld, gib {} zurück
+- Smalltalk ("hallo", "danke", "ok") → {} zurückgeben, keine Daten erfinden
+- Unsinn/Tests ("asdf", "123", "test") → {} zurückgeben
 
 Erlaubte Felder (nur NEUE/GEÄNDERTE extrahieren):
 - type: ETW|EFH|MFH|DHH|RH|GRUNDSTUECK (NUR der Immobilientyp, nicht Grundstücksfläche!)
@@ -2050,7 +2153,7 @@ Erlaubte Felder (nur NEUE/GEÄNDERTE extrahieren):
 - rooms: Zimmeranzahl (Zahl)
 - bathrooms: Badezimmer (Zahl)
 - floor: Etage (Zahl)
-- condition: ERSTBEZUG|NEUBAU|GEPFLEGT|RENOVIERUNGS_BEDUERFTIG|SANIERUNGS_BEDUERFTIG|ROHBAU
+- condition: ERSTBEZUG|NEUBAU|GEPFLEGT|RENOVIERUNGS_BEDUERFTIG|SANIERUNGS_BEDUERFTIG|ROHBAU|KERNSANIERT
 - attributes: Array von Strings (Balkon, Keller, Garten, Stellplatz, Fussbodenheizung, etc.)
 - hasEnergyCert: true/false
 - energyCertType: VERBRAUCH|BEDARF
