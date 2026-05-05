@@ -270,7 +270,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
     // Load unit data for MFH bundle listings
     const isBundle = !p.parentId && p.units && p.units.length > 0;
-    let unitData: { label: string; livingArea: number; rooms: number | null; bathrooms?: number; floor?: number; askingPrice?: number; titleShort?: string; roomProgram?: { name: string; area: number }[]; photos: ExposePhoto[]; floorPlans: ExposePhoto[] }[] | undefined;
+    let unitData: { label: string; livingArea: number; rooms: number | null; bathrooms?: number; floor?: number; askingPrice?: number; titleShort?: string; roomProgram?: { name: string; area: number }[]; photos: ExposePhoto[]; floorPlans: ExposePhoto[]; extras?: { name: string; quantity: number; pricePerUnit: number; description?: string }[] }[] | undefined;
 
     if (isBundle) {
       unitData = [];
@@ -306,6 +306,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
           roomProgram: Array.isArray(unit.roomProgram) ? (unit.roomProgram as { name: string; area: number }[]) : undefined,
           photos: uPhotos,
           floorPlans: uFP,
+          extras: Array.isArray(unit.extras) ? (unit.extras as { name: string; quantity: number; pricePerUnit: number; description?: string }[]) : undefined,
         });
       }
     }
