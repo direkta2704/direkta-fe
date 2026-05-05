@@ -258,7 +258,16 @@ export default function ListingDetailPage() {
                 <span className="text-[10px] font-bold text-[#ff7500] bg-[#ff7500]/10 px-2 py-0.5 rounded">IS24 Live</span>
               )}
               {listing.publishedAt && (
-                <span className="text-[10px] text-slate-400">{daysOnline} Tage online</span>
+                <span className="text-[10px] text-slate-400 flex items-center gap-1">
+                  <span className="material-symbols-outlined text-xs">schedule</span>
+                  {daysOnline} {daysOnline === 1 ? "Tag" : "Tage"} online
+                </span>
+              )}
+              {!listing.publishedAt && listing.createdAt && (
+                <span className="text-[10px] text-slate-400 flex items-center gap-1">
+                  <span className="material-symbols-outlined text-xs">edit_calendar</span>
+                  Erstellt {new Date(listing.createdAt).toLocaleDateString("de-DE")}
+                </span>
               )}
             </div>
             <h1 className="text-xl font-black text-blueprint">{listing.titleShort || `${listing.property.street} ${listing.property.houseNumber}`}</h1>
@@ -277,6 +286,18 @@ export default function ListingDetailPage() {
               <div className="text-lg font-black text-blueprint">{counts?.offers ?? 0}</div>
               <div className="text-[9px] font-black uppercase tracking-widest text-slate-400">Angebote</div>
             </div>
+            {askingPrice && listing.property.livingArea > 0 && (
+              <div className="text-center">
+                <div className="text-lg font-black text-blueprint">{Math.round(Number(askingPrice) / listing.property.livingArea).toLocaleString("de-DE")}</div>
+                <div className="text-[9px] font-black uppercase tracking-widest text-slate-400">€/m²</div>
+              </div>
+            )}
+            {daysOnline > 0 && (
+              <div className="text-center">
+                <div className="text-lg font-black text-blueprint">{daysOnline}</div>
+                <div className="text-[9px] font-black uppercase tracking-widest text-slate-400">Tage online</div>
+              </div>
+            )}
             {commission > 0 && (
               <div className="text-center">
                 <div className="text-lg font-black text-emerald-600">€{commission.toLocaleString("de-DE")}</div>
@@ -492,15 +513,41 @@ export default function ListingDetailPage() {
                     className="w-full pl-8 pr-4 py-2.5 rounded-lg border border-slate-200 text-sm text-blueprint placeholder:text-slate-400 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
                   />
                 </div>
-                {askingPrice && (
-                  <p className={`text-xs mt-2 ${Number(askingPrice) >= Number(rec.low) && Number(askingPrice) <= Number(rec.high) ? "text-emerald-600" : "text-amber-600"}`}>
-                    {Number(askingPrice) < Number(rec.low)
-                      ? "⚠️ Unter der empfohlenen Preisspanne"
-                      : Number(askingPrice) > Number(rec.high)
-                        ? "⚠️ Über der empfohlenen Preisspanne"
-                        : "✓ Innerhalb der empfohlenen Preisspanne"}
-                  </p>
-                )}
+                {askingPrice && (() => {
+                  const price = Number(askingPrice);
+                  const area = listing.property.livingArea;
+                  const pricePerSqm = area > 0 ? Math.round(price / area) : 0;
+                  const medianPerSqm = area > 0 ? Math.round(Number(rec.median) / area) : 0;
+                  const pctAbove = medianPerSqm > 0 ? Math.round((pricePerSqm - medianPerSqm) / medianPerSqm * 100) : 0;
+                  const inBand = price >= Number(rec.low) && price <= Number(rec.high);
+                  const tooHigh = pctAbove > 15;
+
+                  return (
+                    <>
+                      <div className="flex items-center gap-4 mt-2">
+                        <p className={`text-xs ${inBand ? "text-emerald-600" : "text-amber-600"}`}>
+                          {price < Number(rec.low) ? "Unter der Preisspanne" : price > Number(rec.high) ? "Über der Preisspanne" : "Innerhalb der Preisspanne"}
+                        </p>
+                        {pricePerSqm > 0 && (
+                          <span className="text-xs text-slate-400">
+                            Ihr Preis: <strong className="text-blueprint">{pricePerSqm.toLocaleString("de-DE")} €/m²</strong>
+                            {medianPerSqm > 0 && <> · Markt: <strong>{medianPerSqm.toLocaleString("de-DE")} €/m²</strong></>}
+                            {pctAbove !== 0 && <> · <span className={pctAbove > 0 ? "text-amber-600" : "text-emerald-600"}>{pctAbove > 0 ? "+" : ""}{pctAbove}%</span></>}
+                          </span>
+                        )}
+                      </div>
+                      {tooHigh && (
+                        <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2">
+                          <span className="material-symbols-outlined text-amber-500 text-base mt-0.5">warning</span>
+                          <div>
+                            <p className="text-xs font-bold text-amber-800">Preis liegt {pctAbove}% über dem Marktmedian</p>
+                            <p className="text-xs text-amber-700 mt-0.5">Das kann die Verkaufsdauer deutlich verlängern. Empfehlung: Preis innerhalb der Spanne wählen oder mit einer Schnellverkauf-Strategie starten.</p>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
 
               {/* Comparables table */}
