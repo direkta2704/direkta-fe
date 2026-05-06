@@ -416,6 +416,58 @@ export default function ListingDetailPage() {
           Änderungen gespeichert.
         </div>
       )}
+      {/* Price drop suggestion */}
+      {listing.publishedAt && rec && askingPrice && (() => {
+        const days = Math.floor((Date.now() - new Date(listing.publishedAt).getTime()) / 86400000);
+        const leadsCount = counts?.leads ?? 0;
+        const offersCount = counts?.offers ?? 0;
+        const price = Number(askingPrice);
+        const median = Number(rec.median);
+        const pctAbove = median > 0 ? Math.round((price - median) / median * 100) : 0;
+
+        if (days >= 30 && offersCount === 0 && pctAbove > 5) {
+          const suggestedDrop = Math.min(pctAbove, 10);
+          const suggestedPrice = Math.round(price * (1 - suggestedDrop / 100));
+          return (
+            <div className="mb-6 p-5 rounded-2xl bg-blue-50 border border-blue-200">
+              <div className="flex items-start gap-3">
+                <span className="material-symbols-outlined text-blue-600 text-xl mt-0.5">trending_down</span>
+                <div className="flex-1">
+                  <p className="text-sm font-bold text-blue-900">Preisanpassung empfohlen</p>
+                  <p className="text-xs text-blue-800 mt-1">
+                    Ihr Inserat ist seit <strong>{days} Tagen</strong> online mit <strong>{leadsCount} Anfragen</strong> aber <strong>0 Angeboten</strong>.
+                    Ihr Preis liegt {pctAbove}% über dem Marktmedian.
+                  </p>
+                  <p className="text-xs text-blue-700 mt-2">
+                    Empfehlung: Preis um {suggestedDrop}% senken auf <strong>€{suggestedPrice.toLocaleString("de-DE")}</strong> — das kann die Nachfrage deutlich erhöhen.
+                  </p>
+                  <button
+                    onClick={() => { setAskingPrice(String(suggestedPrice)); }}
+                    className="mt-3 bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-lg text-xs font-bold transition-colors"
+                  >
+                    Preis auf €{suggestedPrice.toLocaleString("de-DE")} anpassen
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        }
+        if (days >= 14 && days < 30 && leadsCount === 0 && pctAbove > 10) {
+          return (
+            <div className="mb-6 p-4 rounded-2xl bg-amber-50 border border-amber-200">
+              <div className="flex items-start gap-3">
+                <span className="material-symbols-outlined text-amber-600 text-lg">info</span>
+                <div>
+                  <p className="text-xs font-bold text-amber-800">Wenig Aktivität nach {days} Tagen</p>
+                  <p className="text-xs text-amber-700 mt-0.5">Noch keine Anfragen. Prüfen Sie, ob Ihre Fotos und Beschreibung optimal sind, oder erwägen Sie eine Preisanpassung.</p>
+                </div>
+              </div>
+            </div>
+          );
+        }
+        return null;
+      })()}
+
       {error && (
         <div className="mb-6 px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-600 font-medium">{error}</div>
       )}

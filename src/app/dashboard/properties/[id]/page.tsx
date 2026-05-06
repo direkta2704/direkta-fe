@@ -376,6 +376,28 @@ export default function PropertyDetailPage() {
     }
   }
 
+  async function smartOrderPhotos() {
+    if (photos.length < 2) return;
+    const sorted = [...photos].sort((a, b) => {
+      const typeOrder: Record<string, number> = { exterior: 0, living: 1, kitchen: 2, bedroom: 3, bathroom: 4, office: 5, balcony: 6, garden: 7, hallway: 8, garage: 9, basement: 10, other: 11 };
+      const aType = typeOrder[a.classification?.roomType || "other"] ?? 11;
+      const bType = typeOrder[b.classification?.roomType || "other"] ?? 11;
+      if (aType !== bType) return aType - bType;
+      return (b.classification?.qualityScore || 0) - (a.classification?.qualityScore || 0);
+    });
+    for (let i = 0; i < sorted.length; i++) {
+      if (sorted[i].ordering !== i) {
+        await fetch(`/api/media/${sorted[i].id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ordering: i }),
+        });
+      }
+    }
+    fetchProperty();
+    showSaveToast();
+  }
+
   async function bulkDeletePhotos() {
     if (selectedPhotos.size === 0) return;
     if (!confirm(`${selectedPhotos.size} Foto${selectedPhotos.size > 1 ? "s" : ""} löschen?`)) return;
@@ -822,6 +844,15 @@ export default function PropertyDetailPage() {
                   >
                     <span className="material-symbols-outlined text-sm">delete</span>
                     {selectedPhotos.size} löschen
+                  </button>
+                )}
+                {photos.length > 1 && photos.some(p => p.classification?.roomType) && (
+                  <button
+                    onClick={smartOrderPhotos}
+                    className="bg-white border border-slate-200 hover:border-slate-300 text-slate-500 px-2.5 py-2 rounded-xl transition-colors flex items-center"
+                    title="KI-optimierte Reihenfolge"
+                  >
+                    <span className="material-symbols-outlined text-base">auto_fix_high</span>
                   </button>
                 )}
                 <button
@@ -1871,6 +1902,58 @@ export default function PropertyDetailPage() {
               )}
             </div>
           </div>
+
+          {/* Listing Health Score */}
+          {hasListing && (() => {
+            const descWords = (property.listings[0] as unknown as { descriptionLong?: string }).descriptionLong?.split(/\s+/).length || 0;
+            const titleLen = (property.listings[0] as unknown as { titleShort?: string }).titleShort?.length || 0;
+            const items = [
+              { label: "Titel", ok: titleLen >= 20, pts: titleLen >= 40 ? 10 : titleLen >= 20 ? 7 : 0, max: 10 },
+              { label: "Beschreibung", ok: descWords >= 150, pts: descWords >= 250 ? 20 : descWords >= 150 ? 15 : descWords >= 50 ? 10 : 0, max: 20 },
+              { label: "Preis", ok: !!property.listings[0].askingPrice, pts: property.listings[0].askingPrice ? 10 : 0, max: 10 },
+              { label: "Fotos", ok: photos.length >= 3, pts: Math.min(25, Math.round((photos.length / 12) * 25)), max: 25 },
+              { label: "Energieausweis", ok: !!property.energyCert, pts: property.energyCert ? 10 : 0, max: 10 },
+              { label: "Grundriss", ok: property.media.some(m => m.kind === "FLOORPLAN"), pts: property.media.some(m => m.kind === "FLOORPLAN") ? 5 : 0, max: 5 },
+              { label: "Ausstattung", ok: (property.attributes as string[] || []).length >= 3, pts: Math.min(10, ((property.attributes as string[] || []).length) * 2), max: 10 },
+            ];
+            const score = items.reduce((s, i) => s + i.pts, 0);
+            const maxScore = items.reduce((s, i) => s + i.max, 0);
+            const pct = Math.round(score / maxScore * 100);
+            const color = pct >= 80 ? "text-emerald-500" : pct >= 50 ? "text-amber-500" : "text-red-500";
+            const bgColor = pct >= 80 ? "bg-emerald-500" : pct >= 50 ? "bg-amber-500" : "bg-red-500";
+            const weakest = items.filter(i => !i.ok).slice(0, 2);
+
+            return (
+              <div className="bg-white rounded-2xl border border-slate-200 p-5">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-black text-blueprint flex items-center gap-2">
+                    <span className="material-symbols-outlined text-base">health_and_safety</span>
+                    Inserat-Gesundheit
+                  </h3>
+                  <span className={`text-2xl font-black ${color}`}>{pct}</span>
+                </div>
+                <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden mb-3">
+                  <div className={`h-full rounded-full transition-all ${bgColor}`} style={{ width: `${pct}%` }} />
+                </div>
+                <div className="space-y-1.5">
+                  {items.map((item, i) => (
+                    <div key={i} className="flex items-center justify-between text-[10px]">
+                      <span className={`flex items-center gap-1 ${item.ok ? "text-slate-400" : "text-amber-600 font-bold"}`}>
+                        <span className="material-symbols-outlined text-xs">{item.ok ? "check_circle" : "warning"}</span>
+                        {item.label}
+                      </span>
+                      <span className="text-slate-400">{item.pts}/{item.max}</span>
+                    </div>
+                  ))}
+                </div>
+                {weakest.length > 0 && (
+                  <div className="mt-3 pt-3 border-t border-slate-100">
+                    <p className="text-[10px] text-amber-700 font-bold">Verbessern: {weakest.map(w => w.label).join(", ")}</p>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Activity log */}
           <div className="bg-white rounded-2xl border border-slate-200 p-5">

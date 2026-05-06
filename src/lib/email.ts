@@ -253,3 +253,76 @@ export async function sendBuyerQualificationEmail(to: string, data: {
     `),
   });
 }
+
+export async function sendWeeklyReport(data: {
+  to: string;
+  name: string;
+  listings: { title: string; address: string; status: string; price: number | null; leads: number; offers: number; photos: number; daysOnline: number }[];
+  totalLeads: number;
+  totalOffers: number;
+}) {
+  const listingRows = data.listings.map(l => `
+    <tr>
+      <td style="padding:8px 12px;border-bottom:1px solid #e7dfcd;font-size:13px;">
+        <strong style="color:#0F1B2E;">${l.title}</strong><br>
+        <span style="color:#8A92A0;font-size:11px;">${l.address}</span>
+      </td>
+      <td style="padding:8px 12px;border-bottom:1px solid #e7dfcd;text-align:center;font-size:13px;">
+        <strong>${l.leads}</strong>
+      </td>
+      <td style="padding:8px 12px;border-bottom:1px solid #e7dfcd;text-align:center;font-size:13px;">
+        <strong>${l.offers}</strong>
+      </td>
+      <td style="padding:8px 12px;border-bottom:1px solid #e7dfcd;text-align:right;font-size:13px;color:#8A92A0;">
+        ${l.daysOnline}d
+      </td>
+    </tr>
+  `).join("");
+
+  const subject = `Direkta Wochenbericht: ${data.totalLeads} Anfragen, ${data.totalOffers} Angebote`;
+
+  await transporter.sendMail({
+    from: FROM,
+    to: data.to,
+    subject,
+    html: layout(`
+      <h2 style="font-size:18px;font-weight:700;color:#0F1B2E;margin-bottom:4px;">Wochenbericht</h2>
+      <p style="color:#8A92A0;font-size:13px;margin-bottom:20px;">Hallo ${data.name}, hier ist Ihre Zusammenfassung der letzten 7 Tage.</p>
+
+      <div style="display:flex;gap:16px;margin-bottom:20px;">
+        <div style="flex:1;background:#f7f3ea;border-radius:8px;padding:16px;text-align:center;">
+          <div style="font-size:28px;font-weight:700;color:#0F1B2E;">${data.totalLeads}</div>
+          <div style="font-size:11px;color:#8A92A0;text-transform:uppercase;letter-spacing:0.1em;">Anfragen</div>
+        </div>
+        <div style="flex:1;background:#f7f3ea;border-radius:8px;padding:16px;text-align:center;">
+          <div style="font-size:28px;font-weight:700;color:#0F1B2E;">${data.totalOffers}</div>
+          <div style="font-size:11px;color:#8A92A0;text-transform:uppercase;letter-spacing:0.1em;">Angebote</div>
+        </div>
+        <div style="flex:1;background:#f7f3ea;border-radius:8px;padding:16px;text-align:center;">
+          <div style="font-size:28px;font-weight:700;color:#0F1B2E;">${data.listings.length}</div>
+          <div style="font-size:11px;color:#8A92A0;text-transform:uppercase;letter-spacing:0.1em;">Inserate</div>
+        </div>
+      </div>
+
+      <table style="width:100%;border-collapse:collapse;">
+        <thead>
+          <tr style="background:#f7f3ea;">
+            <th style="padding:8px 12px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:#8A92A0;">Inserat</th>
+            <th style="padding:8px 12px;text-align:center;font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:#8A92A0;">Anfragen</th>
+            <th style="padding:8px 12px;text-align:center;font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:#8A92A0;">Angebote</th>
+            <th style="padding:8px 12px;text-align:right;font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:#8A92A0;">Online</th>
+          </tr>
+        </thead>
+        <tbody>${listingRows}</tbody>
+      </table>
+
+      ${data.totalLeads === 0 ? `
+        <div style="margin-top:16px;padding:12px;background:#FEF3C7;border-radius:8px;border:1px solid #F59E0B;">
+          <p style="font-size:12px;color:#92400E;margin:0;"><strong>Keine Anfragen diese Woche.</strong> Prüfen Sie Ihre Fotos und den Angebotspreis — das sind die häufigsten Gründe für wenig Aktivität.</p>
+        </div>
+      ` : ""}
+
+      ${btn(`${APP_URL}/dashboard`, "Zum Dashboard")}
+    `),
+  });
+}
