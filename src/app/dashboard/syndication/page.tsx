@@ -45,6 +45,9 @@ export default function SyndicationPage() {
   // Publish state
   const [publishing, setPublishing] = useState<string | null>(null);
 
+  // Credential re-confirmation
+  const [reconfirming, setReconfirming] = useState(false);
+
   useEffect(() => {
     loadData();
   }, []);
@@ -71,6 +74,34 @@ export default function SyndicationPage() {
   }
 
   const is24Connected = credentials.some((c) => c.portal === "IMMOSCOUT24" && c.status === "ACTIVE");
+
+  // Check if IS24 credential needs re-confirmation (older than 90 days)
+  const is24Cred = credentials.find((c) => c.portal === "IMMOSCOUT24");
+  const needsReconfirmation = (() => {
+    if (!is24Cred) return false;
+    const refDate = is24Cred.lastVerifiedAt || is24Cred.consentedAt;
+    if (!refDate) return true;
+    const daysSince = (Date.now() - new Date(refDate).getTime()) / (1000 * 60 * 60 * 24);
+    return daysSince > 90;
+  })();
+
+  async function reconfirmCredential() {
+    if (!is24Cred) return;
+    setReconfirming(true);
+    try {
+      const res = await fetch(`/api/portals/credentials/${is24Cred.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reconfirmedAt: new Date().toISOString() }),
+      });
+      if (res.ok) {
+        await loadData();
+      }
+    } catch {
+      // silently fail
+    }
+    setReconfirming(false);
+  }
 
   async function connectIS24() {
     setConnecting(true);
@@ -127,6 +158,31 @@ export default function SyndicationPage() {
         <h1 className="text-3xl font-black text-blueprint tracking-tight">Portal-Synchronisation</h1>
         <p className="text-slate-500 mt-1">Veröffentlichen Sie Ihre Inserate auf ImmobilienScout24 und verfolgen Sie die Reichweite.</p>
       </div>
+
+      {/* 90-day credential re-confirmation warning */}
+      {is24Connected && needsReconfirmation && (
+        <div className="mb-6 flex items-center justify-between gap-4 rounded-2xl border border-amber-300 bg-amber-50 px-6 py-4">
+          <div className="flex items-center gap-3">
+            <span className="material-symbols-outlined text-amber-600 text-2xl">warning</span>
+            <div>
+              <p className="text-sm font-bold text-amber-800">
+                Ihre IS24-Zugangsdaten muessen erneut bestaetigt werden
+              </p>
+              <p className="text-xs text-amber-600 mt-0.5">
+                Die letzte Bestaetigung liegt mehr als 90 Tage zurueck. Bitte bestaetigen Sie Ihre Zugangsdaten erneut.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={reconfirmCredential}
+            disabled={reconfirming}
+            className="shrink-0 bg-amber-600 hover:bg-amber-700 text-white px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-[0.15em] transition-colors disabled:opacity-60 flex items-center gap-2"
+          >
+            <span className="material-symbols-outlined text-base">verified_user</span>
+            {reconfirming ? "Wird bestaetigt..." : "Erneut bestaetigen"}
+          </button>
+        </div>
+      )}
 
       {loading ? (
         <div className="flex items-center justify-center py-20">

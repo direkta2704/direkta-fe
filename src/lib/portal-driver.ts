@@ -58,11 +58,25 @@ export interface PortalDriver {
   fetchLeads(externalId: string): Promise<PortalLead[]>;
 }
 
+// Rate limiter: 1 action per 8 seconds per portal (F-M6-11)
+const lastActionTime = new Map<string, number>();
+async function enforceRateLimit(portal: string): Promise<void> {
+  const MIN_INTERVAL_MS = 8000;
+  const last = lastActionTime.get(portal) || 0;
+  const elapsed = Date.now() - last;
+  if (elapsed < MIN_INTERVAL_MS) {
+    const jitter = Math.random() * 2000;
+    await new Promise(r => setTimeout(r, MIN_INTERVAL_MS - elapsed + jitter));
+  }
+  lastActionTime.set(portal, Date.now());
+}
+
 // Mock driver for MVP — simulates IS24 operations
 export class IS24MockDriver implements PortalDriver {
   readonly portal = "IMMOSCOUT24";
 
   async publish(input: PublishInput): Promise<PublishResult> {
+    await enforceRateLimit(this.portal);
     await this.simulateDelay();
     const id = `is24-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     return {
@@ -73,16 +87,19 @@ export class IS24MockDriver implements PortalDriver {
   }
 
   async update(externalId: string): Promise<void> {
+    await enforceRateLimit(this.portal);
     await this.simulateDelay();
     void externalId;
   }
 
   async pause(externalId: string): Promise<void> {
+    await enforceRateLimit(this.portal);
     await this.simulateDelay();
     void externalId;
   }
 
   async withdraw(externalId: string): Promise<void> {
+    await enforceRateLimit(this.portal);
     await this.simulateDelay();
     void externalId;
   }

@@ -80,8 +80,41 @@ export default async function PublicListingPage({ params }: Props) {
     RENOVIERUNGS_BEDUERFTIG: "Renovierungsbedarf", SANIERUNGS_BEDUERFTIG: "Sanierungsbedarf", ROHBAU: "Rohbau", KERNSANIERT: "Kernsaniert",
   };
 
+  // Schema.org JSON-LD structured data
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@type": "Product",
+    name: listing.titleShort || `${p.street} ${p.houseNumber}, ${p.city}`,
+    description: listing.descriptionLong?.substring(0, 500) || `Immobilie in ${p.city}`,
+    image: photos.length > 0 ? photos[0].storageKey : undefined,
+    offers: price
+      ? {
+          "@type": "Offer",
+          price: price,
+          priceCurrency: "EUR",
+          availability: "https://schema.org/InStock",
+        }
+      : undefined,
+    address: {
+      "@type": "PostalAddress",
+      streetAddress: `${p.street} ${p.houseNumber}`,
+      postalCode: p.postcode,
+      addressLocality: p.city,
+      addressCountry: "DE",
+    },
+    numberOfRooms: p.rooms ?? undefined,
+    floorSize: p.livingArea
+      ? { "@type": "QuantitativeValue", value: Number(p.livingArea), unitCode: "MTK" }
+      : undefined,
+  };
+
   return (
     <div className="min-h-screen bg-white">
+      {/* Schema.org structured data */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
       {/* Navbar */}
       <header className="border-b border-slate-100 bg-white/80 backdrop-blur-md sticky top-0 z-50">
         <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">

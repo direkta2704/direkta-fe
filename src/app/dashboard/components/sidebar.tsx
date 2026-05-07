@@ -140,6 +140,14 @@ export default function Sidebar({ userName, userEmail }: SidebarProps) {
 
       {/* Bottom nav */}
       <div className="px-3 pb-4 space-y-1">
+        {/* Help / Support escalation button */}
+        <a
+          href="mailto:support@direkta.de?subject=Hilfe%20ben%C3%B6tigt%20%E2%80%93%20Direkta%20Dashboard"
+          className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold border border-white/20 text-white/70 hover:text-white hover:border-primary hover:bg-primary/10 transition-all duration-200 w-full"
+        >
+          <span className="material-symbols-outlined text-xl">support_agent</span>
+          Hilfe
+        </a>
         {navBottom.map((item) => (
           <Link
             key={item.href}

@@ -8,7 +8,8 @@ import { prisma } from "./prisma";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PrismaAdapter(prisma as any),
-  session: { strategy: "jwt" },
+  session: { strategy: "jwt", maxAge: 30 * 24 * 60 * 60 },
+  jwt: { maxAge: 30 * 24 * 60 * 60 },
   pages: {
     signIn: "/",
   },

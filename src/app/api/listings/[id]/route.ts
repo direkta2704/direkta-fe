@@ -61,7 +61,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       const violations: string[] = [];
       if (!seller?.emailVerified) violations.push("E-Mail-Adresse nicht bestätigt — bitte prüfen Sie Ihr Postfach");
       if (!property?.energyCert) violations.push("Energieausweis fehlt");
-      if ((property?._count.media || 0) < 6) violations.push(`Mindestens 6 Fotos erforderlich (aktuell: ${property?._count.media || 0})`);
+      if ((property?._count.media || 0) < 1) violations.push("Mindestens 1 Foto erforderlich");
       if (!existing.descriptionLong && !body.descriptionLong) violations.push("Beschreibung fehlt");
       if (!existing.askingPrice && !body.askingPrice) violations.push("Angebotspreis fehlt");
 
@@ -86,6 +86,30 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       },
     });
 
+    // Log price change
+    if (body.askingPrice && String(body.askingPrice) !== String(existing.askingPrice)) {
+      await prisma.listingEvent.create({
+        data: {
+          listingId: id,
+          type: "PRICE_CHANGED",
+          payload: { from: existing.askingPrice ? Number(existing.askingPrice) : null, to: Number(body.askingPrice) },
+          actorUserId: user.id,
+        },
+      });
+    }
+
+    // Log description change
+    if (body.descriptionLong && body.descriptionLong !== existing.descriptionLong) {
+      await prisma.listingEvent.create({
+        data: {
+          listingId: id,
+          type: "DESCRIPTION_UPDATED",
+          payload: { wordsOld: existing.descriptionLong?.split(/\s+/).length || 0, wordsNew: body.descriptionLong.split(/\s+/).length },
+          actorUserId: user.id,
+        },
+      });
+    }
+
     if (body.status && body.status !== existing.status) {
       await prisma.listingEvent.create({
         data: {
@@ -95,6 +119,23 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
           actorUserId: user.id,
         },
       });
+
+      // F-M6-05/06: Auto-sync IS24 on status change
+      if (["PAUSED", "WITHDRAWN", "RESERVED", "CLOSED"].includes(body.status)) {
+        const targets = await prisma.syndicationTarget.findMany({
+          where: { listingId: id, status: "LIVE" },
+        });
+        for (const target of targets) {
+          const kind = body.status === "PAUSED" ? "PAUSE" : "WITHDRAW";
+          await prisma.syndicationJob.create({
+            data: { syndicationTargetId: target.id, kind: kind as "PAUSE" | "WITHDRAW", status: "QUEUED" },
+          });
+          await prisma.syndicationTarget.update({
+            where: { id: target.id },
+            data: { status: body.status === "PAUSED" ? "PAUSED" : "WITHDRAWN" },
+          });
+        }
+      }
 
       // Auto-withdraw: when one selling path closes, withdraw the other
       console.log("[AUTO-WITHDRAW] Status changed to:", body.status, "for listing:", id);
@@ -159,6 +200,18 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
             }
           }
         }
+      }
+    }
+
+    // F-M6-05: Auto-update IS24 when listing content changes
+    if ((body.askingPrice || body.descriptionLong || body.titleShort) && listing.status === "ACTIVE") {
+      const liveTargets = await prisma.syndicationTarget.findMany({
+        where: { listingId: id, status: "LIVE" },
+      });
+      for (const target of liveTargets) {
+        await prisma.syndicationJob.create({
+          data: { syndicationTargetId: target.id, kind: "UPDATE", status: "QUEUED" },
+        });
       }
     }
 
