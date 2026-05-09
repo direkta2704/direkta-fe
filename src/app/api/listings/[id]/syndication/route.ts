@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getRequiredUser } from "@/lib/session";
 import { getDriver } from "@/lib/portal-driver";
 import { isCircuitOpen, recordSuccess, recordFailure } from "@/lib/circuit-breaker";
+import { sendSyndicationFailureEmail } from "@/lib/email";
 
 export const dynamic = "force-dynamic";
 
@@ -211,6 +212,25 @@ export async function POST(
         where: { id: target.id },
         data: { status: "FAILED" },
       });
+
+      // F-M6-04: Detect Captcha/MFA/layout failures and notify seller
+      const errMsg = String(err).toLowerCase();
+      const isCaptchaMfa = errMsg.includes("captcha") || errMsg.includes("mfa") || errMsg.includes("two-factor") || errMsg.includes("challenge") || errMsg.includes("verification");
+      const isLayoutChange = errMsg.includes("selector") || errMsg.includes("not found") || errMsg.includes("timeout") || errMsg.includes("navigation");
+
+      try {
+        const sellerEmail = listing.property.user?.email;
+        if (sellerEmail) {
+          await sendSyndicationFailureEmail(sellerEmail, {
+            portal,
+            propertyAddress: `${listing.property.street} ${listing.property.houseNumber}, ${listing.property.city}`,
+            errorType: isCaptchaMfa ? "captcha_mfa" : isLayoutChange ? "layout_change" : "unknown",
+            errorMessage: err instanceof Error ? err.message : String(err),
+          });
+        }
+      } catch (emailErr) {
+        console.error("Failed to send syndication failure email:", emailErr);
+      }
 
       throw err;
     }

@@ -9,18 +9,19 @@ export default function GDPRSection() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteInput, setDeleteInput] = useState("");
   const [exportDone, setExportDone] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
 
-  async function handleExport() {
-    setExporting(true);
+  async function handleExport(format: "json" | "pdf" = "json") {
+    if (format === "pdf") setExportingPdf(true); else setExporting(true);
     try {
-      const res = await fetch("/api/account/export");
+      const res = await fetch(`/api/account/export${format === "pdf" ? "?format=pdf" : ""}`);
       if (!res.ok) throw new Error("Export fehlgeschlagen");
 
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `Direkta_Datenexport_${new Date().toISOString().split("T")[0]}.json`;
+      a.download = `Direkta_Datenexport_${new Date().toISOString().split("T")[0]}.${format}`;
       a.click();
       URL.revokeObjectURL(url);
       setExportDone(true);
@@ -28,6 +29,7 @@ export default function GDPRSection() {
       alert(err instanceof Error ? err.message : "Export fehlgeschlagen");
     }
     setExporting(false);
+    setExportingPdf(false);
   }
 
   async function handleDelete() {
@@ -52,28 +54,35 @@ export default function GDPRSection() {
 
       <div className="space-y-4">
         {/* Data export */}
-        <button
-          onClick={handleExport}
-          disabled={exporting}
-          className="w-full flex items-center justify-between py-4 px-5 rounded-xl border border-slate-200 hover:border-slate-300 transition-colors text-left disabled:opacity-60"
-        >
-          <div className="flex items-center gap-3">
-            <span className="material-symbols-outlined text-lg text-slate-400">download</span>
-            <div>
-              <p className="text-sm font-bold text-blueprint">
-                {exporting ? "Wird exportiert..." : "Meine Daten exportieren"}
-              </p>
-              <p className="text-xs text-slate-400">
-                Alle Ihre Daten als JSON herunterladen (DSGVO Art. 20)
-              </p>
+        <div className="flex gap-3">
+          <button
+            onClick={() => handleExport("json")}
+            disabled={exporting}
+            className="flex-1 flex items-center justify-between py-4 px-5 rounded-xl border border-slate-200 hover:border-slate-300 transition-colors text-left disabled:opacity-60"
+          >
+            <div className="flex items-center gap-3">
+              <span className="material-symbols-outlined text-lg text-slate-400">data_object</span>
+              <div>
+                <p className="text-sm font-bold text-blueprint">{exporting ? "Wird exportiert..." : "JSON-Export"}</p>
+                <p className="text-xs text-slate-400">Maschinenlesbar (DSGVO Art. 20)</p>
+              </div>
             </div>
-          </div>
-          {exportDone ? (
-            <span className="material-symbols-outlined text-emerald-500">check_circle</span>
-          ) : (
-            <span className="material-symbols-outlined text-slate-400">chevron_right</span>
-          )}
-        </button>
+            {exportDone && <span className="material-symbols-outlined text-emerald-500">check_circle</span>}
+          </button>
+          <button
+            onClick={() => handleExport("pdf")}
+            disabled={exportingPdf}
+            className="flex-1 flex items-center justify-between py-4 px-5 rounded-xl border border-slate-200 hover:border-slate-300 transition-colors text-left disabled:opacity-60"
+          >
+            <div className="flex items-center gap-3">
+              <span className="material-symbols-outlined text-lg text-slate-400">picture_as_pdf</span>
+              <div>
+                <p className="text-sm font-bold text-blueprint">{exportingPdf ? "Wird erstellt..." : "PDF-Export"}</p>
+                <p className="text-xs text-slate-400">Druckbares Format</p>
+              </div>
+            </div>
+          </button>
+        </div>
 
         {/* Account deletion */}
         {!showDeleteConfirm ? (

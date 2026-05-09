@@ -188,6 +188,19 @@ export default function OffersPage() {
                         <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${offer.buyer.idVerifiedAt ? "bg-emerald-50 text-emerald-600" : "bg-red-50 text-red-500"}`}>
                           {offer.buyer.idVerifiedAt ? "✓ ID verifiziert" : "✗ ID nicht verifiziert"}
                         </span>
+                        {!offer.buyer.idVerifiedAt && (
+                          <button
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              if (!confirm("Haben Sie den Ausweis des Käufers geprüft und bestätigen Sie dessen Identität?")) return;
+                              await fetch(`/api/buyers/${offer.buyer.id}/verify`, { method: "POST" });
+                              setOffers(prev => prev.map(o => o.id === offer.id ? { ...o, buyer: { ...o.buyer, idVerifiedAt: new Date().toISOString() } } : o));
+                            }}
+                            className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors"
+                          >
+                            ID prüfen
+                          </button>
+                        )}
                       </div>
                       <div className="flex items-center gap-3 mt-1 text-[10px] text-slate-400">
                         <span>Eingereicht {new Date(offer.createdAt).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}</span>

@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getRequiredUser } from "@/lib/session";
+import puppeteer from "puppeteer";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
     const user = await getRequiredUser();
 
@@ -81,13 +83,51 @@ export async function GET() {
       portalCredentials: credentials,
     };
 
-    const json = JSON.stringify(exportData, null, 2);
-    const fileName = `Direkta_Datenexport_${new Date().toISOString().split("T")[0]}.json`;
+    const url = new URL(req.url);
+    const format = url.searchParams.get("format");
+    const dateStr = new Date().toISOString().split("T")[0];
 
+    if (format === "pdf") {
+      const htmlSections = Object.entries(exportData)
+        .filter(([k]) => k !== "exportDate" && k !== "exportVersion" && k !== "notice")
+        .map(([key, value]) => `
+          <h2 style="font-size:14px;font-weight:700;color:#0F1B2E;margin:20px 0 8px;border-bottom:1px solid #e7dfcd;padding-bottom:4px;">${key}</h2>
+          <pre style="font-size:9px;color:#485468;white-space:pre-wrap;word-break:break-all;background:#f7f3ea;padding:8px;border-radius:4px;">${JSON.stringify(value, null, 2)}</pre>
+        `).join("");
+
+      const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+        body { font-family: Helvetica, Arial, sans-serif; padding: 40px; color: #0F1B2E; font-size: 12px; }
+        h1 { font-size: 20px; margin-bottom: 4px; }
+        .meta { color: #8A92A0; font-size: 11px; margin-bottom: 20px; }
+      </style></head><body>
+        <h1>Direkta — Datenexport (DSGVO Art. 20)</h1>
+        <p class="meta">Export vom ${dateStr} · ${exportData.profile?.email || ""}</p>
+        <p style="font-size:11px;color:#485468;margin-bottom:16px;">${exportData.notice}</p>
+        ${htmlSections}
+        <p style="margin-top:30px;font-size:9px;color:#8A92A0;">Direkta GmbH · www.direkta.de · Generiert am ${dateStr}</p>
+      </body></html>`;
+
+      const browser = await puppeteer.launch({ headless: true, args: ["--no-sandbox", "--disable-setuid-sandbox"] });
+      try {
+        const page = await browser.newPage();
+        await page.setContent(html, { waitUntil: "domcontentloaded" });
+        const pdf = await page.pdf({ format: "A4", printBackground: true, margin: { top: "15mm", right: "15mm", bottom: "15mm", left: "15mm" } });
+        return new Response(new Uint8Array(pdf), {
+          headers: {
+            "Content-Type": "application/pdf",
+            "Content-Disposition": `attachment; filename="Direkta_Datenexport_${dateStr}.pdf"`,
+          },
+        });
+      } finally {
+        await browser.close();
+      }
+    }
+
+    const json = JSON.stringify(exportData, null, 2);
     return new Response(json, {
       headers: {
         "Content-Type": "application/json; charset=utf-8",
-        "Content-Disposition": `attachment; filename="${fileName}"`,
+        "Content-Disposition": `attachment; filename="Direkta_Datenexport_${dateStr}.json"`,
       },
     });
   } catch (err) {

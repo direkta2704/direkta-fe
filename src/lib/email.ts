@@ -326,3 +326,45 @@ export async function sendWeeklyReport(data: {
     `),
   });
 }
+
+export async function sendSyndicationFailureEmail(to: string, data: {
+  portal: string;
+  propertyAddress: string;
+  errorType: "captcha_mfa" | "layout_change" | "unknown";
+  errorMessage: string;
+}) {
+  const typeMessages: Record<string, { title: string; desc: string; action: string }> = {
+    captcha_mfa: {
+      title: "Captcha/MFA-Abfrage bei IS24",
+      desc: "ImmobilienScout24 verlangt eine manuelle Bestätigung (Captcha oder Zwei-Faktor-Authentifizierung). Die automatische Veröffentlichung wurde pausiert.",
+      action: "Bitte loggen Sie sich manuell bei IS24 ein, lösen Sie die Sicherheitsabfrage und versuchen Sie die Syndication erneut.",
+    },
+    layout_change: {
+      title: "Portal-Änderung erkannt",
+      desc: "ImmobilienScout24 hat möglicherweise ihre Oberfläche geändert. Die automatische Veröffentlichung konnte nicht abgeschlossen werden.",
+      action: "Bitte versuchen Sie es in 1 Stunde erneut. Falls das Problem weiterhin besteht, kontaktieren Sie unseren Support.",
+    },
+    unknown: {
+      title: "Veröffentlichung fehlgeschlagen",
+      desc: "Bei der Veröffentlichung auf ImmobilienScout24 ist ein unerwarteter Fehler aufgetreten.",
+      action: "Bitte versuchen Sie es erneut oder kontaktieren Sie unseren Support.",
+    },
+  };
+
+  const msg = typeMessages[data.errorType] || typeMessages.unknown;
+
+  await transporter.sendMail({
+    from: FROM,
+    to,
+    subject: `Direkta: ${msg.title} — ${data.propertyAddress}`,
+    html: layout(`
+      <h2 style="font-size:18px;font-weight:700;color:#0F1B2E;margin-bottom:4px;">⚠️ ${msg.title}</h2>
+      <p style="color:#485468;font-size:13px;margin-bottom:12px;">Betrifft: <strong>${data.propertyAddress}</strong> auf ${data.portal}</p>
+      <p style="color:#485468;font-size:13px;margin-bottom:16px;">${msg.desc}</p>
+      <div style="background:#FEF3C7;border:1px solid #F59E0B;border-radius:8px;padding:12px;margin-bottom:16px;">
+        <p style="font-size:12px;color:#92400E;margin:0;"><strong>Was tun?</strong> ${msg.action}</p>
+      </div>
+      ${btn(`${APP_URL}/dashboard/syndication`, "Zur Portal-Verwaltung")}
+    `),
+  });
+}
