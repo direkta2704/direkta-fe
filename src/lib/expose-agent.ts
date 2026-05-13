@@ -142,6 +142,13 @@ export interface UnitData {
   askingPrice: number | null;
 }
 
+export interface PropertyExtra {
+  name: string;
+  quantity: number;
+  pricePerUnit: number;
+  description?: string;
+}
+
 export interface WorkingMemory {
   phase: "greet" | "basics" | "details" | "energy" | "photos" | "draft" | "confirm";
   type: string | null;
@@ -183,8 +190,9 @@ export interface WorkingMemory {
   beliefs: Partial<BeliefStore>;
   currentUnit: string | null;
   addressValidationAttempts: number;
-  outdoorParking: number | null;
-  undergroundParking: number | null;
+  extras: PropertyExtra[];
+  specifications: Record<string, Record<string, string>>;
+  skippedFields: string[];
   // Expose enrichment
   sellerContact: { name?: string; company?: string; phone?: string; email?: string } | null;
   roomProgram: { name: string; area: number }[];
@@ -291,8 +299,9 @@ export const INITIAL_MEMORY: WorkingMemory = {
   beliefs: {},
   currentUnit: null,
   addressValidationAttempts: 0,
-  outdoorParking: null,
-  undergroundParking: null,
+  extras: [],
+  specifications: {},
+  skippedFields: [],
   sellerContact: null,
   roomProgram: [],
 };
@@ -384,9 +393,11 @@ const FIELD_PRIORITY: FieldSpec[] = [
   { field: "floor",       group: "details",  blocksPricing: false, blocksPublish: false, infoValue: 0.4, optional: true,  isFilled: wm => wm.type === "EFH" || wm.type === "MFH" || wm.floor != null, prompt: "In welchem Stockwerk liegt die Wohnung?" },
   { field: "plotArea",    group: "details",  blocksPricing: false, blocksPublish: false, infoValue: 0.4, optional: true,  isFilled: wm => wm.type === "ETW" || wm.plotArea != null, prompt: "Wie groß ist das Grundstück in m²?" },
   { field: "attributes",  group: "details",  blocksPricing: false, blocksPublish: false, infoValue: 0.6, optional: true,  isFilled: wm => wm.attributes.length > 0, prompt: "Welche Ausstattung hat die Immobilie? (Balkon, Keller, Garten, Stellplatz, …)" },
+  { field: "specifications", group: "details", blocksPricing: false, blocksPublish: false, infoValue: 0.4, optional: true, isFilled: wm => Object.keys(wm.specifications).length > 0, prompt: "Welche Ausstattungsdetails können Sie nennen? Z.B. Bodenbelag (Parkett, Fliesen), Heizungsart, Küche, Fenster?" },
   { field: "unitCount",   group: "mfh_structure", blocksPricing: false, blocksPublish: true,  infoValue: 1.0, optional: false, isFilled: wm => wm.type !== "MFH" || wm.unitCount != null, prompt: "Wie viele Wohneinheiten hat das Gebäude?" },
   { field: "units",       group: "mfh_structure", blocksPricing: false, blocksPublish: true,  infoValue: 1.0, optional: false, isFilled: wm => wm.type !== "MFH" || wm.units.length > 0, prompt: "Bitte beschreiben Sie die einzelnen Wohnungen (Größe, Zimmer, Stockwerk)." },
   { field: "sellingMode", group: "mfh_structure", blocksPricing: false, blocksPublish: true,  infoValue: 0.9, optional: false, isFilled: wm => wm.type !== "MFH" || wm.sellingMode != null, prompt: "Wie möchten Sie verkaufen? Einzeln, als Paket, oder beides?" },
+  { field: "extras",      group: "mfh_structure", blocksPricing: false, blocksPublish: false, infoValue: 0.7, optional: true,  isFilled: wm => wm.extras.length > 0 || (wm.type !== "MFH" && wm.type !== "EFH"), prompt: "Hat die Immobilie Extras wie Stellplätze oder Kellerabteile? Wenn ja: Name, Anzahl und Preis pro Stück." },
   // ── energy: GEG legally required ──
   { field: "hasEnergyCert", group: "energy", blocksPricing: false, blocksPublish: true,  infoValue: 0.9, optional: false, isFilled: wm => wm.hasEnergyCert !== null, prompt: "Haben Sie einen Energieausweis für die Immobilie?" },
   { field: "energyClass",  group: "energy", blocksPricing: false, blocksPublish: true,  infoValue: 0.5, optional: false, isFilled: wm => !wm.hasEnergyCert || !!wm.energyClass, prompt: "Welche Energieklasse steht im Ausweis?" },
@@ -415,6 +426,7 @@ export function nextQuestion(wm: WorkingMemory): QuestionResult {
     const spec = FIELD_PRIORITY[i];
     if (spec.isFilled(wm)) continue;
     if (wm.costCompressed && spec.optional) continue;
+    if (spec.optional && wm.skippedFields.includes(spec.field)) continue;
     const priority = (spec.blocksPricing ? 4 : 0) + (spec.blocksPublish ? 2 : 0) + spec.infoValue;
     candidates.push({ field: spec.field, group: spec.group, prompt: spec.prompt, priority, tiebreaker: i });
   }
@@ -495,6 +507,18 @@ function summarizeProperty(m: WorkingMemory): string {
   if (m.condition) lines.push(`Zustand: ${CONDITION_DE[m.condition] || m.condition}`);
   if (m.attributes.length) lines.push(`Ausstattung: ${m.attributes.join(", ")}`);
   if (m.energyClass) lines.push(`Energieklasse: ${m.energyClass} (${m.energyValue} kWh, ${m.energySource})`);
+  if (m.extras.length) lines.push(`Extras: ${m.extras.map(e => `${e.quantity}× ${e.name}${e.pricePerUnit ? ` (${e.pricePerUnit.toLocaleString("de")}€/Stk)` : ""}`).join(", ")}`);
+  if (Object.keys(m.specifications).length > 0) {
+    for (const [cat, entries] of Object.entries(m.specifications)) {
+      const vals = Object.entries(entries).map(([k, v]) => `${k}: ${v}`).join(", ");
+      lines.push(`${cat}: ${vals}`);
+    }
+  }
+  if (m.units.length > 0) {
+    lines.push(`Wohneinheiten: ${m.units.map(u => `${u.label} (${u.livingArea}m², ${u.rooms}Zi)`).join(", ")}`);
+  }
+  if (m.priceBand) lines.push(`Preisband: ${m.priceBand.low.toLocaleString("de")}–${m.priceBand.high.toLocaleString("de")} € (${m.priceBand.confidence})`);
+  if (m.askingPrice) lines.push(`Wunschpreis: ${m.askingPrice.toLocaleString("de")} €`);
   return lines.join("\n");
 }
 
@@ -1046,9 +1070,9 @@ Erstelle eine Exposé-Beschreibung in Sie-Form.
 Antwort als JSON: { "descriptionLong": string }
 
 descriptionLong: MINDESTENS 300 Wörter, maximal 500 Wörter, GENAU 3 Absätze getrennt durch \\n\\n
-  Absatz 1 (~120 Wörter): Die Immobilie — Typ, Lage, Größe, Zimmer, Bäder, Zustand, besondere Ausstattung, Renovierungen. Beschreibe die Raumaufteilung und den Schnitt detailliert.
+  Absatz 1 (~120 Wörter): Die Immobilie — Typ, Lage, Größe, Zimmer, Bäder, Zustand, besondere Ausstattung. Wenn Ausstattungsdetails vorhanden (Boden, Heizung, etc.), erwähne diese KONKRET: "Eichenparkett in den Wohnräumen, Fliesen in den Bädern" statt "hochwertiger Bodenbelag". Wenn Extras vorhanden (Stellplätze, Keller), erwähne diese mit Anzahl.
   Absatz 2 (~100 Wörter): Die Umgebung — Stadt, Stadtteil, Infrastruktur, Nahversorgung, Schulen, ÖPNV, Natur, Freizeitangebote. Allgemein aber plausibel basierend auf PLZ/Stadt.
-  Absatz 3 (~100 Wörter): Die Gelegenheit — Zielgruppe, Preis-Leistung, Investitionspotenzial, Energie-Hinweis mit konkreten Werten.
+  Absatz 3 (~100 Wörter): Die Gelegenheit — Zielgruppe, Preis-Leistung, Investitionspotenzial, Energie-Hinweis mit konkreten Werten. Wenn Extras mit Preisen vorhanden, erwähne den Gesamtwert.
   WICHTIG: Jeder Absatz muss MINDESTENS 80 Wörter haben. Schreibe ausführlich und detailliert.
 
 REGELN:
@@ -1591,6 +1615,21 @@ function applyPatch(memory: WorkingMemory, patch: MemoryPatch): WorkingMemory {
       next.beliefs = merged as Partial<BeliefStore>;
     } else if (k === "roomProgram" && Array.isArray(v)) {
       next.roomProgram = v as { name: string; area: number }[];
+    } else if (k === "skippedFields" && Array.isArray(v)) {
+      const merged = new Set([...next.skippedFields, ...(v as string[])]);
+      next.skippedFields = Array.from(merged);
+    } else if (k === "extras" && Array.isArray(v)) {
+      const incoming = v as PropertyExtra[];
+      const existing = new Map(next.extras.map(e => [e.name, e]));
+      for (const e of incoming) existing.set(e.name, e);
+      next.extras = Array.from(existing.values());
+    } else if (k === "specifications" && v && typeof v === "object" && !Array.isArray(v)) {
+      const incoming = v as Record<string, Record<string, string>>;
+      const merged = { ...next.specifications };
+      for (const [cat, entries] of Object.entries(incoming)) {
+        merged[cat] = { ...(merged[cat] || {}), ...entries };
+      }
+      next.specifications = merged;
     } else {
       // @ts-expect-error generic patch
       next[k] = v;
@@ -1656,6 +1695,32 @@ Rufe Tools SOFORT auf — frage NICHT erst um Erlaubnis:
 • listing_draft → SOFORT nach erfolgreichem pricing_recommend
 • listing_review → SOFORT nach listing_draft
 • handoff_commit → NUR wenn rubric bestanden UND Verkäufer "ja" sagt
+
+═══ EXTRAS & STELLPLÄTZE ═══
+
+Nach den Wohnungen (MFH) oder nach der Ausstattung (ETW/EFH), frage:
+"Hat die Immobilie Extras wie Stellplätze, Kellerabteile oder Garagen, die separat bepreist werden?"
+
+Erfasse: Name (z.B. TG-Stellplatz, Außenstellplatz, Kellerabteil, Garage), Anzahl, Preis pro Stück.
+Beispiel-Eingabe: "6 TG-Stellplätze à 15.000€, 10 Außenstellplätze à 8.000€, 3 Kellerabteile à 5.000€"
+Speichere als extras: [{ name: "TG-Stellplatz", quantity: 6, pricePerUnit: 15000 }, ...]
+
+Wenn der Verkäufer nur "Stellplatz" als Ausstattung nennt ohne Preis → als Attribut speichern, nicht als Extra.
+Extras haben IMMER einen Stückpreis. Ohne Preis → nachfragen: "Was kostet ein Stellplatz?"
+
+═══ AUSSTATTUNGSDETAILS (PASSIV) ═══
+
+Wenn der Verkäufer Details zu Materialien/Ausstattung nennt, ordne sie automatisch der richtigen Kategorie zu:
+• "Parkett" / "Laminat" / "Fliesen" / "Vinyl" → Boden
+• "Stuck" / "Tapete" / "Putz" → Waende & Decke
+• "Regendusche" / "Badewanne" / "Duschbad" → Sanitaer
+• "Fußbodenheizung" / "Gas-Brennwert" / "Wärmepumpe" / "Fernwärme" → Heizung & Warmwasser
+• "Smart Home" / "KNX" / "Photovoltaik" → Elektro & Smart Home
+• "Einbauküche" / "Granitarbeitsplatte" / "Kochinsel" → Kueche
+• "Kunststofffenster" / "Holzfenster" / "Dreifachverglasung" → Tueren & Fenster
+
+Speichere als specifications: { "Boden": { "Wohnbereich": "Eichenparkett" }, ... }
+Frage NICHT aktiv nach jeder Kategorie — extrahiere was der Verkäufer von sich aus sagt.
 
 ═══ NACH UPLOADS — FÜHRE DEN VERKÄUFER ═══
 
@@ -1863,8 +1928,6 @@ Fotos hochgeladen: ${m.uploads.filter((u) => u.kind === "PHOTO" && !u.unitLabel)
   }).join("") : ""}
 Grundrisse hochgeladen: ${m.uploads.filter((u) => u.kind === "FLOORPLAN" && !u.unitLabel).length} (Gebäude)${m.type === "MFH" ? `
 Wohneinheiten: ${m.unitCount ?? "—"}
-Außenstellplätze: ${m.outdoorParking ?? "—"}
-Tiefgaragenplätze: ${m.undergroundParking ?? "—"}
 Einheiten-Daten: ${m.units.length > 0 ? m.units.map((u) => `${u.label}: ${u.livingArea || "?"}m², ${u.rooms || "?"}Zi, ${u.bathrooms || "?"}Bad, ${u.floor != null ? "EG+" + u.floor : "?"}. OG`).join(" | ") : "—"}
 Verkaufsart: ${m.sellingMode || "—"}` : ""}
 Preisband: ${m.priceBand ? `${m.priceBand.low.toLocaleString("de")}–${m.priceBand.high.toLocaleString("de")} € (${m.priceBand.confidence})` : "—"}
@@ -1872,6 +1935,8 @@ Wunschpreis: ${m.askingPrice ? `${m.askingPrice.toLocaleString("de")} €` : "�
 Entwurf vorhanden: ${m.draft ? "ja" : "nein"}
 Letzte Rubric: ${m.lastRubric ? (m.lastRubric.passed ? "✓ bestanden" : `✗ ${m.lastRubric.failures.join("; ")}`) : "—"}
 Aktuelle Wohnung (Upload-Kontext): ${m.currentUnit || "Gebäude"}
+Extras: ${m.extras.length > 0 ? m.extras.map((e: PropertyExtra) => `${e.name} ×${e.quantity}${e.pricePerUnit ? ` à ${e.pricePerUnit.toLocaleString("de")}€` : ""}`).join(", ") : "—"}
+Ausstattungsdetails: ${Object.keys(m.specifications).length > 0 ? Object.entries(m.specifications).map(([cat, entries]) => `${cat}: ${Object.entries(entries).map(([k, v]) => `${k}=${v}`).join(", ")}`).join(" | ") : "—"}
 Raumprogramm: ${m.roomProgram.length > 0 ? m.roomProgram.map((r) => `${r.name} ${r.area}m²`).join(", ") : "—"}
 Kontaktdaten: ${m.sellerContact ? [m.sellerContact.name, m.sellerContact.company, m.sellerContact.phone, m.sellerContact.email].filter(Boolean).join(", ") : "—"}
 Handoff bereit: ${m.handoffReady ? "ja" : "nein"}
@@ -2028,8 +2093,28 @@ function normalizeUserPatch(data: Record<string, unknown>, turnNumber: number): 
     };
     patch.sellingMode = (modeMap[data.sellingMode.toLowerCase()] || data.sellingMode.toUpperCase()) as WorkingMemory["sellingMode"];
   }
-  if (typeof data.outdoorParking === "number") patch.outdoorParking = data.outdoorParking;
-  if (typeof data.undergroundParking === "number") patch.undergroundParking = data.undergroundParking;
+  if (Array.isArray(data.extras)) {
+    patch.extras = data.extras.map((e: Record<string, unknown>) => ({
+      name: String(e.name || ""),
+      quantity: typeof e.quantity === "number" ? e.quantity : 1,
+      pricePerUnit: typeof e.pricePerUnit === "number" ? e.pricePerUnit : 0,
+      ...(typeof e.description === "string" && e.description ? { description: e.description } : {}),
+    })).filter((e: PropertyExtra) => e.name);
+  }
+  // Backward compat: convert flat parking counts to extras
+  if (typeof data.outdoorParking === "number" && !Array.isArray(data.extras)) {
+    const ex: PropertyExtra[] = patch.extras ? [...patch.extras] : [];
+    ex.push({ name: "Außenstellplatz", quantity: data.outdoorParking as number, pricePerUnit: 0 });
+    patch.extras = ex;
+  }
+  if (typeof data.undergroundParking === "number" && !Array.isArray(data.extras)) {
+    const ex: PropertyExtra[] = patch.extras ? [...patch.extras] : [];
+    ex.push({ name: "TG-Stellplatz", quantity: data.undergroundParking as number, pricePerUnit: 0 });
+    patch.extras = ex;
+  }
+  if (data.specifications && typeof data.specifications === "object" && !Array.isArray(data.specifications)) {
+    patch.specifications = data.specifications as Record<string, Record<string, string>>;
+  }
   if (typeof data.hasFloorPlan === "boolean") patch.hasFloorPlan = data.hasFloorPlan;
   if (Array.isArray(data.roomProgram)) {
     patch.roomProgram = data.roomProgram.filter((r: unknown) => r && typeof r === "object" && "name" in (r as Record<string, unknown>) && "area" in (r as Record<string, unknown>)).map((r: unknown) => {
@@ -2159,8 +2244,8 @@ Beispiele für einzelne Antworten:
 - Agent: "Preis?" → Nutzer: "500k" → { "askingPrice": 500000 }
 
 Beispiel für Bulk-Eingabe:
-- Nutzer: "MFH, Marktstraße 12, 76571 Gaggenau, 250m², Grundstück 450m², 8 Zimmer, 3 Bäder, Bj 1999, gepflegt. Keller, Stellplatz, Garten, FBH. 10 Außenstellplätze, 6 TG. 3 Wohnungen: WE1 95m² 3Zi EG, WE2 55m² 2Zi 1.OG. Verkauf: beides. Energie: Verbrauch B 70kWh Gas gültig 2034-03-15. Preis: 525000"
-→ { "type":"MFH", "street":"Marktstraße", "houseNumber":"12", "postcode":"76571", "city":"Gaggenau", "livingArea":250, "plotArea":450, "rooms":8, "bathrooms":3, "yearBuilt":1999, "condition":"GEPFLEGT", "attributes":["Keller","Stellplatz","Garten","Fußbodenheizung"], "unitCount":3, "units":[{"label":"WE1","livingArea":95,"rooms":3,"floor":0},{"label":"WE2","livingArea":55,"rooms":2,"floor":1}], "sellingMode":"BOTH", "hasEnergyCert":true, "energyCertType":"VERBRAUCH", "energyClass":"B", "energyValue":70, "energySource":"Gas", "energyValidUntil":"2034-03-15", "outdoorParking":10, "undergroundParking":6, "askingPrice":525000 }
+- Nutzer: "MFH, Marktstraße 12, 76571 Gaggenau, 250m², Grundstück 450m², 8 Zimmer, 3 Bäder, Bj 1999, gepflegt. Keller, Garten, FBH, Parkett. 6 TG-Stellplätze à 15000€, 10 Außenstellplätze à 8000€. 3 Wohnungen: WE1 95m² 3Zi EG, WE2 55m² 2Zi 1.OG. Verkauf: beides. Energie: Verbrauch B 70kWh Gas gültig 2034-03-15. Preis: 525000"
+→ { "type":"MFH", "street":"Marktstraße", "houseNumber":"12", "postcode":"76571", "city":"Gaggenau", "livingArea":250, "plotArea":450, "rooms":8, "bathrooms":3, "yearBuilt":1999, "condition":"GEPFLEGT", "attributes":["Keller","Garten","Fußbodenheizung"], "extras":[{"name":"TG-Stellplatz","quantity":6,"pricePerUnit":15000},{"name":"Außenstellplatz","quantity":10,"pricePerUnit":8000}], "specifications":{"Boden":{"Wohnbereich":"Parkett"},"Heizung & Warmwasser":{"Typ":"Fußbodenheizung"}}, "unitCount":3, "units":[{"label":"WE1","livingArea":95,"rooms":3,"floor":0},{"label":"WE2","livingArea":55,"rooms":2,"floor":1}], "sellingMode":"BOTH", "hasEnergyCert":true, "energyCertType":"VERBRAUCH", "energyClass":"B", "energyValue":70, "energySource":"Gas", "energyValidUntil":"2034-03-15", "askingPrice":525000 }
 
 WICHTIGE REGELN:
 - Überschreibe KEINE bereits bekannten Felder, es sei denn der Nutzer korrigiert sie explizit.
@@ -2195,8 +2280,8 @@ Erlaubte Felder (nur NEUE/GEÄNDERTE extrahieren):
 - energyValidUntil: ISO-Datum (YYYY-MM-DD) — Gültigkeit des Energieausweises
 - assumptions: Array von getroffenen Annahmen
 - unitCount: Anzahl Wohneinheiten (Zahl, nur bei MFH)
-- outdoorParking: Anzahl Außenstellplätze (Zahl, nur bei MFH)
-- undergroundParking: Anzahl Tiefgaragenstellplätze (Zahl, nur bei MFH)
+- extras: Array von { name, quantity, pricePerUnit, description } — Extras wie Stellplätze, Kellerabteile mit Stückpreis. Z.B. [{ "name": "TG-Stellplatz", "quantity": 6, "pricePerUnit": 15000 }]
+- specifications: Verschachtelte Ausstattungsdetails { "Boden": { "Wohnbereich": "Parkett" }, "Heizung & Warmwasser": { "Typ": "Fußbodenheizung" } }. Kategorien: Boden, Waende & Decke, Sanitaer, Heizung & Warmwasser, Elektro & Smart Home, Kueche, Tueren & Fenster
 - units: Array von { label, livingArea, rooms, bathrooms, floor, features } — Daten einzelner Wohneinheiten
 - sellingMode: INDIVIDUAL|BUNDLE|BOTH — Verkaufsart (einzeln/Paket/beides)
 - hasFloorPlan: true wenn Grundriss vorhanden
@@ -2245,15 +2330,6 @@ export async function runAgentTurn(
   history: ChatMsg[],
   userMessage: string | null,
 ): Promise<AgentTurnResult> {
-  const messages: ChatMsg[] = [
-    { role: "system", content: ORCHESTRATOR_SYSTEM_PROMPT },
-    { role: "system", content: buildMemoryContext(memory) },
-    ...history,
-  ];
-  if (userMessage !== null) {
-    messages.push({ role: "user", content: userMessage });
-  }
-
   let workingMemory = memory;
   let toolStepsExecuted = 0;
   let costCentsThisTurn = 0;
@@ -2262,6 +2338,80 @@ export async function runAgentTurn(
   let agentMessage = "";
   const turnNumber = history.filter(m => m.role === "user").length;
   let abortedReason: AgentTurnResult["abortedReason"];
+
+  // EXTRACT FIRST: Run extraction BEFORE the LLM so the orchestrator sees updated memory.
+  // This prevents the #1 cause of loops: LLM re-asking for data the user just provided.
+  if (userMessage && costCentsTotal < MAX_COST_CENTS) {
+    const lastAgentMsg = [...history].reverse().find(m => m.role === "assistant")?.content || "";
+    const ext = await extractMemoryFromMessage(lastAgentMsg, userMessage, workingMemory, ctx.agentRunId, turnNumber);
+    costCentsThisTurn += ext.costCents;
+    costCentsTotal += ext.costCents;
+    if (ext.patch) {
+      workingMemory = applyPatch(workingMemory, ext.patch);
+      await prisma.conversationTurn.create({
+        data: {
+          conversationId: ctx.conversationId,
+          role: "TOOL",
+          content: "memory_extract",
+          toolName: "memory_extract",
+          toolInput: asJson({ userMessage: userMessage.slice(0, 200) }),
+          toolOutput: asJson({ memoryPatch: ext.patch }),
+          latencyMs: 0,
+        },
+      });
+    }
+  }
+
+  // Mechanical skip: if user says "nein/skip/weiter" and the current nextQuestion
+  // recommends an optional field, add it to skippedFields so the agent moves on.
+  if (userMessage) {
+    const skipPhrases = /\bnein\b|^nein danke|^skip|^überspringen|^weiter$|^egal$|^keine ahnung|^weiß ich nicht|^nicht vorhanden|^kein\b|^hab ich nicht|^nein,?\s/i;
+    if (skipPhrases.test(userMessage.trim())) {
+      const preNq = nextQuestion(workingMemory);
+      if (preNq.action === "ask" && preNq.field) {
+        const spec = FIELD_PRIORITY.find(s => s.field === preNq.field);
+        if (spec?.optional && !workingMemory.skippedFields.includes(preNq.field)) {
+          const skipPatch: MemoryPatch = { skippedFields: [...workingMemory.skippedFields, preNq.field] };
+          workingMemory = applyPatch(workingMemory, skipPatch);
+          await prisma.conversationTurn.create({
+            data: {
+              conversationId: ctx.conversationId,
+              role: "SYSTEM",
+              content: `[skip:${preNq.field}]`,
+              toolName: "system",
+              toolOutput: asJson({ memoryPatch: skipPatch }),
+            },
+          });
+        }
+      }
+    }
+  }
+
+  // Build messages with UPDATED memory (after extraction + skip detection)
+  const nq = nextQuestion(workingMemory);
+  const messages: ChatMsg[] = [
+    { role: "system", content: ORCHESTRATOR_SYSTEM_PROMPT },
+    { role: "system", content: buildMemoryContext(workingMemory) },
+    ...history,
+  ];
+  if (userMessage !== null) {
+    messages.push({ role: "user", content: userMessage });
+  }
+  // Focus directive: tell the LLM exactly what to do next.
+  // When rubric failed, let the LLM handle the re-draft conversation naturally.
+  // Otherwise, inject a strict directive.
+  const rubricPending = workingMemory.lastRubric && !workingMemory.lastRubric.passed && workingMemory.draft;
+  if (rubricPending) {
+    // Don't override — let the LLM address the rubric failures naturally
+  } else if (nq.action === "ask" && nq.prompt) {
+    messages.push({ role: "system", content: `[PFLICHT] Stelle jetzt GENAU diese EINE Frage und KEINE andere: "${nq.prompt}"` });
+  } else if (nq.action === "upload_photos") {
+    messages.push({ role: "system", content: `[PFLICHT] Bitte den Verkäufer um Foto-Upload: "${nq.prompt}"` });
+  } else if (nq.action === "trigger_pricing") {
+    messages.push({ role: "system", content: "[PFLICHT] Rufe JETZT pricing_recommend auf. Keine Frage stellen." });
+  } else if (nq.action === "trigger_draft") {
+    messages.push({ role: "system", content: "[PFLICHT] Rufe JETZT listing_draft auf. Keine Frage stellen." });
+  }
 
   // Cost-compression hysteresis: one-way latch, stays on once triggered
   if (costCentsTotal > 140 && !workingMemory.costCompressed) {
@@ -2582,29 +2732,8 @@ export async function runAgentTurn(
     if (parsed.patch) workingMemory = applyPatch(workingMemory, parsed.patch);
   }
 
-  // Dual-pass extraction: dedicated LLM call to reliably extract data
-  if (userMessage && agentMessage && costCentsTotal < MAX_COST_CENTS) {
-    // Find the last agent message from history to give the extraction context
-    const lastAgentMsg = [...history].reverse().find(m => m.role === "assistant")?.content || "";
-    const ext = await extractMemoryFromMessage(lastAgentMsg, userMessage, workingMemory, ctx.agentRunId, turnNumber);
-    costCentsThisTurn += ext.costCents;
-    costCentsTotal += ext.costCents;
-    if (ext.patch) {
-      workingMemory = applyPatch(workingMemory, ext.patch);
-      // Persist as TOOL turn so rebuildMemory picks up the patch
-      await prisma.conversationTurn.create({
-        data: {
-          conversationId: ctx.conversationId,
-          role: "TOOL",
-          content: "memory_extract",
-          toolName: "memory_extract",
-          toolInput: asJson({ userMessage: userMessage.slice(0, 200) }),
-          toolOutput: asJson({ memoryPatch: ext.patch }),
-          latencyMs: 0,
-        },
-      });
-    }
-  }
+  // Extraction was moved to the top of runAgentTurn (EXTRACT FIRST pattern)
+  // so the LLM sees updated memory and doesn't re-ask for data just provided.
 
   // Mechanical chaining: address_validate fires when address is complete but not yet validated.
   // Counts toward toolStepsExecuted (same as listing_review chain — all mechanical

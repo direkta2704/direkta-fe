@@ -85,6 +85,9 @@ export async function POST(
         condition: memory.condition as "ERSTBEZUG" | "NEUBAU" | "GEPFLEGT" | "RENOVIERUNGS_BEDUERFTIG" | "SANIERUNGS_BEDUERFTIG" | "ROHBAU" | "KERNSANIERT",
         attributes: memory.attributes.length > 0 ? memory.attributes : undefined,
         roomProgram: memory.roomProgram && memory.roomProgram.length > 0 ? memory.roomProgram : undefined,
+        extras: memory.extras && memory.extras.length > 0 ? JSON.parse(JSON.stringify(memory.extras)) : undefined,
+        specifications: memory.specifications && Object.keys(memory.specifications).length > 0 ? JSON.parse(JSON.stringify(memory.specifications)) : undefined,
+        tagline: memory.draft?.exposeHeadline || null,
       },
     });
 
@@ -97,8 +100,6 @@ export async function POST(
             _sellingMode: memory.sellingMode || "BUNDLE",
             unitCount: memory.unitCount || memory.units.length,
             Wohneinheiten: String(memory.unitCount || memory.units.length),
-            ...(memory.outdoorParking != null ? { "Außenstellplätze": String(memory.outdoorParking) } : {}),
-            ...(memory.undergroundParking != null ? { Tiefgaragenstellplätze: String(memory.undergroundParking) } : {}),
           },
         },
       });
