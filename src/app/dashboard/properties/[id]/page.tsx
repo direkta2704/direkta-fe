@@ -116,8 +116,10 @@ export default function PropertyDetailPage() {
   const [editBathrooms, setEditBathrooms] = useState("");
   const [editYearBuilt, setEditYearBuilt] = useState("");
   const [energySaving, setEnergySaving] = useState(false);
-  const [analyzing, setAnalyzing] = useState(false);
   const [pdfDownloading, setPdfDownloading] = useState(false);
+  const [newlyUploaded, setNewlyUploaded] = useState<MediaItem[]>([]);
+  const [uploadDescriptions, setUploadDescriptions] = useState<Record<string, { caption: string; description: string; roomType: string }>>({});
+  const [analyzingIds, setAnalyzingIds] = useState<Set<string>>(new Set());
   const [editingPhoto, setEditingPhoto] = useState<MediaItem | null>(null);
   const [photoForm, setPhotoForm] = useState({ caption: "", description: "", roomType: "other" });
   const [photoSaving, setPhotoSaving] = useState(false);
@@ -289,17 +291,28 @@ export default function PropertyDetailPage() {
 
   async function uploadFiles(files: FileList | File[]) {
     setUploading(true);
+    const uploaded: MediaItem[] = [];
     for (const file of Array.from(files)) {
       if (!file.type.startsWith("image/")) continue;
       const form = new FormData();
       form.append("file", file);
-      await fetch(`/api/properties/${id}/media`, {
+      const res = await fetch(`/api/properties/${id}/media`, {
         method: "POST",
         body: form,
       });
+      if (res.ok) {
+        const asset = await res.json();
+        uploaded.push(asset);
+      }
     }
     fetchProperty();
     setUploading(false);
+    if (uploaded.length > 0) {
+      const descs: Record<string, { caption: string; description: string; roomType: string }> = {};
+      for (const a of uploaded) descs[a.id] = { caption: "", description: "", roomType: "other" };
+      setUploadDescriptions(descs);
+      setNewlyUploaded(uploaded);
+    }
   }
 
   async function deleteMedia(mediaId: string) {
@@ -535,21 +548,51 @@ export default function PropertyDetailPage() {
     setPdfDownloading(false);
   }
 
-  async function analyzePhotos() {
-    setAnalyzing(true);
+  async function analyzeOnePhoto(mediaId: string) {
+    setAnalyzingIds(prev => new Set(prev).add(mediaId));
     try {
-      const res = await fetch(`/api/properties/${id}/analyze-photos`, { method: "POST" });
+      const res = await fetch(`/api/media/${mediaId}/analyze`, { method: "POST" });
       if (res.ok) {
         const data = await res.json();
-        alert(`${data.analyzed} Fotos analysiert — Beschreibungen wurden generiert.`);
-        fetchProperty();
-      } else {
-        alert("Analyse fehlgeschlagen.");
+        const cls = data.classification;
+        setUploadDescriptions(prev => ({
+          ...prev,
+          [mediaId]: {
+            caption: cls.caption || "",
+            description: cls.description || "",
+            roomType: cls.roomType || "other",
+          },
+        }));
       }
-    } catch {
-      alert("Analyse fehlgeschlagen.");
+    } catch { /* ignore */ }
+    setAnalyzingIds(prev => { const next = new Set(prev); next.delete(mediaId); return next; });
+  }
+
+  async function analyzeAllNewPhotos() {
+    const ids = newlyUploaded.map(p => p.id);
+    await Promise.all(ids.map(id => analyzeOnePhoto(id)));
+  }
+
+  async function saveAllDescriptions() {
+    setPhotoSaving(true);
+    for (const [mediaId, desc] of Object.entries(uploadDescriptions)) {
+      if (!desc.caption && !desc.description && desc.roomType === "other") continue;
+      await fetch(`/api/media/${mediaId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          classification: {
+            caption: desc.caption || undefined,
+            description: desc.description || undefined,
+            roomType: desc.roomType,
+          },
+        }),
+      });
     }
-    setAnalyzing(false);
+    setPhotoSaving(false);
+    setNewlyUploaded([]);
+    setUploadDescriptions({});
+    fetchProperty();
   }
 
   async function createListing() {
@@ -737,14 +780,6 @@ export default function PropertyDetailPage() {
               <span className="material-symbols-outlined text-lg">visibility</span>
             </a>
           )}
-          <button
-            onClick={analyzePhotos}
-            disabled={analyzing}
-            className="bg-white border border-slate-200 hover:border-primary text-blueprint px-5 py-3 rounded-xl text-sm font-black uppercase tracking-[0.18em] transition-colors flex items-center gap-2 disabled:opacity-60"
-          >
-            <span className="material-symbols-outlined text-lg text-primary">{analyzing ? "hourglass_top" : "auto_awesome"}</span>
-            {analyzing ? "Analysiert..." : "Fotos analysieren"}
-          </button>
           {hasListing && (
             <>
               <button
@@ -2143,6 +2178,112 @@ export default function PropertyDetailPage() {
               />
             </div>
             <p className="text-[10px] text-slate-400">Öffnet diese Seite auf Ihrem Handy — dort können Sie Fotos direkt von der Kamera hochladen.</p>
+          </div>
+        </div>
+      )}
+
+      {/* Post-Upload Description Modal */}
+      {newlyUploaded.length > 0 && (
+        <div className="fixed inset-0 z-[200] overflow-y-auto">
+          <div className="fixed inset-0 bg-blueprint/60 backdrop-blur-sm" onClick={() => { setNewlyUploaded([]); setUploadDescriptions({}); }} />
+          <div className="relative flex justify-center p-4 min-h-full items-start pt-12">
+            <div className="relative w-full max-w-2xl bg-white rounded-3xl shadow-2xl p-8">
+              <button onClick={() => { setNewlyUploaded([]); setUploadDescriptions({}); }} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600">
+                <span className="material-symbols-outlined">close</span>
+              </button>
+              <div className="mb-6">
+                <h3 className="text-lg font-black text-blueprint">Fotos beschreiben</h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  Beschreiben Sie die hochgeladenen Fotos manuell oder nutzen Sie die KI-Beschreibung.
+                </p>
+              </div>
+              <div className="flex gap-2 mb-6">
+                <button
+                  onClick={analyzeAllNewPhotos}
+                  disabled={analyzingIds.size > 0}
+                  className="bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-xl text-xs font-black uppercase tracking-[0.15em] transition-colors flex items-center gap-2 disabled:opacity-60"
+                >
+                  <span className="material-symbols-outlined text-base">{analyzingIds.size > 0 ? "hourglass_top" : "auto_awesome"}</span>
+                  {analyzingIds.size > 0 ? "Analysiert..." : "Alle mit KI beschreiben"}
+                </button>
+              </div>
+              <div className="space-y-6 max-h-[60vh] overflow-y-auto pr-2">
+                {newlyUploaded.map((photo) => {
+                  const desc = uploadDescriptions[photo.id] || { caption: "", description: "", roomType: "other" };
+                  const isAnalyzing = analyzingIds.has(photo.id);
+                  return (
+                    <div key={photo.id} className="flex gap-4 p-4 rounded-xl border border-slate-200 bg-slate-50">
+                      <div className="w-32 h-24 rounded-lg overflow-hidden bg-slate-200 flex-shrink-0 relative">
+                        <Image src={photo.storageKey} alt="" fill className="object-cover" sizes="128px" />
+                        {isAnalyzing && (
+                          <div className="absolute inset-0 bg-white/70 flex items-center justify-center">
+                            <div className="w-5 h-5 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1 space-y-2 min-w-0">
+                        <div className="flex gap-2">
+                          <select
+                            className="border border-slate-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-primary flex-shrink-0"
+                            value={desc.roomType}
+                            onChange={(e) => setUploadDescriptions(prev => ({ ...prev, [photo.id]: { ...desc, roomType: e.target.value } }))}
+                          >
+                            <option value="exterior">Außenansicht</option>
+                            <option value="living">Wohnzimmer</option>
+                            <option value="kitchen">Küche</option>
+                            <option value="bathroom">Badezimmer</option>
+                            <option value="bedroom">Schlafzimmer</option>
+                            <option value="office">Arbeitszimmer</option>
+                            <option value="hallway">Flur</option>
+                            <option value="balcony">Balkon</option>
+                            <option value="garden">Garten</option>
+                            <option value="garage">Garage / Stellplatz</option>
+                            <option value="basement">Keller</option>
+                            <option value="other">Sonstiges</option>
+                          </select>
+                          <button
+                            onClick={() => analyzeOnePhoto(photo.id)}
+                            disabled={isAnalyzing}
+                            className="text-xs text-primary hover:text-primary-dark font-bold flex items-center gap-1 flex-shrink-0 disabled:opacity-60"
+                          >
+                            <span className="material-symbols-outlined text-sm">{isAnalyzing ? "hourglass_top" : "auto_awesome"}</span>
+                            KI
+                          </button>
+                        </div>
+                        <input
+                          className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-primary"
+                          placeholder="Titel, z.B. Wohn-/Essbereich mit Küchenanschlüssen"
+                          value={desc.caption}
+                          onChange={(e) => setUploadDescriptions(prev => ({ ...prev, [photo.id]: { ...desc, caption: e.target.value } }))}
+                        />
+                        <textarea
+                          className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-primary resize-none"
+                          rows={2}
+                          placeholder="Beschreibung — was ist in diesem Foto zu sehen?"
+                          value={desc.description}
+                          onChange={(e) => setUploadDescriptions(prev => ({ ...prev, [photo.id]: { ...desc, description: e.target.value } }))}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="flex gap-3 pt-6 border-t border-slate-100 mt-6">
+                <button
+                  onClick={() => { setNewlyUploaded([]); setUploadDescriptions({}); }}
+                  className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-50 transition-colors"
+                >
+                  Überspringen
+                </button>
+                <button
+                  onClick={saveAllDescriptions}
+                  disabled={photoSaving}
+                  className="flex-1 px-4 py-2.5 rounded-xl bg-primary hover:bg-primary-dark text-white text-sm font-black uppercase tracking-widest transition-colors disabled:opacity-60"
+                >
+                  {photoSaving ? "Speichert..." : "Beschreibungen speichern"}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
