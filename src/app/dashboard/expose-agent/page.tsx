@@ -373,11 +373,11 @@ export default function ExposeAgentPage() {
           <span className="material-symbols-outlined text-4xl">forum</span>
         </div>
         <h1 className="text-3xl font-black text-blueprint tracking-tight mb-3">Exposé-Assistent</h1>
-        <p className="text-lg text-slate-500 mb-2">Erstellen Sie Ihr Inserat im Gespräch — Schritt für Schritt.</p>
+        <p className="text-lg text-slate-500 mb-2">Beschreiben Sie Ihre Immobilie — der Assistent erledigt den Rest.</p>
         <p className="text-sm text-slate-400 mb-10 max-w-md mx-auto">
-          Der Assistent führt Sie durch alle nötigen Angaben: Immobilientyp, Adresse, Details, Fotos,
-          Energieausweis. Am Ende erhalten Sie ein fertiges Inserat mit KI-generierter Beschreibung
-          und Preisempfehlung.
+          Schreiben Sie alles, was Sie wissen, in einer Nachricht: Typ, Adresse, Größe, Zustand, Ausstattung.
+          Sie können auch ein bestehendes Inserat einfügen. Der Assistent erstellt daraus ein fertiges
+          Exposé mit Preisempfehlung.
         </p>
         <button
           onClick={startConversation}

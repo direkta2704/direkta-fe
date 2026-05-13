@@ -111,6 +111,9 @@ function readAgentPrefill(): Partial<FormData> {
     if (typeof m.energyValue === "number") next.energyValue = String(m.energyValue);
     if (typeof m.energySource === "string") next.energySource = m.energySource;
     if (typeof m.energyValidUntil === "string") next.energyValidUntil = m.energyValidUntil;
+    if (typeof m.unitCount === "number") next.numberOfUnits = String(m.unitCount);
+    if (typeof m.outdoorParking === "number") next.outdoorParking = String(m.outdoorParking);
+    if (typeof m.undergroundParking === "number") next.undergroundParking = String(m.undergroundParking);
     return next;
   } catch {
     return {};

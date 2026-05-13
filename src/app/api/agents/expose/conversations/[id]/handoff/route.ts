@@ -59,6 +59,11 @@ export async function POST(
       ETW: "wohnung", EFH: "einfamilienhaus", MFH: "mehrfamilienhaus",
       DHH: "doppelhaushaelfte", RH: "reihenhaus", GRUNDSTUECK: "grundstueck",
     };
+    const CONDITION_ADJ: Record<string, string> = {
+      ERSTBEZUG: "Erstbezug", NEUBAU: "neugebauten", GEPFLEGT: "gepflegten",
+      RENOVIERUNGS_BEDUERFTIG: "renovierungsbedürftigen",
+      SANIERUNGS_BEDUERFTIG: "sanierungsbedürftigen", ROHBAU: "Rohbau", KERNSANIERT: "kernsanierten",
+    };
 
     // Create the Property record
     const property = await prisma.property.create({
@@ -77,7 +82,7 @@ export async function POST(
         rooms: memory.rooms,
         bathrooms: memory.bathrooms,
         floor: memory.floor,
-        condition: memory.condition as "ERSTBEZUG" | "NEUBAU" | "GEPFLEGT" | "RENOVIERUNGS_BEDUERFTIG" | "SANIERUNGS_BEDUERFTIG" | "ROHBAU",
+        condition: memory.condition as "ERSTBEZUG" | "NEUBAU" | "GEPFLEGT" | "RENOVIERUNGS_BEDUERFTIG" | "SANIERUNGS_BEDUERFTIG" | "ROHBAU" | "KERNSANIERT",
         attributes: memory.attributes.length > 0 ? memory.attributes : undefined,
         roomProgram: memory.roomProgram && memory.roomProgram.length > 0 ? memory.roomProgram : undefined,
       },
@@ -91,6 +96,9 @@ export async function POST(
           buildingInfo: {
             _sellingMode: memory.sellingMode || "BUNDLE",
             unitCount: memory.unitCount || memory.units.length,
+            Wohneinheiten: String(memory.unitCount || memory.units.length),
+            ...(memory.outdoorParking != null ? { "Außenstellplätze": String(memory.outdoorParking) } : {}),
+            ...(memory.undergroundParking != null ? { Tiefgaragenstellplätze: String(memory.undergroundParking) } : {}),
           },
         },
       });
@@ -113,7 +121,7 @@ export async function POST(
             rooms: unit.rooms,
             bathrooms: unit.bathrooms,
             floor: unit.floor,
-            condition: memory.condition as "ERSTBEZUG" | "NEUBAU" | "GEPFLEGT" | "RENOVIERUNGS_BEDUERFTIG" | "SANIERUNGS_BEDUERFTIG" | "ROHBAU",
+            condition: memory.condition as "ERSTBEZUG" | "NEUBAU" | "GEPFLEGT" | "RENOVIERUNGS_BEDUERFTIG" | "SANIERUNGS_BEDUERFTIG" | "ROHBAU" | "KERNSANIERT",
             attributes: unit.features.length > 0 ? unit.features : memory.attributes,
           },
         });
@@ -132,10 +140,16 @@ export async function POST(
           });
         }
 
-        // Assign only unit-specific uploads — no fallback to property photos
-        const uploadsForUnit = memory.uploads.filter(
+        // Assign unit-specific uploads, falling back to building-level photos
+        let uploadsForUnit = memory.uploads.filter(
           (u) => (u.kind === "PHOTO" || u.kind === "FLOORPLAN") && u.unitLabel === unit.label
         );
+        if (uploadsForUnit.filter(u => u.kind === "PHOTO").length === 0) {
+          const buildingPhotos = memory.uploads.filter(
+            (u) => u.kind === "PHOTO" && !u.unitLabel
+          );
+          uploadsForUnit = [...uploadsForUnit, ...buildingPhotos];
+        }
         for (let i = 0; i < uploadsForUnit.length; i++) {
           const u = uploadsForUnit[i];
           await prisma.mediaAsset.create({
@@ -156,12 +170,28 @@ export async function POST(
         // Create listing for individual unit if selling INDIVIDUAL or BOTH
         if (memory.sellingMode === "INDIVIDUAL" || memory.sellingMode === "BOTH") {
           const unitSlug = `${citySlug}/wohnung-${Math.random().toString(36).slice(2, 6)}`;
+          const unitTitle = `Eigentumswohnung, ${unit.rooms || "?"} Zimmer, ${unit.livingArea || "?"} m², ${memory.city}`;
+
+          const unitIntro = [
+            `Diese ${unit.livingArea || "?"}m² große Eigentumswohnung (${unit.label})`,
+            unit.floor != null ? `im ${unit.floor === 0 ? "Erdgeschoss" : unit.floor + ". Obergeschoss"}` : "",
+            `mit ${unit.rooms || "?"} Zimmern und ${unit.bathrooms || "?"} Bad`,
+            `befindet sich in einem ${memory.yearBuilt ? `${memory.yearBuilt} erbauten` : ""} ${CONDITION_ADJ[memory.condition!] || "gepflegten"} Mehrfamilienhaus`,
+            `in der ${memory.street} ${memory.houseNumber}, ${memory.postcode} ${memory.city}.`,
+            unit.features.length > 0 ? `Zur Ausstattung gehören: ${unit.features.join(", ")}.` : "",
+          ].filter(Boolean).join(" ");
+
+          const buildingParagraphs = memory.draft!.descriptionLong.split(/\n\s*\n/).filter(p => p.trim());
+          const locationParagraph = buildingParagraphs.length >= 2 ? buildingParagraphs[1] : "";
+          const closingParagraph = buildingParagraphs.length >= 3 ? buildingParagraphs[2] : "";
+          const unitDescription = [unitIntro, locationParagraph, closingParagraph].filter(Boolean).join("\n\n");
+
           await prisma.listing.create({
             data: {
               propertyId: unitProp.id,
               slug: unitSlug,
-              titleShort: `${unit.label}, ${unit.rooms || "?"} Zimmer, ${unit.livingArea || "?"} m², ${memory.city}`,
-              descriptionLong: memory.draft!.descriptionLong,
+              titleShort: unitTitle.length > 160 ? unitTitle.slice(0, 157) + "..." : unitTitle,
+              descriptionLong: unitDescription,
               askingPrice: unit.askingPrice ?? null,
               status: "REVIEW",
             },

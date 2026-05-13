@@ -183,6 +183,8 @@ export interface WorkingMemory {
   beliefs: Partial<BeliefStore>;
   currentUnit: string | null;
   addressValidationAttempts: number;
+  outdoorParking: number | null;
+  undergroundParking: number | null;
   // Expose enrichment
   sellerContact: { name?: string; company?: string; phone?: string; email?: string } | null;
   roomProgram: { name: string; area: number }[];
@@ -289,6 +291,8 @@ export const INITIAL_MEMORY: WorkingMemory = {
   beliefs: {},
   currentUnit: null,
   addressValidationAttempts: 0,
+  outdoorParking: null,
+  undergroundParking: null,
   sellerContact: null,
   roomProgram: [],
 };
@@ -310,6 +314,7 @@ export function getMissingFields(m: WorkingMemory): string[] {
   if (m.hasEnergyCert && !m.energyClass) missing.push("Energieklasse");
   if (m.hasEnergyCert && !m.energyValue) missing.push("Energieverbrauch");
   if (m.hasEnergyCert && !m.energySource) missing.push("Primärenergieträger");
+  if (m.hasEnergyCert && !m.energyValidUntil) missing.push("Gültig bis (Energieausweis)");
   return missing;
 }
 
@@ -332,7 +337,7 @@ export interface QuestionResult {
   priority: number;
 }
 
-type ConversationalGroup = "identity" | "core" | "details" | "energy" | "media";
+type ConversationalGroup = "identity" | "core" | "mfh_structure" | "details" | "energy" | "media";
 
 interface FieldSpec {
   field: string;
@@ -379,14 +384,15 @@ const FIELD_PRIORITY: FieldSpec[] = [
   { field: "floor",       group: "details",  blocksPricing: false, blocksPublish: false, infoValue: 0.4, optional: true,  isFilled: wm => wm.type === "EFH" || wm.type === "MFH" || wm.floor != null, prompt: "In welchem Stockwerk liegt die Wohnung?" },
   { field: "plotArea",    group: "details",  blocksPricing: false, blocksPublish: false, infoValue: 0.4, optional: true,  isFilled: wm => wm.type === "ETW" || wm.plotArea != null, prompt: "Wie groß ist das Grundstück in m²?" },
   { field: "attributes",  group: "details",  blocksPricing: false, blocksPublish: false, infoValue: 0.6, optional: true,  isFilled: wm => wm.attributes.length > 0, prompt: "Welche Ausstattung hat die Immobilie? (Balkon, Keller, Garten, Stellplatz, …)" },
-  { field: "unitCount",   group: "details",  blocksPricing: false, blocksPublish: false, infoValue: 0.9, optional: false, isFilled: wm => wm.type !== "MFH" || wm.unitCount != null, prompt: "Wie viele Wohneinheiten hat das Gebäude?" },
-  { field: "units",       group: "details",  blocksPricing: false, blocksPublish: false, infoValue: 0.9, optional: false, isFilled: wm => wm.type !== "MFH" || wm.units.length > 0, prompt: "Bitte beschreiben Sie die einzelnen Wohnungen (Größe, Zimmer, Stockwerk)." },
-  { field: "sellingMode", group: "details",  blocksPricing: false, blocksPublish: false, infoValue: 0.8, optional: false, isFilled: wm => wm.type !== "MFH" || wm.sellingMode != null, prompt: "Wie möchten Sie verkaufen? Einzeln, als Paket, oder beides?" },
+  { field: "unitCount",   group: "mfh_structure", blocksPricing: false, blocksPublish: true,  infoValue: 1.0, optional: false, isFilled: wm => wm.type !== "MFH" || wm.unitCount != null, prompt: "Wie viele Wohneinheiten hat das Gebäude?" },
+  { field: "units",       group: "mfh_structure", blocksPricing: false, blocksPublish: true,  infoValue: 1.0, optional: false, isFilled: wm => wm.type !== "MFH" || wm.units.length > 0, prompt: "Bitte beschreiben Sie die einzelnen Wohnungen (Größe, Zimmer, Stockwerk)." },
+  { field: "sellingMode", group: "mfh_structure", blocksPricing: false, blocksPublish: true,  infoValue: 0.9, optional: false, isFilled: wm => wm.type !== "MFH" || wm.sellingMode != null, prompt: "Wie möchten Sie verkaufen? Einzeln, als Paket, oder beides?" },
   // ── energy: GEG legally required ──
   { field: "hasEnergyCert", group: "energy", blocksPricing: false, blocksPublish: true,  infoValue: 0.9, optional: false, isFilled: wm => wm.hasEnergyCert !== null, prompt: "Haben Sie einen Energieausweis für die Immobilie?" },
   { field: "energyClass",  group: "energy", blocksPricing: false, blocksPublish: true,  infoValue: 0.5, optional: false, isFilled: wm => !wm.hasEnergyCert || !!wm.energyClass, prompt: "Welche Energieklasse steht im Ausweis?" },
   { field: "energyValue",  group: "energy", blocksPricing: false, blocksPublish: true,  infoValue: 0.5, optional: false, isFilled: wm => !wm.hasEnergyCert || wm.energyValue != null, prompt: "Wie hoch ist der Energieverbrauch in kWh/(m²·a)?" },
   { field: "energySource", group: "energy", blocksPricing: false, blocksPublish: true,  infoValue: 0.5, optional: false, isFilled: wm => !wm.hasEnergyCert || !!wm.energySource, prompt: "Was ist der wesentliche Energieträger? (Gas, Öl, Fernwärme, …)" },
+  { field: "energyValidUntil", group: "energy", blocksPricing: false, blocksPublish: true,  infoValue: 0.4, optional: false, isFilled: wm => !wm.hasEnergyCert || !!wm.energyValidUntil, prompt: "Bis wann ist der Energieausweis gültig? (Datum, z.B. 2034-05-15)" },
   // ── media: uploads + enrichment, last group ──
   { field: "photos",        group: "media", blocksPricing: false, blocksPublish: true,  infoValue: 0.5, optional: false, isFilled: wm => wm.uploads.filter(u => u.kind === "PHOTO").length >= 1, prompt: "Bitte laden Sie Fotos hoch. Nutzen Sie den 📷-Button links unten." },
   { field: "floorPlan",     group: "media", blocksPricing: false, blocksPublish: false, infoValue: 0.6, optional: true,  isFilled: wm => wm.hasFloorPlan || wm.uploads.some(u => u.kind === "FLOORPLAN"), prompt: "Haben Sie einen Grundriss? Nutzen Sie den 📐-Button." },
@@ -1046,11 +1052,16 @@ descriptionLong: MINDESTENS 300 Wörter, maximal 500 Wörter, GENAU 3 Absätze g
   WICHTIG: Jeder Absatz muss MINDESTENS 80 Wörter haben. Schreibe ausführlich und detailliert.
 
 REGELN:
-- KEINE erfundenen Merkmale — beschreibe NUR, was in den Daten steht
+- STRENG: Beschreibe NUR Fakten aus den Daten. ERFINDE NICHTS.
+- VERBOTEN: "lichtdurchflutet", "großzügig", "geräumig", "modern ausgestattet", "ideal für", "bestens geeignet", "sofort einziehen", "attraktiv", "hervorragend", "durchdacht", "optimal" — diese Wörter NIEMALS verwenden, sie sind nicht durch Daten belegbar.
+- VERBOTEN: Aussagen über Raumgefühl, Atmosphäre, Lichtverhältnisse — das ist nicht aus Daten ableitbar.
+- STATTDESSEN: Verwende konkrete Zahlen und Fakten. "3 Zimmer auf 95 m²" statt "großzügige Zimmer". "Baujahr 1999, gepflegter Zustand" statt "hervorragend instand gehalten".
+- Wenn ein Merkmal NICHT in den Daten steht, erwähne es NICHT. Kein "könnte", "eignet sich", "bietet Potenzial".
 - KEINE Ausrufezeichen
-- KEINE Superlative: "einmalig", "konkurrenzlos", "atemberaubend", "traumhaft", "perfekt"
-- Beende den 3. Absatz mit dem Standard-Energieausweis-Hinweis (falls Energiedaten vorhanden)
-- NEGIERE NIEMALS bestätigte Daten ("Wohnfläche nicht spezifiziert" wenn Wohnfläche vorhanden ist)`;
+- KEINE Superlative: "einmalig", "konkurrenzlos", "atemberaubend", "traumhaft", "perfekt", "sensationell"
+- Beende den 3. Absatz mit dem Standard-Energieausweis-Hinweis (falls Energiedaten vorhanden): "Energieausweis: [Typ], Klasse [X], [Y] kWh/(m²·a), [Energieträger]."
+- NEGIERE NIEMALS bestätigte Daten ("Wohnfläche nicht spezifiziert" wenn Wohnfläche vorhanden ist)
+- Der Text muss eine Faktenprüfung gegen die Quelldaten bestehen. Jede konkrete Aussage muss in den Daten stehen.`;
 
 const DRAFT_METADATA_PROMPT = `Du bist ein professioneller Immobilientexter für den deutschen Markt.
 Basierend auf den Immobiliendaten UND der bereits erstellten Beschreibung, erstelle die ergänzenden Exposé-Felder.
@@ -1179,7 +1190,7 @@ export async function runRubric(m: WorkingMemory): Promise<{ result: RubricResul
   let costCents = 0;
 
   // 1. GEG fields
-  const gegOk = m.hasEnergyCert === false || !!(m.energyCertType && m.energyClass && m.energyValue && m.energySource);
+  const gegOk = m.hasEnergyCert === false || !!(m.energyCertType && m.energyClass && m.energyValue && m.energySource && m.energyValidUntil);
   if (!gegOk) failures.push("Energieausweis-Pflichtfelder fehlen");
 
   // 2. Word count + paragraphs
@@ -1615,17 +1626,19 @@ const ORCHESTRATOR_SYSTEM_PROMPT = `Du bist der Direkta Exposé-Agent — ein in
 
 ═══ ZWEI MODI ═══
 
-MODUS A — BULK (Verkäufer gibt viele Daten auf einmal):
+MODUS A — BULK (BEVORZUGT — Verkäufer gibt viele Daten auf einmal):
+Die Begrüßung ermutigt den Verkäufer, alles auf einmal zu schreiben. Das ist der schnellste Weg.
 1. Zeige eine ✓-Liste ALLER erkannten Daten — Typ, Adresse, Fläche, Zimmer, Bäder, Baujahr, Zustand, Ausstattung, Energie, Preis
 2. Bei MFH: zeige auch alle erkannten Einheiten mit Größe/Zimmer/Etage UND die Verkaufsart
-3. Liste nur was FEHLT (prüfe Working Memory!) — typischerweise: Fotos, Grundriss
+3. Liste NUR was FEHLT (prüfe Working Memory!) — typischerweise: Fotos, Grundriss
 4. Wenn nur Fotos/Grundriss fehlen → sage das direkt, weise auf die Buttons hin
 5. Wenn Pflichtfelder fehlen → frage nach dem ERSTEN fehlenden
 6. FRAGE NIEMALS nach Daten die bereits im Working Memory stehen!
+7. Wenn der Verkäufer ein bestehendes Inserat einfügt → extrahiere ALLE Daten, zeige ✓-Liste
 
 MODUS B — DIALOG (Verkäufer antwortet einzeln):
-Stelle pro Nachricht NUR EINE Frage. Reihenfolge:
-Typ → Adresse → PLZ/Stadt → [typspezifische Fragen] → Energie → Fotos → Grundriss
+Stelle pro Nachricht NUR EINE Frage. Folge der Empfehlung im ">>> NÄCHSTE AKTION <<<" Feld des Working Memory.
+Fallback-Reihenfolge wenn keine Empfehlung: Typ → Adresse → PLZ/Stadt → [typspezifische Fragen] → Energie → Fotos → Grundriss
 
 TYPSPEZIFISCHE FRAGEN:
 • ETW: Wohnfläche → Zimmer → Bäder → Etage → Baujahr → Zustand → Ausstattung (Balkon, Aufzug, Keller, Stellplatz, Hausgeld?)
@@ -1739,6 +1752,9 @@ DATEN-INTELLIGENZ:
 • Energieausweis-PDF nicht lesbar → manuelle Eingabe akzeptieren, weiter
 • Adresse nicht validierbar → akzeptieren, weiter
 • Pricing fehlgeschlagen → zeige fehlende Felder
+• UNGEFÄHRE ANGABEN AKZEPTIEREN: "ca. 120qm", "vielleicht 130", "so 4-5 Zimmer" → nimm den Mittelwert oder den wahrscheinlicheren Wert. Sage "Ich habe 125 m² notiert — Sie können das später korrigieren."
+• PREIS NICHT BEKANNT: Wenn der Verkäufer keinen Preis weiß → "Kein Problem, ich berechne eine Markteinschätzung sobald alle Daten vorliegen."
+• NATÜRLICHE SPRACHE: "gut" = GEPFLEGT, "muss renoviert werden" = RENOVIERUNGS_BEDUERFTIG, "frisch saniert" = KERNSANIERT, "neuwertig" = NEUBAU, "Rohbau" = ROHBAU
 
 ANTI-LOOP — VERMEIDE ENDLOSSCHLEIFEN:
 • Wenn du bereits 2x nach demselben Feld gefragt hast → überspringen oder Standardwert setzen. NIEMALS ein drittes Mal fragen.
@@ -1839,7 +1855,7 @@ Baujahr: ${m.yearBuilt ?? "—"}
 Etage: ${m.floor ?? "—"}
 Zustand: ${m.condition || "—"}
 Ausstattung: ${m.attributes.join(", ") || "—"}
-Energie: ${m.hasEnergyCert === null ? "—" : m.hasEnergyCert ? `${m.energyClass || "?"} (${m.energyValue || "?"} kWh, ${m.energySource || "?"})` : "kein Ausweis"}
+Energie: ${m.hasEnergyCert === null ? "—" : m.hasEnergyCert ? `${m.energyClass || "?"} (${m.energyValue || "?"} kWh, ${m.energySource || "?"}, gültig bis ${m.energyValidUntil || "?"})` : "kein Ausweis"}
 Fotos hochgeladen: ${m.uploads.filter((u) => u.kind === "PHOTO" && !u.unitLabel).length} (Gebäude)${m.units.length > 0 ? m.units.map((u) => {
     const unitPhotos = m.uploads.filter((p) => p.kind === "PHOTO" && p.unitLabel === u.label).length;
     const unitPlans = m.uploads.filter((p) => p.kind === "FLOORPLAN" && p.unitLabel === u.label).length;
@@ -1847,6 +1863,8 @@ Fotos hochgeladen: ${m.uploads.filter((u) => u.kind === "PHOTO" && !u.unitLabel)
   }).join("") : ""}
 Grundrisse hochgeladen: ${m.uploads.filter((u) => u.kind === "FLOORPLAN" && !u.unitLabel).length} (Gebäude)${m.type === "MFH" ? `
 Wohneinheiten: ${m.unitCount ?? "—"}
+Außenstellplätze: ${m.outdoorParking ?? "—"}
+Tiefgaragenplätze: ${m.undergroundParking ?? "—"}
 Einheiten-Daten: ${m.units.length > 0 ? m.units.map((u) => `${u.label}: ${u.livingArea || "?"}m², ${u.rooms || "?"}Zi, ${u.bathrooms || "?"}Bad, ${u.floor != null ? "EG+" + u.floor : "?"}. OG`).join(" | ") : "—"}
 Verkaufsart: ${m.sellingMode || "—"}` : ""}
 Preisband: ${m.priceBand ? `${m.priceBand.low.toLocaleString("de")}–${m.priceBand.high.toLocaleString("de")} € (${m.priceBand.confidence})` : "—"}
@@ -1858,7 +1876,8 @@ Raumprogramm: ${m.roomProgram.length > 0 ? m.roomProgram.map((r) => `${r.name} $
 Kontaktdaten: ${m.sellerContact ? [m.sellerContact.name, m.sellerContact.company, m.sellerContact.phone, m.sellerContact.email].filter(Boolean).join(", ") : "—"}
 Handoff bereit: ${m.handoffReady ? "ja" : "nein"}
 Vollständigkeit: ${score}%
-Nächste Aktion: ${q.action === "ask" ? `Frage: "${q.prompt}"` : q.action === "upload_photos" ? `Foto-Upload: "${q.prompt}"` : q.action === "trigger_pricing" ? "→ pricing_recommend aufrufen" : q.action === "trigger_draft" ? "→ listing_draft aufrufen" : "→ Bestätigung abwarten"}${q.field ? ` [Feld: ${q.field}]` : ""}${m.lastRubric && !m.lastRubric.passed ? `\nRubric-Fehler: ${rubricFailureToQuestions(m.lastRubric, m).join(" | ")}` : ""}${m.costCompressed ? "\n\n[KOSTEN-MODUS] Budget knapp. Antworte kurz (max 2 Sätze). Überspringe optionale Felder (Zimmer, Bäder, Etage, Grundstück, Raumprogramm, Kontaktdaten). Frage nur Pflichtfelder." : ""}`;
+
+>>> NÄCHSTE AKTION (FOLGE DIESER ANWEISUNG): ${q.action === "ask" ? `Stelle diese Frage: "${q.prompt}"` : q.action === "upload_photos" ? `Bitte um Foto-Upload: "${q.prompt}"` : q.action === "trigger_pricing" ? "→ Rufe JETZT pricing_recommend auf" : q.action === "trigger_draft" ? "→ Rufe JETZT listing_draft auf" : "→ Warte auf Bestätigung des Verkäufers"}${q.field ? ` [Feld: ${q.field}]` : ""} <<<${m.lastRubric && !m.lastRubric.passed ? `\nRubric-Fehler: ${rubricFailureToQuestions(m.lastRubric, m).join(" | ")}` : ""}${m.costCompressed ? "\n\n[KOSTEN-MODUS] Budget knapp. Antworte kurz (max 2 Sätze). Überspringe optionale Felder (Zimmer, Bäder, Etage, Grundstück, Raumprogramm, Kontaktdaten). Frage nur Pflichtfelder." : ""}`;
 }
 
 interface ChatMsg {
@@ -1972,6 +1991,7 @@ function normalizeUserPatch(data: Record<string, unknown>, turnNumber: number): 
   if (typeof data.energyClass === "string") patch.energyClass = data.energyClass;
   if (typeof data.energyValue === "number") patch.energyValue = data.energyValue;
   if (typeof data.energySource === "string") patch.energySource = data.energySource;
+  if (typeof data.energyValidUntil === "string") patch.energyValidUntil = data.energyValidUntil;
   if (typeof data.askingPrice === "number") patch.askingPrice = data.askingPrice;
   else if (typeof data.askingPrice === "string") {
     const priceStr = data.askingPrice.toLowerCase().replace(/[€\s]/g, "");
@@ -2008,6 +2028,8 @@ function normalizeUserPatch(data: Record<string, unknown>, turnNumber: number): 
     };
     patch.sellingMode = (modeMap[data.sellingMode.toLowerCase()] || data.sellingMode.toUpperCase()) as WorkingMemory["sellingMode"];
   }
+  if (typeof data.outdoorParking === "number") patch.outdoorParking = data.outdoorParking;
+  if (typeof data.undergroundParking === "number") patch.undergroundParking = data.undergroundParking;
   if (typeof data.hasFloorPlan === "boolean") patch.hasFloorPlan = data.hasFloorPlan;
   if (Array.isArray(data.roomProgram)) {
     patch.roomProgram = data.roomProgram.filter((r: unknown) => r && typeof r === "object" && "name" in (r as Record<string, unknown>) && "area" in (r as Record<string, unknown>)).map((r: unknown) => {
@@ -2116,9 +2138,19 @@ FORMATE ERKENNEN:
 - "GA" → attributes: ["Garten"]
 - "Marktstr." → street: "Marktstraße" (Abkürzungen auflösen)
 - "Str." → "Straße", "Pl." → "Platz", "Weg" bleibt "Weg"
+- "gut" / "guter Zustand" / "guter Zustand" → condition: "GEPFLEGT"
+- "muss renoviert werden" / "renovierungsbedürftig" → condition: "RENOVIERUNGS_BEDUERFTIG"
+- "frisch saniert" / "komplett saniert" / "kernsaniert" → condition: "KERNSANIERT"
+- "neuwertig" / "wie neu" → condition: "NEUBAU"
+- "120 oder 130" / "ca. 125" / "so ungefähr 120" → livingArea: 125 (Mittelwert bei Bereich)
+- "weiß ich nicht" / "keine Ahnung" / "skip" → extrahiere NICHTS für dieses Feld, gib {} zurück
+- "EBK" → attributes: ["Einbauküche"]
+- "STPL" / "Stellplatz" → attributes: ["Stellplatz"]
 
 Beispiele für einzelne Antworten:
 - Agent: "Wohnfläche?" → Nutzer: "250" → { "livingArea": 250 }
+- Agent: "Wohnfläche?" → Nutzer: "so 120 bis 130" → { "livingArea": 125 }
+- Agent: "Zustand?" → Nutzer: "gut" → { "condition": "GEPFLEGT" }
 - Agent: "Zustand?" → Nutzer: "Gepflegt" → { "condition": "GEPFLEGT" }
 - Agent: "Zustand?" → Nutzer: "kernsaniert" → { "condition": "KERNSANIERT" }
 - Agent: "Baujahr?" → Nutzer: "99" → { "yearBuilt": 1999 }
@@ -2127,8 +2159,8 @@ Beispiele für einzelne Antworten:
 - Agent: "Preis?" → Nutzer: "500k" → { "askingPrice": 500000 }
 
 Beispiel für Bulk-Eingabe:
-- Nutzer: "MFH, Marktstraße 12, 76571 Gaggenau, 250m², 8 Zimmer, 3 Bäder, Bj 1999, gepflegt. 3 Wohnungen: WE1 95m² 3Zi EG, WE2 55m² 2Zi 1.OG. Verkauf: beides. Energie: Verbrauch B 70kWh Gas. Preis: 525000"
-→ { "type":"MFH", "street":"Marktstraße", "houseNumber":"12", "postcode":"76571", "city":"Gaggenau", "livingArea":250, "rooms":8, "bathrooms":3, "yearBuilt":1999, "condition":"GEPFLEGT", "unitCount":3, "units":[{"label":"WE1","livingArea":95,"rooms":3,"floor":0},{"label":"WE2","livingArea":55,"rooms":2,"floor":1}], "sellingMode":"BOTH", "hasEnergyCert":true, "energyCertType":"VERBRAUCH", "energyClass":"B", "energyValue":70, "energySource":"Gas", "askingPrice":525000 }
+- Nutzer: "MFH, Marktstraße 12, 76571 Gaggenau, 250m², Grundstück 450m², 8 Zimmer, 3 Bäder, Bj 1999, gepflegt. Keller, Stellplatz, Garten, FBH. 10 Außenstellplätze, 6 TG. 3 Wohnungen: WE1 95m² 3Zi EG, WE2 55m² 2Zi 1.OG. Verkauf: beides. Energie: Verbrauch B 70kWh Gas gültig 2034-03-15. Preis: 525000"
+→ { "type":"MFH", "street":"Marktstraße", "houseNumber":"12", "postcode":"76571", "city":"Gaggenau", "livingArea":250, "plotArea":450, "rooms":8, "bathrooms":3, "yearBuilt":1999, "condition":"GEPFLEGT", "attributes":["Keller","Stellplatz","Garten","Fußbodenheizung"], "unitCount":3, "units":[{"label":"WE1","livingArea":95,"rooms":3,"floor":0},{"label":"WE2","livingArea":55,"rooms":2,"floor":1}], "sellingMode":"BOTH", "hasEnergyCert":true, "energyCertType":"VERBRAUCH", "energyClass":"B", "energyValue":70, "energySource":"Gas", "energyValidUntil":"2034-03-15", "outdoorParking":10, "undergroundParking":6, "askingPrice":525000 }
 
 WICHTIGE REGELN:
 - Überschreibe KEINE bereits bekannten Felder, es sei denn der Nutzer korrigiert sie explizit.
@@ -2160,8 +2192,11 @@ Erlaubte Felder (nur NEUE/GEÄNDERTE extrahieren):
 - energyClass: A+|A|B|C|D|E|F|G|H
 - energyValue: kWh/m²a (Zahl)
 - energySource: Gas|Öl|Fernwärme|Strom|etc.
+- energyValidUntil: ISO-Datum (YYYY-MM-DD) — Gültigkeit des Energieausweises
 - assumptions: Array von getroffenen Annahmen
 - unitCount: Anzahl Wohneinheiten (Zahl, nur bei MFH)
+- outdoorParking: Anzahl Außenstellplätze (Zahl, nur bei MFH)
+- undergroundParking: Anzahl Tiefgaragenstellplätze (Zahl, nur bei MFH)
 - units: Array von { label, livingArea, rooms, bathrooms, floor, features } — Daten einzelner Wohneinheiten
 - sellingMode: INDIVIDUAL|BUNDLE|BOTH — Verkaufsart (einzeln/Paket/beides)
 - hasFloorPlan: true wenn Grundriss vorhanden
@@ -2173,8 +2208,9 @@ Erlaubte Felder (nur NEUE/GEÄNDERTE extrahieren):
 Antworte NUR mit JSON. Leeres Objekt {} wenn nichts Neues extrahiert wurde.`;
 
   try {
-    // Scale maxTokens with input length: bulk pastes with MFH units need more output space
-    const extractMaxTokens = userMessage.length > 300 ? 800 : 400;
+    // Scale maxTokens with input length: bulk pastes with MFH units need more output space.
+    // 1200 for very long inputs (MFH with units + energy + parking) to avoid dropping attributes.
+    const extractMaxTokens = userMessage.length > 500 ? 1200 : userMessage.length > 300 ? 800 : 400;
     const llm = await callLlm({
       messages: [{ role: "user", content: prompt }],
       temperature: 0.0,
@@ -2616,6 +2652,50 @@ export async function runAgentTurn(
     });
   }
 
+  // Mechanical pipeline: when all required fields + photos are present but no
+  // price band yet, chain pricing → draft → review without waiting for the LLM.
+  if (
+    !finished &&
+    isReadyForDraft(workingMemory) &&
+    workingMemory.uploads.filter(u => u.kind === "PHOTO").length >= 1 &&
+    !workingMemory.priceBand &&
+    canAffordChainedTool(costCentsTotal, 15)
+  ) {
+    // pricing_recommend
+    const priceTr = await executeTool("pricing_recommend", {}, workingMemory, turnNumber);
+    toolStepsExecuted++;
+    costCentsThisTurn += priceTr.costCents;
+    costCentsTotal += priceTr.costCents;
+    if (priceTr.memoryPatch) workingMemory = applyPatch(workingMemory, priceTr.memoryPatch);
+    await prisma.agentStep.create({ data: { agentRunId: ctx.agentRunId, ordinal: await nextStepOrdinal(ctx.agentRunId), toolName: "pricing_recommend", input: asJson({}), output: asJson({ ...priceTr.output, memoryPatch: priceTr.memoryPatch }), latencyMs: priceTr.latencyMs, ok: priceTr.ok } });
+    await prisma.conversationTurn.create({ data: { conversationId: ctx.conversationId, role: "TOOL", content: "pricing_recommend", toolName: "pricing_recommend", toolInput: asJson({}), toolOutput: asJson({ ...priceTr.output, memoryPatch: priceTr.memoryPatch }), latencyMs: priceTr.latencyMs } });
+
+    if (priceTr.ok && workingMemory.priceBand && canAffordChainedTool(costCentsTotal, 10)) {
+      // listing_draft
+      const draftTr = await executeTool("listing_draft", {}, workingMemory, turnNumber);
+      toolStepsExecuted++;
+      costCentsThisTurn += draftTr.costCents;
+      costCentsTotal += draftTr.costCents;
+      if (draftTr.memoryPatch) workingMemory = applyPatch(workingMemory, draftTr.memoryPatch);
+      await prisma.agentStep.create({ data: { agentRunId: ctx.agentRunId, ordinal: await nextStepOrdinal(ctx.agentRunId), toolName: "listing_draft", input: asJson({}), output: asJson({ ...draftTr.output, memoryPatch: draftTr.memoryPatch }), latencyMs: draftTr.latencyMs, ok: draftTr.ok } });
+      await prisma.conversationTurn.create({ data: { conversationId: ctx.conversationId, role: "TOOL", content: "listing_draft", toolName: "listing_draft", toolInput: asJson({}), toolOutput: asJson({ ...draftTr.output, memoryPatch: draftTr.memoryPatch }), latencyMs: draftTr.latencyMs } });
+
+      if (draftTr.ok && workingMemory.draft && canAffordChainedTool(costCentsTotal, 5)) {
+        // listing_review
+        const reviewTr = await executeTool("listing_review", {}, workingMemory, turnNumber);
+        toolStepsExecuted++;
+        costCentsThisTurn += reviewTr.costCents;
+        costCentsTotal += reviewTr.costCents;
+        if (reviewTr.memoryPatch) workingMemory = applyPatch(workingMemory, reviewTr.memoryPatch);
+        await prisma.agentStep.create({ data: { agentRunId: ctx.agentRunId, ordinal: await nextStepOrdinal(ctx.agentRunId), toolName: "listing_review", input: asJson({}), output: asJson({ ...reviewTr.output, memoryPatch: reviewTr.memoryPatch }), latencyMs: reviewTr.latencyMs, ok: reviewTr.ok } });
+        await prisma.conversationTurn.create({ data: { conversationId: ctx.conversationId, role: "TOOL", content: "listing_review", toolName: "listing_review", toolInput: asJson({}), toolOutput: asJson({ ...reviewTr.output, memoryPatch: reviewTr.memoryPatch }), latencyMs: reviewTr.latencyMs } });
+
+        const result = chainedReviewMessage(workingMemory.lastRubric!, workingMemory.draft!, workingMemory);
+        agentMessage = result.message;
+      }
+    }
+  }
+
   return {
     agentMessage,
     memory: workingMemory,
@@ -2641,28 +2721,26 @@ async function nextStepOrdinal(agentRunId: string): Promise<number> {
 // ────────────────────────────────────────────────────────────────────────
 
 export async function generateInitialGreeting(ctx: AgentRunContext): Promise<{ message: string; costCents: number }> {
-  const llm = await callLlm({
-    messages: [
-      { role: "system", content: ORCHESTRATOR_SYSTEM_PROMPT },
-      { role: "system", content: buildMemoryContext(INITIAL_MEMORY) },
-      { role: "user", content: "Begrüße mich kurz und frage nach dem Immobilientyp." },
-    ] as unknown as Array<Record<string, unknown>>,
-    temperature: 0.5,
-    maxTokens: 250,
-  });
+  const greeting = [
+    "Willkommen beim Direkta Exposé-Assistenten.",
+    "",
+    "Beschreiben Sie Ihre Immobilie — je mehr Details auf einmal, desto schneller geht es.",
+    "Zum Beispiel: Typ, Adresse, Größe, Zimmer, Baujahr, Zustand, Ausstattung, Energieausweis, Preis.",
+    "",
+    "Sie können auch ein bestehendes Inserat einfügen — ich übernehme alle Daten daraus.",
+  ].join("\n");
 
   await prisma.agentStep.create({
     data: {
       agentRunId: ctx.agentRunId,
       ordinal: 0,
-      toolName: "llm_call",
+      toolName: "greeting",
       input: asJson({ kind: "greeting" }),
-      output: asJson({ usage: llm.usage }),
+      output: asJson({ deterministic: true }),
       latencyMs: 0,
       ok: true,
     },
   });
 
-  const cleaned = (llm.message.content || "Willkommen beim Direkta Exposé-Assistenten. Welchen Immobilientyp möchten Sie verkaufen?").replace(/###MEMORY###[\s\S]*?###END###/g, "").trim();
-  return { message: cleaned, costCents: llm.usage.costCents };
+  return { message: greeting, costCents: 0 };
 }
