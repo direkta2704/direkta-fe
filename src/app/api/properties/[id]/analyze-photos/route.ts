@@ -51,6 +51,7 @@ interface Classification {
   lighting: string | null;
   estimatedArea: number | null;
   suggestion: string | null;
+  isRendering: boolean | null;
 }
 
 async function analyzePhoto(imageBuffer: Buffer): Promise<Classification | null> {
@@ -66,20 +67,22 @@ async function analyzePhoto(imageBuffer: Buffer): Promise<Classification | null>
   const sysPrompt = `Du bist ein Experte für Immobilienfotografie und analysierst Fotos für deutsche Immobilienexposés. Antworte als JSON, ohne Markdown:
 {
   "roomType": einer aus [${ROOM_TYPES.join(", ")}],
-  "qualityFlags": Array aus möglichen Mängeln (nur zutreffende): blur, dark, overexposed, saturated, oversharp, tilted, cluttered, watermark, low_resolution, noisy, reflection, finger, poor_composition,
+  "qualityFlags": Array aus möglichen Mängeln (nur zutreffende): blur, dark, overexposed, saturated, oversharp, tilted, cluttered, watermark, low_resolution, noisy, reflection, finger, poor_composition, perspective_distortion (Weitwinkel-Verzerrung — Gebäude kippen nach hinten, typisch für 0.5x iPhone-Objektiv),
   "qualityScore": 0-100,
-  "features": Array erkannter Merkmale z.B. ["einbaukueche", "parkettboden", "balkon", "dachschraege"],
+  "features": Array erkannter Merkmale z.B. ["einbaukueche", "parkettboden", "balkon", "dachschraege", "kamin", "fussbodenheizung", "garten", "terrasse", "garage", "aufzug", "neubau", "altbau"],
   "caption": präziser Raumname für das Exposé, z.B. "Wohn-/Essbereich mit Küchenanschlüssen", "Schlafzimmer mit Blick zur Ankleide", "Bad mit bodengleicher Dusche", "Fassade Straßenseite",
   "description": 2-3 Sätze für ein hochwertiges Immobilienexposé. Beschreibe sachlich was im Foto sichtbar ist: Materialien, Oberflächen, Raumgefühl, Lichtverhältnisse, besondere Merkmale. Stil: professionell, wertschätzend, konkret.,
   "lighting": Lichtverhältnisse, z.B. "Weiches Vormittagslicht", "Neutrales Tageslicht", "Späte Nachmittagssonne",
   "estimatedArea": geschätzte Raumfläche in m² (Türgröße ~2m als Referenz). Nur bei Innenräumen, null bei Außenaufnahmen.,
-  "suggestion": kurzer Verbesserungshinweis (nur wenn qualityScore < 70, sonst null)
+  "suggestion": kurzer Verbesserungshinweis (nur wenn qualityScore < 70, sonst null). Bei perspective_distortion: "Bitte mit normalem Objektiv (1x) aus größerer Entfernung fotografieren.",
+  "isRendering": true/false — ist dieses Foto eine 3D-Visualisierung, ein Rendering oder ein CGI-Bild? Hinweise: perfekte Oberflächen, computergenerierte Möbel, unrealistische Lichtverhältnisse. false bei echten Fotos.
 }
 Regeln:
 - "floorplan" NUR wenn das Bild ein technischer Grundriss ist.
 - "exterior" für Außenansichten des Gebäudes.
 - "caption" soll spezifisch sein — nicht generisch wie "Zimmer", sondern beschreibend.
-- "description" soll NUR beschreiben was sichtbar ist. Keine Vermutungen.`;
+- "description" soll NUR beschreiben was sichtbar ist. Keine Vermutungen.
+- "isRendering" prüfe sorgfältig ob es ein 3D-Rendering/Visualisierung ist.`;
 
   try {
     const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
@@ -124,6 +127,7 @@ Regeln:
       lighting: typeof parsed.lighting === "string" ? parsed.lighting : null,
       estimatedArea: typeof parsed.estimatedArea === "number" ? parsed.estimatedArea : null,
       suggestion: typeof parsed.suggestion === "string" ? parsed.suggestion : null,
+      isRendering: typeof parsed.isRendering === "boolean" ? parsed.isRendering : null,
     };
   } catch {
     return null;
@@ -141,15 +145,23 @@ export async function POST(
 
     const property = await prisma.property.findFirst({
       where: { id, userId: user.id },
-      include: { media: { where: { kind: "PHOTO" }, orderBy: { ordering: "asc" } } },
+      include: {
+        media: { where: { kind: "PHOTO" }, orderBy: { ordering: "asc" } },
+        units: { include: { media: { where: { kind: "PHOTO" }, orderBy: { ordering: "asc" } } } },
+      },
     });
     if (!property) {
       return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
     }
 
-    const results: { id: string; caption: string; description: string; roomType: string }[] = [];
+    const allMedia = [
+      ...property.media,
+      ...property.units.flatMap(u => u.media),
+    ];
 
-    for (const media of property.media) {
+    const results: { id: string; caption: string; description: string; roomType: string; isRendering: boolean | null }[] = [];
+
+    for (const media of allMedia) {
       const buf = await loadImageBytes(media.storageKey);
       if (!buf) continue;
 
@@ -166,6 +178,7 @@ export async function POST(
         caption: classification.caption,
         description: classification.description,
         roomType: classification.roomType,
+        isRendering: classification.isRendering,
       });
     }
 
