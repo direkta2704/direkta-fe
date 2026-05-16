@@ -359,22 +359,11 @@ interface FieldSpec {
   prompt: string;
 }
 
-// Group order is derived from the maximum priority of each group's fields.
-// Groups whose members have higher max priority are asked first.
-// This ensures blocksPublish/blocksPricing fields (energy, media) are
-// not deferred behind nice-to-have details.
-// Computed once at module load; result: identity(7) → core(7) → energy(2.9) → media(2.5) → details(0.9)
-function computeGroupOrder(specs: FieldSpec[]): Record<ConversationalGroup, number> {
-  const maxPri: Record<string, number> = {};
-  for (const s of specs) {
-    const p = (s.blocksPricing ? 4 : 0) + (s.blocksPublish ? 2 : 0) + s.infoValue;
-    if (!maxPri[s.group] || p > maxPri[s.group]) maxPri[s.group] = p;
-  }
-  const groups = Object.entries(maxPri).sort((a, b) => b[1] - a[1]);
-  const order: Record<string, number> = {};
-  groups.forEach(([g], i) => { order[g] = i; });
-  return order as Record<ConversationalGroup, number>;
-}
+// Explicit group order: identity/core first, then MFH structure, then details
+// (rooms, year, attributes — these improve pricing + listing quality),
+// then energy (GEG required), then media (photos/floorplan) last.
+// Previous computed order put details LAST (0.9) which meant rooms/year/attributes
+// were never asked before photos triggered the pricing pipeline.
 
 const FIELD_PRIORITY: FieldSpec[] = [
   // ── identity: can't do anything without these ──
@@ -395,7 +384,7 @@ const FIELD_PRIORITY: FieldSpec[] = [
   { field: "attributes",  group: "details",  blocksPricing: false, blocksPublish: false, infoValue: 0.6, optional: true,  isFilled: wm => wm.attributes.length > 0, prompt: "Welche Ausstattung hat die Immobilie? (Balkon, Keller, Garten, Stellplatz, …)" },
   { field: "specifications", group: "details", blocksPricing: false, blocksPublish: false, infoValue: 0.4, optional: true, isFilled: wm => Object.keys(wm.specifications).length > 0, prompt: "Welche Ausstattungsdetails können Sie nennen? Z.B. Bodenbelag (Parkett, Fliesen), Heizungsart, Küche, Fenster?" },
   { field: "unitCount",   group: "mfh_structure", blocksPricing: false, blocksPublish: true,  infoValue: 1.0, optional: false, isFilled: wm => wm.type !== "MFH" || wm.unitCount != null, prompt: "Wie viele Wohneinheiten hat das Gebäude?" },
-  { field: "units",       group: "mfh_structure", blocksPricing: false, blocksPublish: true,  infoValue: 1.0, optional: false, isFilled: wm => wm.type !== "MFH" || wm.units.length > 0, prompt: "Bitte beschreiben Sie die einzelnen Wohnungen (Größe, Zimmer, Stockwerk)." },
+  { field: "units",       group: "mfh_structure", blocksPricing: false, blocksPublish: true,  infoValue: 1.0, optional: false, isFilled: wm => wm.type !== "MFH" || (wm.unitCount != null && wm.units.length >= wm.unitCount), prompt: "Bitte beschreiben Sie die einzelnen Wohnungen (Größe, Zimmer, Stockwerk)." },
   { field: "sellingMode", group: "mfh_structure", blocksPricing: false, blocksPublish: true,  infoValue: 0.9, optional: false, isFilled: wm => wm.type !== "MFH" || wm.sellingMode != null, prompt: "Wie möchten Sie verkaufen? Einzeln, als Paket, oder beides?" },
   { field: "extras",      group: "mfh_structure", blocksPricing: false, blocksPublish: false, infoValue: 0.7, optional: true,  isFilled: wm => wm.extras.length > 0 || (wm.type !== "MFH" && wm.type !== "EFH"), prompt: "Hat die Immobilie Extras wie Stellplätze oder Kellerabteile? Wenn ja: Name, Anzahl und Preis pro Stück." },
   // ── energy: GEG legally required ──
@@ -411,16 +400,24 @@ const FIELD_PRIORITY: FieldSpec[] = [
   { field: "sellerContact", group: "media", blocksPricing: false, blocksPublish: false, infoValue: 0.3, optional: true,  isFilled: wm => !!(wm.sellerContact?.name || wm.sellerContact?.company || wm.sellerContact?.phone || wm.sellerContact?.email), prompt: "Welche Kontaktdaten sollen im Exposé stehen? (Name, Telefon, E-Mail)" },
 ];
 
-const GROUP_ORDER = computeGroupOrder(FIELD_PRIORITY);
+const GROUP_ORDER: Record<ConversationalGroup, number> = {
+  identity: 0,
+  core: 1,
+  mfh_structure: 2,
+  details: 3,
+  energy: 4,
+  media: 5,
+};
 
 export function nextQuestion(wm: WorkingMemory): QuestionResult {
   const photoCount = wm.uploads.filter(u => u.kind === "PHOTO").length;
   const ready = isReadyForDraft(wm);
 
-  if (ready && photoCount >= 1 && !wm.priceBand) return { action: "trigger_pricing", priority: 100 };
-  if (wm.priceBand && !wm.draft) return { action: "trigger_draft", priority: 100 };
+  // Pipeline phases — only fire AFTER all questions are exhausted
   if (wm.draft && wm.lastRubric?.passed) return { action: "wait_confirm", priority: 100 };
+  if (wm.priceBand && !wm.draft && wm.askingPrice != null) return { action: "trigger_draft", priority: 100 };
 
+  // Collect unfilled fields
   const candidates: { field: string; group: ConversationalGroup; prompt: string; priority: number; tiebreaker: number }[] = [];
   for (let i = 0; i < FIELD_PRIORITY.length; i++) {
     const spec = FIELD_PRIORITY[i];
@@ -430,11 +427,14 @@ export function nextQuestion(wm: WorkingMemory): QuestionResult {
     const priority = (spec.blocksPricing ? 4 : 0) + (spec.blocksPublish ? 2 : 0) + spec.infoValue;
     candidates.push({ field: spec.field, group: spec.group, prompt: spec.prompt, priority, tiebreaker: i });
   }
-  if (candidates.length === 0) return { action: "trigger_pricing", priority: 0 };
 
-  // Sort: group order first (derived from max member priority — groups
-  // with higher-priority fields are completed first), then priority
-  // descending within group, then tiebreaker for ties.
+  // No more questions — trigger pricing if ready, otherwise signal completion
+  if (candidates.length === 0) {
+    if (ready && photoCount >= 1 && !wm.priceBand) return { action: "trigger_pricing", priority: 100 };
+    return { action: "trigger_pricing", priority: 0 };
+  }
+
+  // Sort: group order first, then priority descending, then definition order
   candidates.sort((a, b) =>
     GROUP_ORDER[a.group] - GROUP_ORDER[b.group] ||
     b.priority - a.priority ||
@@ -442,6 +442,19 @@ export function nextQuestion(wm: WorkingMemory): QuestionResult {
   );
 
   const best = candidates[0];
+
+  // Dynamic prompt for MFH units — acknowledge captured units, guide to next
+  if (best.field === "units" && wm.type === "MFH" && wm.unitCount) {
+    const captured = wm.units.length;
+    const total = wm.unitCount;
+    if (captured > 0 && captured < total) {
+      const last = wm.units[captured - 1];
+      best.prompt = `✓ ${last.label} erfasst (${last.livingArea || "?"}m², ${last.rooms || "?"}Zi). Weiter mit Wohnung ${captured + 1} von ${total} — bitte Bezeichnung, Größe, Zimmer, Bäder und Stockwerk angeben.`;
+    } else if (captured === 0) {
+      best.prompt = `Perfekt, ${total} Wohneinheiten. Gehen wir sie einzeln durch. Starten wir mit Wohnung 1 — bitte Bezeichnung (z.B. WE 01), Größe in m², Zimmer, Bäder und Stockwerk angeben.`;
+    }
+  }
+
   return { action: best.field === "photos" ? "upload_photos" : "ask", field: best.field, prompt: best.prompt, priority: best.priority };
 }
 
@@ -1337,6 +1350,47 @@ export function rubricFailureToQuestions(rubric: RubricResult, wm?: WorkingMemor
   return questions;
 }
 
+// Deterministic message after pricing — presents recommendation and asks seller.
+export function buildPriceRecommendationMessage(wm: WorkingMemory): string {
+  const band = wm.priceBand!;
+  const lines: string[] = [];
+  lines.push("Die Preise für Ihre Immobilie wurden berechnet:");
+  lines.push("");
+  lines.push(`• **Preis pro m²:** ${band.pricePerSqm.toLocaleString("de-DE")} €`);
+  lines.push(`• **Preisband:** ${band.low.toLocaleString("de-DE")} – ${band.high.toLocaleString("de-DE")} € (Konfidenz: ${band.confidence})`);
+  lines.push(`  - Schnellverkauf: ${band.strategyQuick.toLocaleString("de-DE")} €`);
+  lines.push(`  - Realistisch: ${band.strategyReal.toLocaleString("de-DE")} €`);
+  lines.push(`  - Maximum: ${band.strategyMax.toLocaleString("de-DE")} €`);
+
+  if (wm.type === "MFH" && wm.units.some(u => u.askingPrice)) {
+    const unitTotal = wm.units.reduce((s, u) => s + (u.askingPrice || 0), 0);
+    const extrasTotal = wm.extras.reduce((s, e) => s + e.quantity * e.pricePerUnit, 0);
+    lines.push("");
+    lines.push("**Ihre Wohneinheiten:**");
+    for (const u of wm.units) {
+      if (u.askingPrice) lines.push(`  - ${u.label}: ${u.askingPrice.toLocaleString("de-DE")} €`);
+    }
+    if (extrasTotal > 0) {
+      lines.push(`  - Extras: ${extrasTotal.toLocaleString("de-DE")} €`);
+    }
+    lines.push(`  - **Gesamt: ${(unitTotal + extrasTotal).toLocaleString("de-DE")} €**`);
+  }
+
+  lines.push("");
+  if (wm.askingPrice) {
+    lines.push(`Welchen Preis möchten Sie für Ihr Inserat verwenden?`);
+    lines.push(`A) Bei ${wm.askingPrice.toLocaleString("de-DE")} € bleiben`);
+    lines.push(`B) Empfohlener Preis: ${band.strategyReal.toLocaleString("de-DE")} € (Marktmitte)`);
+    lines.push(`C) Einen anderen Preis nennen`);
+  } else {
+    lines.push(`Welchen Preis möchten Sie für Ihr Inserat?`);
+    lines.push(`A) Empfohlener Preis: ${band.strategyReal.toLocaleString("de-DE")} € (Marktmitte)`);
+    lines.push(`B) Einen eigenen Preis nennen`);
+  }
+
+  return lines.join("\n");
+}
+
 // Deterministic message after chained listing_review.
 // Returns { message, passed } so caller can branch on outcome.
 export function chainedReviewMessage(rubric: RubricResult, draft: DraftResult, wm?: WorkingMemory): { message: string; passed: boolean } {
@@ -1444,7 +1498,15 @@ export async function executeTool(
         const r = tool_pricingRecommend(memory);
         output = r as unknown as Record<string, unknown>;
         if (r.ok && r.band) {
-          memoryPatch = { priceBand: r.band, askingPrice: memory.askingPrice ?? r.band.strategyReal };
+          let askPrice = memory.askingPrice;
+          // MFH with individual unit prices: compute bundle = sum(units) + sum(extras)
+          if (memory.type === "MFH" && memory.units.some(u => u.askingPrice)) {
+            const unitTotal = memory.units.reduce((s, u) => s + (u.askingPrice || 0), 0);
+            const extrasTotal = memory.extras.reduce((s, e) => s + e.quantity * e.pricePerUnit, 0);
+            const bundlePrice = unitTotal + extrasTotal;
+            if (bundlePrice > 0) askPrice = bundlePrice;
+          }
+          memoryPatch = { priceBand: r.band, askingPrice: askPrice ?? null };
         }
         ok = r.ok;
         break;
@@ -1599,7 +1661,14 @@ function applyPatch(memory: WorkingMemory, patch: MemoryPatch): WorkingMemory {
       const merged = new Set([...next.assumptions, ...(v as string[])]);
       next.assumptions = Array.from(merged);
     } else if (k === "units" && Array.isArray(v)) {
-      next.units = v as UnitData[];
+      const incoming = v as UnitData[];
+      const merged = [...next.units];
+      for (const u of incoming) {
+        const idx = merged.findIndex(m => m.label === u.label);
+        if (idx >= 0) merged[idx] = u;
+        else merged.push(u);
+      }
+      next.units = merged;
     } else if (k === "beliefs" && v && typeof v === "object") {
       const incoming = v as Partial<BeliefStore>;
       const merged = { ...next.beliefs };
@@ -1927,7 +1996,7 @@ Fotos hochgeladen: ${m.uploads.filter((u) => u.kind === "PHOTO" && !u.unitLabel)
     return ` | ${u.label}: ${unitPhotos} Fotos, ${unitPlans} Grundrisse`;
   }).join("") : ""}
 Grundrisse hochgeladen: ${m.uploads.filter((u) => u.kind === "FLOORPLAN" && !u.unitLabel).length} (Gebäude)${m.type === "MFH" ? `
-Wohneinheiten: ${m.unitCount ?? "—"}
+Wohneinheiten: ${m.unitCount ?? "—"} (erfasst: ${m.units.length}${m.unitCount != null && m.units.length < m.unitCount ? `, noch ${m.unitCount - m.units.length} fehlen` : ""})
 Einheiten-Daten: ${m.units.length > 0 ? m.units.map((u) => `${u.label}: ${u.livingArea || "?"}m², ${u.rooms || "?"}Zi, ${u.bathrooms || "?"}Bad, ${u.floor != null ? "EG+" + u.floor : "?"}. OG`).join(" | ") : "—"}
 Verkaufsart: ${m.sellingMode || "—"}` : ""}
 Preisband: ${m.priceBand ? `${m.priceBand.low.toLocaleString("de")}–${m.priceBand.high.toLocaleString("de")} € (${m.priceBand.confidence})` : "—"}
@@ -2567,6 +2636,63 @@ export async function runAgentTurn(
     // If nothing matched (priceAction === null), fall through to LLM
   }
 
+  // Price selection after initial recommendation (priceBand exists, no draft yet).
+  // Seller responds to the A/B/C price recommendation message.
+  if (
+    userMessage &&
+    workingMemory.priceBand &&
+    !workingMemory.draft &&
+    !workingMemory.lastRubric
+  ) {
+    const msg = userMessage.trim().toLowerCase();
+    let selectedPrice: number | null = null;
+
+    if (/^\s*a\b/i.test(userMessage)) {
+      // A = keep own price (if they had one) or accept recommended
+      selectedPrice = workingMemory.askingPrice || workingMemory.priceBand.strategyReal;
+    } else if (/^\s*b\b/i.test(userMessage)) {
+      // B = recommended/custom depending on which prompt variant was shown
+      selectedPrice = workingMemory.askingPrice
+        ? workingMemory.priceBand.strategyReal  // had own price → B = recommended
+        : null;  // no own price → B = custom, fall through to LLM
+    } else if (/^\s*c\b/i.test(userMessage)) {
+      selectedPrice = null; // custom — fall through
+    } else if (/empfoh?len|marktmitte|recommended/i.test(msg)) {
+      selectedPrice = workingMemory.priceBand.strategyReal;
+    } else if (/bleib|behalte|keep|mein/i.test(msg)) {
+      selectedPrice = workingMemory.askingPrice || workingMemory.priceBand.strategyReal;
+    } else {
+      const numMatch = msg.replace(/\./g, "").match(/(\d{4,})/);
+      if (numMatch) selectedPrice = parseInt(numMatch[1]);
+    }
+
+    if (selectedPrice && selectedPrice > 0) {
+      workingMemory = applyPatch(workingMemory, { askingPrice: selectedPrice });
+      await prisma.conversationTurn.create({
+        data: {
+          conversationId: ctx.conversationId,
+          role: "SYSTEM",
+          content: `[price-selected-${selectedPrice}]`,
+          toolName: "system",
+          toolOutput: asJson({ memoryPatch: { askingPrice: selectedPrice } }),
+        },
+      });
+      // nextQuestion() will return trigger_draft → LLM calls listing_draft
+    } else if (!selectedPrice && workingMemory.askingPrice == null) {
+      // No price selected and none set — use recommended as default
+      workingMemory = applyPatch(workingMemory, { askingPrice: workingMemory.priceBand.strategyReal });
+      await prisma.conversationTurn.create({
+        data: {
+          conversationId: ctx.conversationId,
+          role: "SYSTEM",
+          content: `[price-default-recommended]`,
+          toolName: "system",
+          toolOutput: asJson({ memoryPatch: { askingPrice: workingMemory.priceBand!.strategyReal } }),
+        },
+      });
+    }
+  }
+
   for (let iter = 0; iter < MAX_TOOL_ITERATIONS_PER_TURN; iter++) {
     // Cost-cap pre-check
     if (costCentsTotal >= MAX_COST_CENTS) {
@@ -2799,29 +2925,10 @@ export async function runAgentTurn(
     await prisma.agentStep.create({ data: { agentRunId: ctx.agentRunId, ordinal: await nextStepOrdinal(ctx.agentRunId), toolName: "pricing_recommend", input: asJson({}), output: asJson({ ...priceTr.output, memoryPatch: priceTr.memoryPatch }), latencyMs: priceTr.latencyMs, ok: priceTr.ok } });
     await prisma.conversationTurn.create({ data: { conversationId: ctx.conversationId, role: "TOOL", content: "pricing_recommend", toolName: "pricing_recommend", toolInput: asJson({}), toolOutput: asJson({ ...priceTr.output, memoryPatch: priceTr.memoryPatch }), latencyMs: priceTr.latencyMs } });
 
-    if (priceTr.ok && workingMemory.priceBand && canAffordChainedTool(costCentsTotal, 10)) {
-      // listing_draft
-      const draftTr = await executeTool("listing_draft", {}, workingMemory, turnNumber);
-      toolStepsExecuted++;
-      costCentsThisTurn += draftTr.costCents;
-      costCentsTotal += draftTr.costCents;
-      if (draftTr.memoryPatch) workingMemory = applyPatch(workingMemory, draftTr.memoryPatch);
-      await prisma.agentStep.create({ data: { agentRunId: ctx.agentRunId, ordinal: await nextStepOrdinal(ctx.agentRunId), toolName: "listing_draft", input: asJson({}), output: asJson({ ...draftTr.output, memoryPatch: draftTr.memoryPatch }), latencyMs: draftTr.latencyMs, ok: draftTr.ok } });
-      await prisma.conversationTurn.create({ data: { conversationId: ctx.conversationId, role: "TOOL", content: "listing_draft", toolName: "listing_draft", toolInput: asJson({}), toolOutput: asJson({ ...draftTr.output, memoryPatch: draftTr.memoryPatch }), latencyMs: draftTr.latencyMs } });
-
-      if (draftTr.ok && workingMemory.draft && canAffordChainedTool(costCentsTotal, 5)) {
-        // listing_review
-        const reviewTr = await executeTool("listing_review", {}, workingMemory, turnNumber);
-        toolStepsExecuted++;
-        costCentsThisTurn += reviewTr.costCents;
-        costCentsTotal += reviewTr.costCents;
-        if (reviewTr.memoryPatch) workingMemory = applyPatch(workingMemory, reviewTr.memoryPatch);
-        await prisma.agentStep.create({ data: { agentRunId: ctx.agentRunId, ordinal: await nextStepOrdinal(ctx.agentRunId), toolName: "listing_review", input: asJson({}), output: asJson({ ...reviewTr.output, memoryPatch: reviewTr.memoryPatch }), latencyMs: reviewTr.latencyMs, ok: reviewTr.ok } });
-        await prisma.conversationTurn.create({ data: { conversationId: ctx.conversationId, role: "TOOL", content: "listing_review", toolName: "listing_review", toolInput: asJson({}), toolOutput: asJson({ ...reviewTr.output, memoryPatch: reviewTr.memoryPatch }), latencyMs: reviewTr.latencyMs } });
-
-        const result = chainedReviewMessage(workingMemory.lastRubric!, workingMemory.draft!, workingMemory);
-        agentMessage = result.message;
-      }
+    if (priceTr.ok && workingMemory.priceBand) {
+      // Pause after pricing: show recommendation and let seller choose price.
+      // Draft triggers on the NEXT turn via nextQuestion() → trigger_draft.
+      agentMessage = buildPriceRecommendationMessage(workingMemory);
     }
   }
 

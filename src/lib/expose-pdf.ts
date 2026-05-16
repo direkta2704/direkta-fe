@@ -733,26 +733,7 @@ function buildExposeHtml(data: ExposeData): string {
         });
       }
 
-      // UNIT FLOOR PLANS
-      for (const fp of unit.floorPlans) {
-        if (fp.mimeType === "application/pdf") continue; // pre-converted to image in route
-        sections.push(`
-          <div class="page content-page floorplan-page">
-            <div class="page-header">
-              <span class="header-brand">DIREKTA<span class="accent">.</span></span>
-              <span class="header-address">${esc(data.address)} &middot; ${esc(data.city)}</span>
-            </div>
-            <h3 class="floorplan-subtitle">Grundriss ${esc(unit.label)}</h3>
-            <div class="floorplan-container">
-              <img class="floorplan-img" src="${toDataUrl(fp)}" alt="Grundriss ${esc(unit.label)}" />
-            </div>
-            <div class="page-footer">
-              <span class="footer-brand">DIREKTA<span class="accent">.</span></span>
-              <span class="footer-section">Grundriss ${esc(unit.label)}</span>
-            </div>
-          </div>
-        `);
-      }
+      // UNIT FLOOR PLANS — skipped in bundle; shown in individual apartment PDF instead
     }
   }
 
