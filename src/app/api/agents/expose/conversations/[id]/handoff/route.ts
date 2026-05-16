@@ -83,7 +83,11 @@ export async function POST(
         bathrooms: memory.bathrooms,
         floor: memory.floor,
         condition: memory.condition as "ERSTBEZUG" | "NEUBAU" | "GEPFLEGT" | "RENOVIERUNGS_BEDUERFTIG" | "SANIERUNGS_BEDUERFTIG" | "ROHBAU" | "KERNSANIERT",
-        attributes: memory.attributes.length > 0 ? memory.attributes : undefined,
+        attributes: (() => {
+          const attrs = [...memory.attributes];
+          if (memory.barrierefrei === true && !attrs.includes("Barrierefrei")) attrs.push("Barrierefrei");
+          return attrs.length > 0 ? attrs : undefined;
+        })(),
         roomProgram: memory.roomProgram && memory.roomProgram.length > 0 ? memory.roomProgram : undefined,
         extras: memory.extras && memory.extras.length > 0 ? JSON.parse(JSON.stringify(memory.extras)) : undefined,
         specifications: memory.specifications && Object.keys(memory.specifications).length > 0 ? JSON.parse(JSON.stringify(memory.specifications)) : undefined,
@@ -124,6 +128,7 @@ export async function POST(
             floor: unit.floor,
             condition: memory.condition as "ERSTBEZUG" | "NEUBAU" | "GEPFLEGT" | "RENOVIERUNGS_BEDUERFTIG" | "SANIERUNGS_BEDUERFTIG" | "ROHBAU" | "KERNSANIERT",
             attributes: unit.features.length > 0 ? unit.features : memory.attributes,
+            extras: unit.extras && unit.extras.length > 0 ? JSON.parse(JSON.stringify(unit.extras)) : undefined,
           },
         });
 

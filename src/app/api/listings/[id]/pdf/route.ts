@@ -200,7 +200,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     for (const m of photoMedia) {
       const data = await loadMediaBytes(m.storageKey, m.mimeType);
       if (data) {
-        const cls = m.classification as { roomType?: string; caption?: string; description?: string; features?: string[]; lighting?: string; estimatedArea?: number; qualityScore?: number } | null;
+        const cls = m.classification as { roomType?: string; caption?: string; description?: string; features?: string[]; lighting?: string; estimatedArea?: number; qualityScore?: number; isRendering?: boolean } | null;
         allPhotos.push({
           ...data,
           roomType: cls?.roomType,
@@ -209,6 +209,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
           features: cls?.features,
           lighting: cls?.lighting,
           estimatedArea: cls?.estimatedArea,
+          isRendering: cls?.isRendering,
         });
         allScores.push(typeof cls?.qualityScore === "number" ? cls.qualityScore : 0);
       }
@@ -222,7 +223,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       const parentExteriorScores: number[] = [];
       for (const m of p.parent.media) {
         if (m.kind !== "PHOTO") continue;
-        const cls = m.classification as { roomType?: string; caption?: string; description?: string; features?: string[]; lighting?: string; estimatedArea?: number; qualityScore?: number } | null;
+        const cls = m.classification as { roomType?: string; caption?: string; description?: string; features?: string[]; lighting?: string; estimatedArea?: number; qualityScore?: number; isRendering?: boolean } | null;
         if (cls?.roomType !== "exterior") continue;
         const data = await loadMediaBytes(m.storageKey, m.mimeType);
         if (!data) continue;
@@ -234,6 +235,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
           features: cls.features,
           lighting: cls.lighting,
           estimatedArea: cls.estimatedArea,
+          isRendering: cls.isRendering,
         });
         parentExteriorScores.push(typeof cls.qualityScore === "number" ? cls.qualityScore : 0);
       }
@@ -279,8 +281,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
         for (const m of unit.media.filter((m) => m.kind === "PHOTO")) {
           const d = await loadMediaBytes(m.storageKey, m.mimeType);
           if (d) {
-            const cls = m.classification as { roomType?: string; caption?: string; description?: string; features?: string[]; lighting?: string; estimatedArea?: number } | null;
-            uPhotos.push({ ...d, roomType: cls?.roomType, caption: cls?.caption, description: cls?.description, features: cls?.features, lighting: cls?.lighting, estimatedArea: cls?.estimatedArea });
+            const cls = m.classification as { roomType?: string; caption?: string; description?: string; features?: string[]; lighting?: string; estimatedArea?: number; isRendering?: boolean } | null;
+            uPhotos.push({ ...d, roomType: cls?.roomType, caption: cls?.caption, description: cls?.description, features: cls?.features, lighting: cls?.lighting, estimatedArea: cls?.estimatedArea, isRendering: cls?.isRendering });
           }
         }
         const uFP: ExposePhoto[] = [];
@@ -354,7 +356,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       specifications: p.specifications && typeof p.specifications === "object" && !Array.isArray(p.specifications) ? (p.specifications as Record<string, string>) : undefined,
       buildingDescription: listing.buildingDescription || undefined,
       listingSlug: listing.slug || undefined,
-      extras: Array.isArray(p.extras) ? (p.extras as { name: string; quantity: number; pricePerUnit: number; description?: string }[]) : undefined,
+      extras: Array.isArray(p.extras) ? (p.extras as { name: string; quantity: number; pricePerUnit: number; description?: string; optional?: boolean; minQuantity?: number; area?: number; subtype?: string }[]) : undefined,
+      barrierefrei: Array.isArray(p.attributes) && (p.attributes as string[]).includes("Barrierefrei") ? true : undefined,
       tagline: (p as unknown as { tagline?: string }).tagline || undefined,
       lat: lat || undefined,
       lng: lng || undefined,

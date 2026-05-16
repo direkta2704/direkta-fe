@@ -84,6 +84,7 @@ export interface PhotoClassification {
   description?: string;     // 2-3 sentence exposé description of what's visible
   lighting?: string;        // e.g. "Nachmittagslicht", "Neutrales Tageslicht"
   estimatedArea?: number;   // estimated room area in m² (from visual cues)
+  isRendering?: boolean;    // true if photo is a 3D visualization/CGI
 }
 
 export interface PhotoUpload {
@@ -128,6 +129,7 @@ export interface RubricResult {
     noHallucination: { ok: boolean; flagged?: string[] };
     noSuperlatives: { ok: boolean; found?: string[] };
     photos: { ok: boolean; count?: number };
+    floorPlans?: { ok: boolean; missingUnits?: string[] };
     priceInBand: { ok: boolean; reason?: string };
   };
 }
@@ -140,6 +142,7 @@ export interface UnitData {
   floor: number | null;
   features: string[];
   askingPrice: number | null;
+  extras?: PropertyExtra[];
 }
 
 export interface PropertyExtra {
@@ -147,6 +150,10 @@ export interface PropertyExtra {
   quantity: number;
   pricePerUnit: number;
   description?: string;
+  optional?: boolean;
+  minQuantity?: number;
+  area?: number;
+  subtype?: string;
 }
 
 export interface WorkingMemory {
@@ -193,6 +200,7 @@ export interface WorkingMemory {
   extras: PropertyExtra[];
   specifications: Record<string, Record<string, string>>;
   skippedFields: string[];
+  barrierefrei: boolean | null;
   // Expose enrichment
   sellerContact: { name?: string; company?: string; phone?: string; email?: string } | null;
   roomProgram: { name: string; area: number }[];
@@ -302,6 +310,7 @@ export const INITIAL_MEMORY: WorkingMemory = {
   extras: [],
   specifications: {},
   skippedFields: [],
+  barrierefrei: null,
   sellerContact: null,
   roomProgram: [],
 };
@@ -383,10 +392,11 @@ const FIELD_PRIORITY: FieldSpec[] = [
   { field: "plotArea",    group: "details",  blocksPricing: false, blocksPublish: false, infoValue: 0.4, optional: true,  isFilled: wm => wm.type === "ETW" || wm.plotArea != null, prompt: "Wie groß ist das Grundstück in m²?" },
   { field: "attributes",  group: "details",  blocksPricing: false, blocksPublish: false, infoValue: 0.6, optional: true,  isFilled: wm => wm.attributes.length > 0, prompt: "Welche Ausstattung hat die Immobilie? (Balkon, Keller, Garten, Stellplatz, …)" },
   { field: "specifications", group: "details", blocksPricing: false, blocksPublish: false, infoValue: 0.4, optional: true, isFilled: wm => Object.keys(wm.specifications).length > 0, prompt: "Welche Ausstattungsdetails können Sie nennen? Z.B. Bodenbelag (Parkett, Fliesen), Heizungsart, Küche, Fenster?" },
+  { field: "barrierefrei", group: "details", blocksPricing: false, blocksPublish: false, infoValue: 0.5, optional: true, isFilled: wm => wm.barrierefrei != null, prompt: "Ist die Immobilie barrierefrei oder barrierearm zugänglich?" },
   { field: "unitCount",   group: "mfh_structure", blocksPricing: false, blocksPublish: true,  infoValue: 1.0, optional: false, isFilled: wm => wm.type !== "MFH" || wm.unitCount != null, prompt: "Wie viele Wohneinheiten hat das Gebäude?" },
   { field: "units",       group: "mfh_structure", blocksPricing: false, blocksPublish: true,  infoValue: 1.0, optional: false, isFilled: wm => wm.type !== "MFH" || (wm.unitCount != null && wm.units.length >= wm.unitCount), prompt: "Bitte beschreiben Sie die einzelnen Wohnungen (Größe, Zimmer, Stockwerk)." },
   { field: "sellingMode", group: "mfh_structure", blocksPricing: false, blocksPublish: true,  infoValue: 0.9, optional: false, isFilled: wm => wm.type !== "MFH" || wm.sellingMode != null, prompt: "Wie möchten Sie verkaufen? Einzeln, als Paket, oder beides?" },
-  { field: "extras",      group: "mfh_structure", blocksPricing: false, blocksPublish: false, infoValue: 0.7, optional: true,  isFilled: wm => wm.extras.length > 0 || (wm.type !== "MFH" && wm.type !== "EFH"), prompt: "Hat die Immobilie Extras wie Stellplätze oder Kellerabteile? Wenn ja: Name, Anzahl und Preis pro Stück." },
+  { field: "extras",      group: "mfh_structure", blocksPricing: false, blocksPublish: false, infoValue: 0.7, optional: true,  isFilled: wm => wm.extras.length > 0 || (wm.type !== "MFH" && wm.type !== "EFH"), prompt: "Hat die Immobilie Extras wie Stellplätze oder Kellerabteile? Wenn ja: Art (z.B. Tiefgarage/Außen/Carport), Anzahl, Preis pro Stück, Größe in m² bei Keller/Garten, und ob der Kauf optional oder Pflicht ist." },
   // ── energy: GEG legally required ──
   { field: "hasEnergyCert", group: "energy", blocksPricing: false, blocksPublish: true,  infoValue: 0.9, optional: false, isFilled: wm => wm.hasEnergyCert !== null, prompt: "Haben Sie einen Energieausweis für die Immobilie?" },
   { field: "energyClass",  group: "energy", blocksPricing: false, blocksPublish: true,  infoValue: 0.5, optional: false, isFilled: wm => !wm.hasEnergyCert || !!wm.energyClass, prompt: "Welche Energieklasse steht im Ausweis?" },
@@ -777,21 +787,24 @@ async function tool_photoAnalyse(memory: WorkingMemory, photoIndex: number): Pro
     cluttered (unaufgeräumt/persönliche Gegenstände sichtbar), watermark (Wasserzeichen),
     low_resolution (geringe Auflösung), noisy (Bildrauschen), reflection (störende Spiegelung),
     finger (Finger/Hand im Bild), poor_composition (schlechter Bildausschnitt),
+    perspective_distortion (Weitwinkel-/Ultraweitwinkel-Verzerrung — Gebäude kippen nach hinten, gebogene Linien, typisch für 0.5x iPhone-Objektiv),
   "qualityScore": 0-100 (Bewertung für Immobilieninserat: Belichtung, Schärfe, Komposition, Aufgeräumtheit),
   "features": Array erkannter Merkmale z.B. ["einbaukueche", "parkettboden", "balkon", "dachschraege", "kamin", "fussbodenheizung", "garten", "terrasse", "garage", "aufzug", "neubau", "altbau"],
   "suggestion": kurzer Verbesserungshinweis für den Verkäufer (nur wenn qualityScore < 70, sonst null),
   "caption": präziser Raumname für das Exposé, z.B. "Wohn-/Essbereich mit Küchenanschlüssen", "Schlafzimmer mit Blick zur Ankleide", "Bad mit bodengleicher Dusche", "Fassade Straßenseite",
   "description": 2-3 Sätze für ein hochwertiges Immobilienexposé. Beschreibe sachlich was im Foto sichtbar ist: Materialien, Oberflächen, Raumgefühl, Lichtverhältnisse, besondere Merkmale. Stil: professionell, wertschätzend, konkret.,
   "lighting": Lichtverhältnisse im Foto, z.B. "Weiches Vormittagslicht", "Neutrales Tageslicht", "Späte Nachmittagssonne", "Kunstlicht", "Diffuses Nordlicht",
-  "estimatedArea": geschätzte Raumfläche in m² basierend auf visuellen Hinweisen (Türgröße ~2m als Referenz). Nur bei Innenräumen, null bei Außenaufnahmen.
+  "estimatedArea": geschätzte Raumfläche in m² basierend auf visuellen Hinweisen (Türgröße ~2m als Referenz). Nur bei Innenräumen, null bei Außenaufnahmen.,
+  "isRendering": true/false — ist dieses Foto eine 3D-Visualisierung, ein Rendering oder ein CGI-Bild? Hinweise: perfekte Oberflächen ohne natürliche Unregelmäßigkeiten, computergenerierte Möbel/Dekoration, unrealistische Lichtverhältnisse, fehlende Gebrauchsspuren. false bei echten Fotos.
 }
 Regeln:
 - "floorplan" NUR wenn das Bild ein technischer Grundriss/Bauplan ist.
 - "exterior" für Außenansichten des Gebäudes, Fassade, Eingang.
 - "features" soll sichtbare Ausstattungsmerkmale der Immobilie auflisten — nur was im Foto erkennbar ist.
-- "suggestion" soll kurz und hilfreich sein, z.B. "Bitte bei Tageslicht erneut fotografieren" oder "Persönliche Gegenstände entfernen".
+- "suggestion" soll kurz und hilfreich sein, z.B. "Bitte bei Tageslicht erneut fotografieren" oder "Persönliche Gegenstände entfernen". Bei perspective_distortion: "Bitte mit normalem Objektiv (1x) aus größerer Entfernung fotografieren — Weitwinkel verzerrt das Gebäude."
 - "caption" soll ein präziser, spezifischer Raumtitel sein — nicht generisch wie "Zimmer" sondern beschreibend wie "Offene Wohnküche mit Gartenblick".
 - "description" soll NUR beschreiben was tatsächlich sichtbar ist. Keine Vermutungen, keine erfundenen Details. Sachlich und wertschätzend.
+- "isRendering" prüfe sorgfältig ob es ein 3D-Rendering/Visualisierung ist. Bei Renderings muss das im Exposé gekennzeichnet werden.
 - Bewerte streng: Professionelle Immobilienfotos erhalten 80+, gute Smartphone-Fotos 60-80, problematische Fotos unter 60.`;
 
   const apiKey = process.env.OPENROUTER_API_KEY;
@@ -852,10 +865,11 @@ Regeln:
   const description = typeof parsed.description === "string" ? parsed.description : undefined;
   const lighting = typeof parsed.lighting === "string" ? parsed.lighting : undefined;
   const estimatedArea = typeof parsed.estimatedArea === "number" ? parsed.estimatedArea : undefined;
+  const isRendering = typeof parsed.isRendering === "boolean" ? parsed.isRendering : undefined;
 
   return {
     ok: true,
-    classification: { roomType, qualityFlags, qualityScore, features, suggestion, caption, description, lighting, estimatedArea },
+    classification: { roomType, qualityFlags, qualityScore, features, suggestion, caption, description, lighting, estimatedArea, isRendering },
     costCents,
     index: photoIndex,
   };
@@ -1279,6 +1293,20 @@ export async function runRubric(m: WorkingMemory): Promise<{ result: RubricResul
   const photosOk = photoCount >= 1;
   if (photoCount < 1) failures.push("Mindestens 1 Foto erforderlich");
 
+  // 5b. Per-unit floor plans (MFH bundles)
+  let floorPlanDetails: { ok: boolean; missingUnits?: string[] } = { ok: true };
+  if (m.type === "MFH" && m.units.length > 0) {
+    const missing: string[] = [];
+    for (const unit of m.units) {
+      const hasFloorPlan = m.uploads.some(u => u.kind === "FLOORPLAN" && u.unitLabel === unit.label);
+      if (!hasFloorPlan) missing.push(unit.label);
+    }
+    if (missing.length > 0) {
+      floorPlanDetails = { ok: false, missingUnits: missing };
+      failures.push(`Grundriss fehlt für: ${missing.join(", ")}`);
+    }
+  }
+
   // 6. Asking price within band, OR explicit override
   let priceOk = true;
   let priceReason: string | undefined;
@@ -1304,6 +1332,7 @@ export async function runRubric(m: WorkingMemory): Promise<{ result: RubricResul
         noHallucination: hallDetails,
         noSuperlatives: supDetails,
         photos: { ok: photosOk, count: photoCount },
+        floorPlans: floorPlanDetails,
         priceInBand: { ok: priceOk, reason: priceReason },
       },
     },
@@ -1335,6 +1364,9 @@ export function rubricFailureToQuestions(rubric: RubricResult, wm?: WorkingMemor
   }
   if (!rubric.details.photos.ok) {
     questions.push("Bitte laden Sie mindestens ein Foto hoch. Nutzen Sie den 📷-Button links unten.");
+  }
+  if (rubric.details.floorPlans && !rubric.details.floorPlans.ok && rubric.details.floorPlans.missingUnits) {
+    questions.push(`Für folgende Wohneinheiten fehlt ein Grundriss: ${rubric.details.floorPlans.missingUnits.join(", ")}. Bitte laden Sie die fehlenden Grundrisse hoch (📐-Button).`);
   }
   if (!rubric.details.priceInBand.ok && wm) {
     const price = wm.askingPrice ? wm.askingPrice.toLocaleString("de-DE") : "?";
@@ -1989,6 +2021,7 @@ Baujahr: ${m.yearBuilt ?? "—"}
 Etage: ${m.floor ?? "—"}
 Zustand: ${m.condition || "—"}
 Ausstattung: ${m.attributes.join(", ") || "—"}
+Barrierefrei: ${m.barrierefrei === true ? "Ja" : m.barrierefrei === false ? "Nein" : "—"}
 Energie: ${m.hasEnergyCert === null ? "—" : m.hasEnergyCert ? `${m.energyClass || "?"} (${m.energyValue || "?"} kWh, ${m.energySource || "?"}, gültig bis ${m.energyValidUntil || "?"})` : "kein Ausweis"}
 Fotos hochgeladen: ${m.uploads.filter((u) => u.kind === "PHOTO" && !u.unitLabel).length} (Gebäude)${m.units.length > 0 ? m.units.map((u) => {
     const unitPhotos = m.uploads.filter((p) => p.kind === "PHOTO" && p.unitLabel === u.label).length;
@@ -2152,6 +2185,16 @@ function normalizeUserPatch(data: Record<string, unknown>, turnNumber: number): 
       floor: typeof u.floor === "number" ? u.floor : null,
       features: Array.isArray(u.features) ? u.features.map(String) : [],
       askingPrice: typeof u.askingPrice === "number" ? u.askingPrice : null,
+      ...(Array.isArray(u.extras) ? { extras: (u.extras as Record<string, unknown>[]).map(e => ({
+        name: String(e.name || ""),
+        quantity: typeof e.quantity === "number" ? e.quantity : 1,
+        pricePerUnit: typeof e.pricePerUnit === "number" ? e.pricePerUnit : 0,
+        ...(typeof e.description === "string" && e.description ? { description: e.description } : {}),
+        ...(typeof e.optional === "boolean" ? { optional: e.optional } : {}),
+        ...(typeof e.minQuantity === "number" ? { minQuantity: e.minQuantity } : {}),
+        ...(typeof e.area === "number" ? { area: e.area } : {}),
+        ...(typeof e.subtype === "string" && e.subtype ? { subtype: e.subtype } : {}),
+      })).filter(e => e.name) } : {}),
     }));
   }
   if (typeof data.sellingMode === "string") {
@@ -2168,6 +2211,10 @@ function normalizeUserPatch(data: Record<string, unknown>, turnNumber: number): 
       quantity: typeof e.quantity === "number" ? e.quantity : 1,
       pricePerUnit: typeof e.pricePerUnit === "number" ? e.pricePerUnit : 0,
       ...(typeof e.description === "string" && e.description ? { description: e.description } : {}),
+      ...(typeof e.optional === "boolean" ? { optional: e.optional } : {}),
+      ...(typeof e.minQuantity === "number" ? { minQuantity: e.minQuantity } : {}),
+      ...(typeof e.area === "number" ? { area: e.area } : {}),
+      ...(typeof e.subtype === "string" && e.subtype ? { subtype: e.subtype } : {}),
     })).filter((e: PropertyExtra) => e.name);
   }
   // Backward compat: convert flat parking counts to extras
@@ -2185,6 +2232,7 @@ function normalizeUserPatch(data: Record<string, unknown>, turnNumber: number): 
     patch.specifications = data.specifications as Record<string, Record<string, string>>;
   }
   if (typeof data.hasFloorPlan === "boolean") patch.hasFloorPlan = data.hasFloorPlan;
+  if (typeof data.barrierefrei === "boolean") patch.barrierefrei = data.barrierefrei;
   if (Array.isArray(data.roomProgram)) {
     patch.roomProgram = data.roomProgram.filter((r: unknown) => r && typeof r === "object" && "name" in (r as Record<string, unknown>) && "area" in (r as Record<string, unknown>)).map((r: unknown) => {
       const obj = r as Record<string, unknown>;
@@ -2349,9 +2397,10 @@ Erlaubte Felder (nur NEUE/GEÄNDERTE extrahieren):
 - energyValidUntil: ISO-Datum (YYYY-MM-DD) — Gültigkeit des Energieausweises
 - assumptions: Array von getroffenen Annahmen
 - unitCount: Anzahl Wohneinheiten (Zahl, nur bei MFH)
-- extras: Array von { name, quantity, pricePerUnit, description } — Extras wie Stellplätze, Kellerabteile mit Stückpreis. Z.B. [{ "name": "TG-Stellplatz", "quantity": 6, "pricePerUnit": 15000 }]
+- extras: Array von { name, quantity, pricePerUnit, description, optional, minQuantity, area, subtype } — Extras wie Stellplätze, Kellerabteile. optional=true wenn Kauf nicht verpflichtend, minQuantity=Mindestabnahme, area=Größe in m² (Keller/Garten), subtype=Art (z.B. "Tiefgarage","Außen","Carport"). Z.B. [{ "name": "TG-Stellplatz", "quantity": 2, "pricePerUnit": 15000, "optional": true, "minQuantity": 1, "subtype": "Tiefgarage" }]
 - specifications: Verschachtelte Ausstattungsdetails { "Boden": { "Wohnbereich": "Parkett" }, "Heizung & Warmwasser": { "Typ": "Fußbodenheizung" } }. Kategorien: Boden, Waende & Decke, Sanitaer, Heizung & Warmwasser, Elektro & Smart Home, Kueche, Tueren & Fenster
-- units: Array von { label, livingArea, rooms, bathrooms, floor, features } — Daten einzelner Wohneinheiten
+- units: Array von { label, livingArea, rooms, bathrooms, floor, features, askingPrice, extras } — Daten einzelner Wohneinheiten. extras=per-unit extras (gleiche Struktur wie building-level extras)
+- barrierefrei: true/false — Ist die Immobilie barrierefrei/barrierearm zugänglich?
 - sellingMode: INDIVIDUAL|BUNDLE|BOTH — Verkaufsart (einzeln/Paket/beides)
 - hasFloorPlan: true wenn Grundriss vorhanden
 - currentUnit: string|null — Label der Wohnung die gerade besprochen wird (z.B. "Wohnung 1", "WE 01"). null wenn Gebäude-Ebene. Setze dies wenn der Assistent explizit zu einer bestimmten Wohnung wechselt.

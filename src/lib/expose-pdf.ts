@@ -11,6 +11,7 @@ export interface ExposePhoto {
   features?: string[];
   lighting?: string;
   estimatedArea?: number;
+  isRendering?: boolean;
 }
 
 export interface ExposeUnit {
@@ -24,7 +25,7 @@ export interface ExposeUnit {
   roomProgram?: { name: string; area: number }[];
   photos: ExposePhoto[];
   floorPlans: ExposePhoto[];
-  extras?: { name: string; quantity: number; pricePerUnit: number; description?: string }[];
+  extras?: { name: string; quantity: number; pricePerUnit: number; description?: string; optional?: boolean; minQuantity?: number; area?: number; subtype?: string }[];
 }
 
 export interface ExposeData {
@@ -58,44 +59,13 @@ export interface ExposeData {
   units?: ExposeUnit[];
   specifications?: Record<string, string>;
   buildingDescription?: string;
-  extras?: { name: string; quantity: number; pricePerUnit: number; description?: string }[];
+  extras?: { name: string; quantity: number; pricePerUnit: number; description?: string; optional?: boolean; minQuantity?: number; area?: number; subtype?: string }[];
   tagline?: string;
   listingSlug?: string;
   lat?: number;
   lng?: number;
   mapImage?: string;
-}
-
-// ── Grunderwerbsteuer helper ─────────────────────────────────────────
-
-function grunderwerbsteuer(postcode: string): { land: string; rate: number } {
-  const p = parseInt(postcode.slice(0, 2)) || 0;
-  if (p <= 4) return { land: "Sachsen", rate: 5.5 };
-  if (p <= 6) return { land: "Sachsen-Anhalt", rate: 5.0 };
-  if (p <= 9) return { land: "Thüringen", rate: 5.0 };
-  if (p <= 12) return { land: "Berlin", rate: 6.0 };
-  if (p <= 16) return { land: "Brandenburg", rate: 6.5 };
-  if (p <= 19) return { land: "Mecklenburg-Vorpommern", rate: 6.0 };
-  if (p <= 21) return { land: "Hamburg", rate: 5.5 };
-  if (p <= 25) return { land: "Schleswig-Holstein", rate: 6.5 };
-  if (p <= 27) return { land: "Niedersachsen", rate: 5.0 };
-  if (p <= 29) return { land: "Bremen", rate: 5.0 };
-  if (p <= 31) return { land: "Niedersachsen", rate: 5.0 };
-  if (p <= 33) return { land: "Nordrhein-Westfalen", rate: 6.5 };
-  if (p <= 36) return { land: "Hessen", rate: 6.0 };
-  if (p <= 38) return { land: "Niedersachsen", rate: 5.0 };
-  if (p <= 39) return { land: "Sachsen-Anhalt", rate: 5.0 };
-  if (p <= 53) return { land: "Nordrhein-Westfalen", rate: 6.5 };
-  if (p <= 56) return { land: "Rheinland-Pfalz", rate: 5.0 };
-  if (p <= 59) return { land: "Nordrhein-Westfalen", rate: 6.5 };
-  if (p <= 65) return { land: "Hessen", rate: 6.0 };
-  if (p <= 66) return { land: "Saarland", rate: 6.5 };
-  if (p <= 69) return { land: "Rheinland-Pfalz", rate: 5.0 };
-  if (p <= 79) return { land: "Baden-Württemberg", rate: 5.0 };
-  if (p <= 87) return { land: "Bayern", rate: 3.5 };
-  if (p <= 89) return { land: "Baden-Württemberg", rate: 5.0 };
-  if (p <= 97) return { land: "Bayern", rate: 3.5 };
-  return { land: "Thüringen", rate: 5.0 };
+  barrierefrei?: boolean;
 }
 
 const ROOM_TYPE_DE: Record<string, string> = {
@@ -132,12 +102,19 @@ function esc(s: string): string {
     .replace(/'/g, "&#039;");
 }
 
+function smartRound(n: number): number {
+  const rounded = Math.round(n);
+  return Math.abs(n - rounded) < 0.05 ? rounded : n;
+}
+
 function fmtArea(n: number): string {
-  return n.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " m²";
+  const v = smartRound(n);
+  return v.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " m²";
 }
 
 function fmtAreaShort(n: number): string {
-  return n.toLocaleString("de-DE", { minimumFractionDigits: 0, maximumFractionDigits: 2 }) + " m²";
+  const v = smartRound(n);
+  return v.toLocaleString("de-DE", { minimumFractionDigits: 0, maximumFractionDigits: 2 }) + " m²";
 }
 
 function fmtPrice(n: number): string {
@@ -221,9 +198,10 @@ function buildExposeHtml(data: ExposeData): string {
     } else if (data.rooms) {
       facts.push({ label: "ZIMMER", value: String(data.rooms) });
     }
+    if (!isBundle && data.floor != null) facts.push({ label: "ETAGE", value: floorLabel(data.floor) });
     if (data.yearBuilt) facts.push({ label: "BAUJAHR", value: String(data.yearBuilt) });
     if (data.condition) facts.push({ label: "ZUSTAND", value: esc(data.condition) });
-    if (facts.length < 4 && data.askingPrice) {
+    if (facts.length < 5 && data.askingPrice) {
       facts.push({ label: "KAUFPREIS", value: fmtPriceEuro(data.askingPrice) });
     }
 
@@ -332,23 +310,16 @@ function buildExposeHtml(data: ExposeData): string {
     if (data.plotArea) factRows.push({ label: "Grundstücksfläche", value: fmtAreaShort(data.plotArea) });
     if (data.yearBuilt) factRows.push({ label: "Baujahr", value: String(data.yearBuilt) });
     if (data.condition) factRows.push({ label: "Zustand", value: esc(data.condition) });
+    if (data.barrierefrei != null) factRows.push({ label: "Barrierefrei", value: data.barrierefrei ? "Ja" : "Nein" });
     {
-      const buildingExtras = (data.extras || []).reduce((s, ex) => s + ex.pricePerUnit * ex.quantity, 0);
-      const unitExtras = isBundle
-        ? (data.units || []).reduce((s, u) => s + (u.extras || []).reduce((sx, ex) => sx + ex.pricePerUnit * ex.quantity, 0), 0)
-        : 0;
-      const extTotal = buildingExtras + unitExtras;
       const unitSum = isBundle ? (data.units || []).reduce((s, u) => s + (u.askingPrice || 0), 0) : 0;
       const priceBase = isBundle && unitSum > 0 ? unitSum : data.askingPrice;
       if (priceBase) {
-        const total = priceBase + extTotal;
         factRows.push({
           label: "Kaufpreis",
-          value: extTotal > 0
-            ? `${fmtPriceEuro(total)} (inkl. Extras)`
-            : isBundle
-              ? `${fmtPriceEuro(priceBase)} (Paket)`
-              : fmtPriceEuro(priceBase),
+          value: isBundle
+            ? `${fmtPriceEuro(priceBase)} (Paket)`
+            : fmtPriceEuro(priceBase),
         });
       }
     }
@@ -647,13 +618,20 @@ function buildExposeHtml(data: ExposeData): string {
 
         const unitExtrasHtml = (unit.extras && unit.extras.length > 0)
           ? (() => {
-              const exTotal = unit.extras!.reduce((s, ex) => s + ex.pricePerUnit * ex.quantity, 0);
-              const rows = unit.extras!.map(ex => `
-                <div class="rp-row">
-                  <span class="rp-row__name">${esc(ex.name)}${ex.quantity > 1 ? ` &times; ${ex.quantity}` : ""}</span>
-                  <span class="rp-row__area">${ex.pricePerUnit > 0 ? fmtPriceEuro(ex.pricePerUnit * ex.quantity) : "inkl."}</span>
+              const exTotal = unit.extras!.reduce((s, ex) => {
+                const qty = ex.optional && ex.minQuantity ? ex.minQuantity : ex.quantity;
+                return s + ex.pricePerUnit * qty;
+              }, 0);
+              const rows = unit.extras!.map(ex => {
+                const details = [ex.subtype, ex.area ? `${ex.area} m²` : null].filter(Boolean).join(", ");
+                const nameStr = esc(ex.name) + (details ? ` (${esc(details)})` : "");
+                const effectiveQty = ex.optional && ex.minQuantity ? ex.minQuantity : ex.quantity;
+                return `
+                <div class="rp-row${ex.optional ? " extras-row--optional" : ""}">
+                  <span class="rp-row__name">${nameStr}${effectiveQty > 1 ? ` &times; ${effectiveQty}` : ""}${ex.optional && ex.quantity > effectiveQty ? ` <span class="extras-row__avail">(${ex.quantity - effectiveQty} weitere verf.)</span>` : ""}</span>
+                  <span class="rp-row__area">${ex.pricePerUnit > 0 ? fmtPriceEuro(ex.pricePerUnit * effectiveQty) : "inkl."}</span>
                 </div>
-              `).join("");
+              `}).join("");
               return `
                 <div class="room-program">
                   <div class="room-program__label">EXTRAS &amp; STELLPL&Auml;TZE</div>
@@ -705,6 +683,7 @@ function buildExposeHtml(data: ExposeData): string {
                   <span class="shot-unit">${esc(unit.label)}</span>
                 </div>
                 <div class="shot-header__right">
+                  ${photo.isRendering ? `<span class="shot-badge shot-badge--rendering">VISUALISIERUNG</span>` : ""}
                   ${isHero ? `<span class="shot-badge">HERO SHOT</span>` : ""}
                 </div>
               </div>
@@ -757,6 +736,7 @@ function buildExposeHtml(data: ExposeData): string {
                 <span class="shot-unit">${esc(data.titleShort)}</span>
               </div>
               <div class="shot-header__right">
+                ${photo.isRendering ? `<span class="shot-badge shot-badge--rendering">VISUALISIERUNG</span>` : ""}
                 ${isHero ? `<span class="shot-badge">HERO SHOT</span>` : ""}
               </div>
             </div>
@@ -864,7 +844,6 @@ function buildExposeHtml(data: ExposeData): string {
 
     let optionsHtml = "";
     let priceTableHtml = "";
-    let nebenkostenHtml = "";
     let unitPriceSum = 0;
 
     if (isBundle) {
@@ -922,53 +901,10 @@ function buildExposeHtml(data: ExposeData): string {
       `;
     }
 
-    const basePrice = (isBundle && unitPriceSum > 0) ? unitPriceSum : data.askingPrice;
     const buildingExtrasTotal = (data.extras || []).reduce((s, ex) => s + (ex.pricePerUnit * ex.quantity), 0);
     const unitExtrasTotal = isBundle
       ? (data.units || []).reduce((s, u) => s + (u.extras || []).reduce((sx, ex) => sx + ex.pricePerUnit * ex.quantity, 0), 0)
       : 0;
-    const extrasTotal = buildingExtrasTotal + unitExtrasTotal;
-    const effectivePrice = basePrice ? basePrice + extrasTotal : null;
-    // Per-unit extras inflate the extras table; on a bundle that pushes the Nebenkosten box past the page
-    // bottom, so move it to a continuation page in that case.
-    const splitNebenkosten = isBundle && (data.units || []).some(u => u.extras && u.extras.length > 0);
-
-    if (effectivePrice && data.postcode) {
-      const ge = grunderwerbsteuer(data.postcode);
-      const notarRate = 2.0;
-      const gestAmt = Math.round(effectivePrice * ge.rate / 100);
-      const notarAmt = Math.round(effectivePrice * notarRate / 100);
-      const gesamt = effectivePrice + gestAmt + notarAmt;
-
-      nebenkostenHtml = `
-        <div class="nebenkosten-box">
-          <h3 class="nebenkosten-box__title">Kaufnebenkosten (gesch&auml;tzt)</h3>
-          <div class="nk-row">
-            <span>Kaufpreis (Wohnungen)</span>
-            <span class="nk-row__value">${fmtPriceEuro(basePrice!)}</span>
-          </div>
-          ${extrasTotal > 0 ? `
-            <div class="nk-row">
-              <span>Extras (Stellpl&auml;tze etc.)</span>
-              <span class="nk-row__value">${fmtPriceEuro(extrasTotal)}</span>
-            </div>
-          ` : ""}
-          <div class="nk-row">
-            <span>Grunderwerbsteuer (${esc(ge.land)}, ${ge.rate.toFixed(1)} %)</span>
-            <span class="nk-row__value">${fmtPriceEuro(gestAmt)}</span>
-          </div>
-          <div class="nk-row">
-            <span>Notar &amp; Grundbuch (ca. ${notarRate.toFixed(1)} %)</span>
-            <span class="nk-row__value">ca. ${fmtPriceEuro(notarAmt)}</span>
-          </div>
-          <div class="nk-row nk-row--total">
-            <span>Gesamtinvestition</span>
-            <span class="nk-row__value">ca. ${fmtPriceEuro(gesamt)}</span>
-          </div>
-        </div>
-        <p class="nk-note">K&auml;uferprovision, Notar- und Grundbuchkosten, Grunderwerbsteuer (${esc(ge.land)}: ${ge.rate.toFixed(1)} %) sind separat zu tragen.</p>
-      `;
-    }
 
     sections.push(`
       <div class="page content-page">
@@ -988,12 +924,16 @@ function buildExposeHtml(data: ExposeData): string {
             : [];
           if (buildingExtras.length === 0 && unitsWithExtras.length === 0) return "";
 
-          const renderExtra = (ex: { name: string; quantity: number; pricePerUnit: number }) => `
-            <div class="extras-row">
-              <span class="extras-row__name">${esc(ex.name)}${ex.quantity > 1 ? ` <span class="extras-row__qty">&times; ${ex.quantity}</span>` : ""}</span>
-              <span class="extras-row__price">${ex.pricePerUnit > 0 ? fmtPriceEuro(ex.pricePerUnit * ex.quantity) : "inkl."}</span>
+          const renderExtra = (ex: { name: string; quantity: number; pricePerUnit: number; subtype?: string; area?: number; optional?: boolean; minQuantity?: number }) => {
+            const details = [ex.subtype, ex.area ? `${ex.area} m²` : null].filter(Boolean).join(", ");
+            const nameStr = esc(ex.name) + (details ? ` (${esc(details)})` : "");
+            const effectiveQty = ex.optional && ex.minQuantity ? ex.minQuantity : ex.quantity;
+            return `
+            <div class="extras-row${ex.optional ? " extras-row--optional" : ""}">
+              <span class="extras-row__name">${nameStr}${effectiveQty > 1 ? ` <span class="extras-row__qty">&times; ${effectiveQty}</span>` : ""}${ex.optional && ex.quantity > effectiveQty ? ` <span class="extras-row__avail">(${ex.quantity - effectiveQty} weitere verf&uuml;gbar)</span>` : ""}</span>
+              <span class="extras-row__price">${ex.pricePerUnit > 0 ? fmtPriceEuro(ex.pricePerUnit * effectiveQty) : "inkl."}</span>
             </div>
-          `;
+          `};
 
           const buildingRows = buildingExtras.map(renderExtra).join("");
           const unitRows = unitsWithExtras.map(u => `
@@ -1004,7 +944,6 @@ function buildExposeHtml(data: ExposeData): string {
           `).join("");
 
           const extTotal = buildingExtrasTotal + unitExtrasTotal;
-          const grandTotal = (basePrice || 0) + extTotal;
           return `
           <div class="extras-table">
             <h4 class="extras-table__title">Zzgl. Stellpl&auml;tze &amp; Extras</h4>
@@ -1014,36 +953,14 @@ function buildExposeHtml(data: ExposeData): string {
               <span class="extras-row__name">Summe Extras</span>
               <span class="extras-row__price">${fmtPriceEuro(extTotal)}</span>
             </div>
-            <div class="extras-row extras-row--grand">
-              <span class="extras-row__name">Gesamtkaufpreis (Wohnungen + Extras)</span>
-              <span class="extras-row__price">${fmtPriceEuro(grandTotal)}</span>
-            </div>
           </div>`;
         })()}
-        ${splitNebenkosten ? "" : nebenkostenHtml}
         <div class="page-footer">
           <span class="footer-brand">DIREKTA<span class="accent">.</span></span>
           <span class="footer-section">Verkaufsoptionen</span>
         </div>
       </div>
     `);
-
-    if (splitNebenkosten && nebenkostenHtml) {
-      sections.push(`
-        <div class="page content-page">
-          <div class="page-header">
-            <span class="header-brand">DIREKTA<span class="accent">.</span></span>
-            <span class="header-address">${esc(data.address)} &middot; ${esc(data.city)}</span>
-          </div>
-          <div class="section-eyebrow">${num} &mdash; Verkaufsoptionen</div>
-          ${nebenkostenHtml}
-          <div class="page-footer">
-            <span class="footer-brand">DIREKTA<span class="accent">.</span></span>
-            <span class="footer-section">Verkaufsoptionen &middot; Nebenkosten</span>
-          </div>
-        </div>
-      `);
-    }
   }
 
   // ────────────────────────────── RAUMPROGRAMM (non-bundle)
@@ -1324,6 +1241,7 @@ html::-webkit-scrollbar { display: none; }
   width: 100%;
   height: 100%;
   object-fit: cover;
+  object-position: center 35%;
   z-index: 0;
 }
 .cover-hero--placeholder {
@@ -1339,8 +1257,8 @@ html::-webkit-scrollbar { display: none; }
 .cover-gradient-bottom {
   position: absolute;
   bottom: 0; left: 0; right: 0;
-  height: 145mm;
-  background: linear-gradient(to top, rgba(20,25,32,0.98) 0%, rgba(20,25,32,0.92) 35%, rgba(20,25,32,0.6) 65%, transparent 100%);
+  height: 105mm;
+  background: linear-gradient(to top, rgba(20,25,32,0.98) 0%, rgba(20,25,32,0.92) 40%, rgba(20,25,32,0.5) 70%, transparent 100%);
   z-index: 1;
 }
 .cover-brand {
@@ -1999,7 +1917,11 @@ html::-webkit-scrollbar { display: none; }
 /* ══════════════════════════════════════════════════════════════
    SHOT PAGES — brief-style photo layout
    ══════════════════════════════════════════════════════════════ */
-.shot-page { padding-top: 16mm; }
+.shot-page {
+  padding-top: 16mm;
+  display: flex;
+  flex-direction: column;
+}
 .shot-header {
   display: flex;
   justify-content: space-between;
@@ -2019,6 +1941,10 @@ html::-webkit-scrollbar { display: none; }
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: #e65100;
+}
+.shot-badge--rendering {
+  color: #6a1b9a;
+  margin-right: 8pt;
 }
 .shot-meta {
   display: flex;
@@ -2067,11 +1993,18 @@ html::-webkit-scrollbar { display: none; }
 }
 .img-hero-container {
   width: 100%;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   overflow: hidden;
   margin-bottom: 10px;
+  min-height: 0;
 }
 .img-hero {
-  width: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
   display: block;
 }
 .photo-details {
@@ -2236,16 +2169,8 @@ html::-webkit-scrollbar { display: none; }
   font-size: 8.5pt;
   color: var(--ink-soft);
 }
-.extras-row--grand {
-  border-top: 1.5px solid var(--ink);
-  border-bottom: none;
-  margin-top: 4px;
-  padding-top: 8px;
-  font-size: 10pt;
-  font-weight: 700;
-}
-.extras-row--grand .extras-row__name { font-weight: 700; }
-.extras-row--grand .extras-row__price { font-weight: 700; font-size: 10pt; }
+.extras-row--optional { opacity: 0.7; }
+.extras-row__avail { font-size: 7pt; color: var(--ink-faint); font-style: italic; }
 .extras-row--unit-header {
   margin-top: 6px;
   padding-top: 8px;
