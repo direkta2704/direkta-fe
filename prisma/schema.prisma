@@ -615,3 +615,18 @@ model PortalStat {
 
   @@unique([syndicationTargetId, date])
 }
+
+// ─── Agent Correction Memory ──────────────────────────────────
+
+model ExtractionCorrection {
+  id                String   @id @default(cuid())
+  userInput         String
+  agentQuestion     String?
+  wrongExtraction   Json
+  correctExtraction Json
+  field             String
+  usageCount        Int      @default(0)
+  createdAt         DateTime @default(now())
+
+  @@index([field])
+}

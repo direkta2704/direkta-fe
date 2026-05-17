@@ -2311,7 +2311,7 @@ async function extractMemoryFromMessage(
     .map(([k, v]) => `${k}: ${v}`)
     .join(", ");
 
-  const prompt = `Extrahiere Immobiliendaten aus dem Dialog. Der Agent hat eine Frage gestellt und der Nutzer hat geantwortet. Gib NUR ein JSON-Objekt zurück.
+  let prompt = `Extrahiere Immobiliendaten aus dem Dialog. Der Agent hat eine Frage gestellt und der Nutzer hat geantwortet. Gib NUR ein JSON-Objekt zurück.
 
 Bereits bekannt: ${known || "nichts"}
 
@@ -2410,6 +2410,20 @@ Erlaubte Felder (nur NEUE/GEÄNDERTE extrahieren):
 
 Antworte NUR mit JSON. Leeres Objekt {} wenn nichts Neues extrahiert wurde.`;
 
+  // Inject learned corrections from past mistakes
+  try {
+    const corrections = await prisma.extractionCorrection.findMany({
+      orderBy: { usageCount: "desc" },
+      take: 10,
+    });
+    if (corrections.length > 0) {
+      const correctionExamples = corrections.map(c =>
+        `- Agent: "${c.agentQuestion || "?"}" → Nutzer: "${c.userInput}" → FALSCH: ${JSON.stringify(c.wrongExtraction)} → RICHTIG: ${JSON.stringify(c.correctExtraction)}`
+      ).join("\n");
+      prompt = prompt + `\n\nBEKANNTE FEHLER (vermeide diese!):\n${correctionExamples}`;
+    }
+  } catch { /* table may not exist yet */ }
+
   try {
     // Scale maxTokens with input length: bulk pastes with MFH units need more output space.
     // 1200 for very long inputs (MFH with units + energy + parking) to avoid dropping attributes.
@@ -2465,6 +2479,26 @@ export async function runAgentTurn(
     costCentsThisTurn += ext.costCents;
     costCentsTotal += ext.costCents;
     if (ext.patch) {
+      // Detect corrections: field was already filled and now changes
+      const correctionFields = ["type", "street", "houseNumber", "postcode", "city", "livingArea", "plotArea", "yearBuilt", "rooms", "bathrooms", "floor", "condition", "unitCount", "sellingMode", "barrierefrei"];
+      const wmAny = workingMemory as unknown as Record<string, unknown>;
+      const patchAny = ext.patch as unknown as Record<string, unknown>;
+      for (const field of correctionFields) {
+        const oldVal = wmAny[field];
+        const newVal = patchAny[field];
+        if (oldVal != null && newVal !== undefined && JSON.stringify(oldVal) !== JSON.stringify(newVal)) {
+          prisma.extractionCorrection.create({
+            data: {
+              userInput: userMessage.slice(0, 500),
+              agentQuestion: lastAgentMsg.slice(0, 500) || null,
+              wrongExtraction: JSON.parse(JSON.stringify({ [field]: oldVal })),
+              correctExtraction: JSON.parse(JSON.stringify({ [field]: newVal })),
+              field,
+            },
+          }).catch(() => {});
+        }
+      }
+
       workingMemory = applyPatch(workingMemory, ext.patch);
       await prisma.conversationTurn.create({
         data: {
