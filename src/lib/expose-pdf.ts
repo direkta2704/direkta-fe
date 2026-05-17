@@ -107,6 +107,14 @@ function smartRound(n: number): number {
   return Math.abs(n - rounded) < 0.05 ? rounded : n;
 }
 
+function roundAreaInText(text: string): string {
+  return text.replace(/(\d+)[,.](\d{1,2})\s*m²/g, (match, whole, frac) => {
+    const n = parseFloat(`${whole}.${frac}`);
+    const r = smartRound(n);
+    return r === Math.round(r) ? `${Math.round(r)} m²` : match;
+  });
+}
+
 function fmtArea(n: number): string {
   const v = smartRound(n);
   return v.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " m²";
@@ -160,6 +168,9 @@ function energyBadgeColor(cls: string): string {
 // ── HTML builder ─────────────────────────────────────────────────────
 
 function buildExposeHtml(data: ExposeData): string {
+  data.titleShort = roundAreaInText(data.titleShort);
+  if (data.units) data.units.forEach(u => { if (u.titleShort) u.titleShort = roundAreaInText(u.titleShort); });
+
   const isBundle = data.units && data.units.length > 0;
   const totalArea = isBundle
     ? data.units!.reduce((s, u) => s + u.livingArea, 0)
