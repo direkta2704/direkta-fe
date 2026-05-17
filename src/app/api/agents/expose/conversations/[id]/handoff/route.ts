@@ -95,18 +95,27 @@ export async function POST(
       },
     });
 
-    // Set selling mode and building info for MFH
+    // Persist building info for all property types (heating, roof, insulation for syndication)
+    {
+      const buildingInfo: Record<string, unknown> = {};
+      if (memory.specifications["Heizung & Warmwasser"]?.["Typ"]) buildingInfo.heatingType = memory.specifications["Heizung & Warmwasser"]["Typ"];
+      if (memory.specifications["Dach"]?.["Typ"]) buildingInfo.roofType = memory.specifications["Dach"]["Typ"];
+      if (memory.specifications["Keller"]?.["Typ"]) buildingInfo.basementType = memory.specifications["Keller"]["Typ"];
+      if (memory.specifications["Tueren & Fenster"]?.["Fenster"]) buildingInfo.windowType = memory.specifications["Tueren & Fenster"]["Fenster"];
+      if (memory.barrierefrei != null) buildingInfo.barrierefrei = memory.barrierefrei;
+      if (memory.type === "MFH" && (memory.sellingMode || memory.units.length > 0)) {
+        buildingInfo._sellingMode = memory.sellingMode || "BUNDLE";
+        buildingInfo.unitCount = memory.unitCount || memory.units.length;
+        buildingInfo.Wohneinheiten = String(memory.unitCount || memory.units.length);
+      }
+      if (Object.keys(buildingInfo).length > 0) {
+        await prisma.property.update({
+          where: { id: property.id },
+          data: { buildingInfo: JSON.parse(JSON.stringify(buildingInfo)) },
+        });
+      }
+    }
     if (memory.type === "MFH" && (memory.sellingMode || memory.units.length > 0)) {
-      await prisma.property.update({
-        where: { id: property.id },
-        data: {
-          buildingInfo: {
-            _sellingMode: memory.sellingMode || "BUNDLE",
-            unitCount: memory.unitCount || memory.units.length,
-            Wohneinheiten: String(memory.unitCount || memory.units.length),
-          },
-        },
-      });
 
       // Create child unit properties
       for (const unit of memory.units) {
@@ -169,6 +178,7 @@ export async function POST(
               width: u.width,
               height: u.height,
               ordering: i,
+              classification: u.classification ? JSON.parse(JSON.stringify(u.classification)) : undefined,
             },
           });
         }
@@ -219,7 +229,7 @@ export async function POST(
       });
     }
 
-    // Attach uploaded media to the property
+    // Attach uploaded media to the property (with classification metadata)
     for (let i = 0; i < memory.uploads.length; i++) {
       const u = memory.uploads[i];
       await prisma.mediaAsset.create({
@@ -233,6 +243,7 @@ export async function POST(
           width: u.width,
           height: u.height,
           ordering: i,
+          classification: u.classification ? JSON.parse(JSON.stringify(u.classification)) : undefined,
         },
       });
     }

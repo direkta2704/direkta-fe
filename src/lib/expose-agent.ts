@@ -200,6 +200,7 @@ export interface WorkingMemory {
   extras: PropertyExtra[];
   specifications: Record<string, Record<string, string>>;
   skippedFields: string[];
+  fieldAskCount: Record<string, number>;
   barrierefrei: boolean | null;
   // Expose enrichment
   sellerContact: { name?: string; company?: string; phone?: string; email?: string } | null;
@@ -310,6 +311,7 @@ export const INITIAL_MEMORY: WorkingMemory = {
   extras: [],
   specifications: {},
   skippedFields: [],
+  fieldAskCount: {},
   barrierefrei: null,
   sellerContact: null,
   roomProgram: [],
@@ -389,13 +391,20 @@ const FIELD_PRIORITY: FieldSpec[] = [
   { field: "yearBuilt",   group: "details",  blocksPricing: false, blocksPublish: false, infoValue: 0.7, optional: true,  isFilled: wm => wm.yearBuilt != null, prompt: "Wann wurde das Gebäude gebaut (Baujahr)?" },
   { field: "bathrooms",   group: "details",  blocksPricing: false, blocksPublish: false, infoValue: 0.5, optional: true,  isFilled: wm => wm.bathrooms != null, prompt: "Wie viele Badezimmer?" },
   { field: "floor",       group: "details",  blocksPricing: false, blocksPublish: false, infoValue: 0.4, optional: true,  isFilled: wm => wm.type === "EFH" || wm.type === "MFH" || wm.floor != null, prompt: "In welchem Stockwerk liegt die Wohnung?" },
-  { field: "plotArea",    group: "details",  blocksPricing: false, blocksPublish: false, infoValue: 0.4, optional: true,  isFilled: wm => wm.type === "ETW" || wm.plotArea != null, prompt: "Wie groß ist das Grundstück in m²?" },
+  { field: "plotArea",    group: "details",  blocksPricing: false, blocksPublish: true,  infoValue: 0.7, optional: false, isFilled: wm => wm.type === "ETW" || wm.plotArea != null, prompt: "Wie groß ist das Grundstück in m²?" },
   { field: "attributes",  group: "details",  blocksPricing: false, blocksPublish: false, infoValue: 0.6, optional: true,  isFilled: wm => wm.attributes.length > 0, prompt: "Welche Ausstattung hat die Immobilie? (Balkon, Keller, Garten, Stellplatz, …)" },
-  { field: "specifications", group: "details", blocksPricing: false, blocksPublish: false, infoValue: 0.4, optional: true, isFilled: wm => Object.keys(wm.specifications).length > 0, prompt: "Welche Ausstattungsdetails können Sie nennen? Z.B. Bodenbelag (Parkett, Fliesen), Heizungsart, Küche, Fenster?" },
+  { field: "heatingType", group: "details", blocksPricing: false, blocksPublish: true, infoValue: 0.7, optional: false, isFilled: wm => !!(wm.specifications["Heizung & Warmwasser"]?.["Typ"] || wm.specifications["Heizung & Warmwasser"]?.["Heizungsart"] || wm.specifications["Heizung & Warmwasser"]?.["Art"]), prompt: "Welche Heizungsart hat die Immobilie? (Gas-Zentralheizung, Wärmepumpe, Fernwärme, Fußbodenheizung, Öl, Pellets, …)" },
+  { field: "windowType", group: "details", blocksPricing: false, blocksPublish: false, infoValue: 0.5, optional: true, isFilled: wm => !!(wm.specifications["Tueren & Fenster"]?.["Fenster"] || wm.specifications["Tueren & Fenster"]?.["Typ"] || wm.specifications["Tueren & Fenster"]?.["Fenstertyp"]), prompt: "Welche Art von Fenstern? (Kunststoff, Holz, Alu, Dreifachverglasung, …)" },
+  { field: "flooringType", group: "details", blocksPricing: false, blocksPublish: false, infoValue: 0.5, optional: true, isFilled: wm => !!(wm.specifications["Boden"]?.["Wohnbereich"] || wm.specifications["Boden"]?.["Typ"] || wm.specifications["Boden"]?.["Bodenbelag"]), prompt: "Welcher Bodenbelag ist in den Haupträumen? (Parkett, Laminat, Fliesen, Vinyl, …)" },
+  { field: "basementType", group: "details", blocksPricing: false, blocksPublish: false, infoValue: 0.5, optional: true, isFilled: wm => wm.attributes.some(a => a.toLowerCase().includes("kein keller")) || !!(wm.specifications["Keller"]?.["Typ"] || wm.specifications["Keller"]?.["Art"]), prompt: "Hat die Immobilie einen Keller? Wenn ja: Vollkeller, Teilkeller oder Kellerabteil? Ist er trocken und nutzbar?" },
+  { field: "specifications", group: "details", blocksPricing: false, blocksPublish: false, infoValue: 0.4, optional: true, isFilled: wm => Object.keys(wm.specifications).length >= 3, prompt: "Weitere Ausstattungsdetails? Z.B. Küche (Einbauküche?), Sanitär (Badewanne/Dusche), Smart Home, Dachtyp (Satteldach/Flachdach)?" },
+  { field: "renovationScope", group: "details", blocksPricing: false, blocksPublish: false, infoValue: 0.6, optional: true, isFilled: wm => !["RENOVIERUNGS_BEDUERFTIG", "SANIERUNGS_BEDUERFTIG"].includes(wm.condition || "") || !!wm.specifications["Sanierungsbedarf"]?.["Umfang"], prompt: "Was muss renoviert/saniert werden? (Dach, Fenster, Heizung, Elektrik, Sanitär, Fassade, …)" },
   { field: "barrierefrei", group: "details", blocksPricing: false, blocksPublish: false, infoValue: 0.5, optional: true, isFilled: wm => wm.barrierefrei != null, prompt: "Ist die Immobilie barrierefrei oder barrierearm zugänglich?" },
   { field: "unitCount",   group: "mfh_structure", blocksPricing: false, blocksPublish: true,  infoValue: 1.0, optional: false, isFilled: wm => wm.type !== "MFH" || wm.unitCount != null, prompt: "Wie viele Wohneinheiten hat das Gebäude?" },
   { field: "units",       group: "mfh_structure", blocksPricing: false, blocksPublish: true,  infoValue: 1.0, optional: false, isFilled: wm => wm.type !== "MFH" || (wm.unitCount != null && wm.units.length >= wm.unitCount), prompt: "Bitte beschreiben Sie die einzelnen Wohnungen (Größe, Zimmer, Stockwerk)." },
   { field: "sellingMode", group: "mfh_structure", blocksPricing: false, blocksPublish: true,  infoValue: 0.9, optional: false, isFilled: wm => wm.type !== "MFH" || wm.sellingMode != null, prompt: "Wie möchten Sie verkaufen? Einzeln, als Paket, oder beides?" },
+  { field: "unitPhotos",  group: "mfh_structure", blocksPricing: false, blocksPublish: false, infoValue: 0.8, optional: true,  isFilled: wm => wm.type !== "MFH" || wm.units.length === 0 || wm.units.every(u => wm.uploads.some(p => p.kind === "PHOTO" && p.unitLabel === u.label)), prompt: "Haben Sie separate Fotos für die einzelnen Wohnungen? Laden Sie sie jetzt hoch — sie werden automatisch der aktuellen Wohnung zugeordnet." },
+  { field: "unitFloorPlans", group: "mfh_structure", blocksPricing: false, blocksPublish: false, infoValue: 0.7, optional: true, isFilled: wm => wm.type !== "MFH" || wm.units.length === 0 || wm.units.every(u => wm.uploads.some(p => p.kind === "FLOORPLAN" && p.unitLabel === u.label)), prompt: "Haben Sie Grundrisse für die einzelnen Wohnungen? Nutzen Sie den 📐-Button." },
   { field: "extras",      group: "mfh_structure", blocksPricing: false, blocksPublish: false, infoValue: 0.7, optional: true,  isFilled: wm => wm.extras.length > 0 || (wm.type !== "MFH" && wm.type !== "EFH"), prompt: "Hat die Immobilie Extras wie Stellplätze oder Kellerabteile? Wenn ja: Art (z.B. Tiefgarage/Außen/Carport), Anzahl, Preis pro Stück, Größe in m² bei Keller/Garten, und ob der Kauf optional oder Pflicht ist." },
   // ── energy: GEG legally required ──
   { field: "hasEnergyCert", group: "energy", blocksPricing: false, blocksPublish: true,  infoValue: 0.9, optional: false, isFilled: wm => wm.hasEnergyCert !== null, prompt: "Haben Sie einen Energieausweis für die Immobilie?" },
@@ -413,10 +422,10 @@ const FIELD_PRIORITY: FieldSpec[] = [
 const GROUP_ORDER: Record<ConversationalGroup, number> = {
   identity: 0,
   core: 1,
-  mfh_structure: 2,
-  details: 3,
+  details: 2,
+  media: 3,
   energy: 4,
-  media: 5,
+  mfh_structure: 5,
 };
 
 export function nextQuestion(wm: WorkingMemory): QuestionResult {
@@ -434,6 +443,7 @@ export function nextQuestion(wm: WorkingMemory): QuestionResult {
     if (spec.isFilled(wm)) continue;
     if (wm.costCompressed && spec.optional) continue;
     if (spec.optional && wm.skippedFields.includes(spec.field)) continue;
+    if ((wm.fieldAskCount[spec.field] || 0) >= 3) continue;
     const priority = (spec.blocksPricing ? 4 : 0) + (spec.blocksPublish ? 2 : 0) + spec.infoValue;
     candidates.push({ field: spec.field, group: spec.group, prompt: spec.prompt, priority, tiebreaker: i });
   }
@@ -530,7 +540,9 @@ function summarizeProperty(m: WorkingMemory): string {
   if (m.condition) lines.push(`Zustand: ${CONDITION_DE[m.condition] || m.condition}`);
   if (m.attributes.length) lines.push(`Ausstattung: ${m.attributes.join(", ")}`);
   if (m.energyClass) lines.push(`Energieklasse: ${m.energyClass} (${m.energyValue} kWh, ${m.energySource})`);
-  if (m.extras.length) lines.push(`Extras: ${m.extras.map(e => `${e.quantity}× ${e.name}${e.pricePerUnit ? ` (${e.pricePerUnit.toLocaleString("de")}€/Stk)` : ""}`).join(", ")}`);
+  if (m.roomProgram.length) lines.push(`Raumprogramm: ${m.roomProgram.map(r => `${r.name} ${r.area}m²`).join(", ")}`);
+  if (m.barrierefrei != null) lines.push(`Barrierefrei: ${m.barrierefrei ? "Ja" : "Nein"}`);
+  if (m.extras.length) lines.push(`Extras: ${m.extras.map(e => `${e.quantity}× ${e.name}${e.subtype ? ` (${e.subtype})` : ""}${e.area ? ` ${e.area}m²` : ""}${e.pricePerUnit ? ` ${e.pricePerUnit.toLocaleString("de")}€/Stk` : ""}${e.optional ? " [optional]" : ""}`).join(", ")}`);
   if (Object.keys(m.specifications).length > 0) {
     for (const [cat, entries] of Object.entries(m.specifications)) {
       const vals = Object.entries(entries).map(([k, v]) => `${k}: ${v}`).join(", ");
@@ -538,10 +550,16 @@ function summarizeProperty(m: WorkingMemory): string {
     }
   }
   if (m.units.length > 0) {
-    lines.push(`Wohneinheiten: ${m.units.map(u => `${u.label} (${u.livingArea}m², ${u.rooms}Zi)`).join(", ")}`);
+    lines.push(`Wohneinheiten: ${m.units.map(u => `${u.label} (${u.livingArea}m², ${u.rooms}Zi${u.askingPrice ? `, ${u.askingPrice.toLocaleString("de")}€` : ""})`).join(", ")}`);
   }
   if (m.priceBand) lines.push(`Preisband: ${m.priceBand.low.toLocaleString("de")}–${m.priceBand.high.toLocaleString("de")} € (${m.priceBand.confidence})`);
   if (m.askingPrice) lines.push(`Wunschpreis: ${m.askingPrice.toLocaleString("de")} €`);
+  // Photo descriptions from AI analysis — feeds into draft generation
+  const photoDescs = m.uploads
+    .filter(u => u.kind === "PHOTO" && u.classification?.description)
+    .map(u => `${u.classification!.caption || "Foto"}: ${u.classification!.description}`)
+    .slice(0, 6);
+  if (photoDescs.length) lines.push(`\nFoto-Beschreibungen:\n${photoDescs.join("\n")}`);
   return lines.join("\n");
 }
 
@@ -1767,7 +1785,6 @@ const ORCHESTRATOR_SYSTEM_PROMPT = `Du bist der Direkta Exposé-Agent — ein in
 ═══ ZWEI MODI ═══
 
 MODUS A — BULK (BEVORZUGT — Verkäufer gibt viele Daten auf einmal):
-Die Begrüßung ermutigt den Verkäufer, alles auf einmal zu schreiben. Das ist der schnellste Weg.
 1. Zeige eine ✓-Liste ALLER erkannten Daten — Typ, Adresse, Fläche, Zimmer, Bäder, Baujahr, Zustand, Ausstattung, Energie, Preis
 2. Bei MFH: zeige auch alle erkannten Einheiten mit Größe/Zimmer/Etage UND die Verkaufsart
 3. Liste NUR was FEHLT (prüfe Working Memory!) — typischerweise: Fotos, Grundriss
@@ -1778,15 +1795,31 @@ Die Begrüßung ermutigt den Verkäufer, alles auf einmal zu schreiben. Das ist 
 
 MODUS B — DIALOG (Verkäufer antwortet einzeln):
 Stelle pro Nachricht NUR EINE Frage. Folge der Empfehlung im ">>> NÄCHSTE AKTION <<<" Feld des Working Memory.
-Fallback-Reihenfolge wenn keine Empfehlung: Typ → Adresse → PLZ/Stadt → [typspezifische Fragen] → Energie → Fotos → Grundriss
 
-TYPSPEZIFISCHE FRAGEN:
-• ETW: Wohnfläche → Zimmer → Bäder → Etage → Baujahr → Zustand → Ausstattung (Balkon, Aufzug, Keller, Stellplatz, Hausgeld?)
-• EFH/DHH/RH: Wohnfläche → Grundstück → Zimmer → Bäder → Baujahr → Zustand → Ausstattung (Garten, Garage, Keller, Terrasse, Carport?)
-• MFH: Wohnfläche (gesamt) → Grundstück → Baujahr → Zustand → Ausstattung → **Einheiten (PHASE B)** → **Verkaufsart (PHASE C)** → dann Energie → Fotos → Grundriss
-• GRUNDSTUECK: Grundstücksfläche → Bebauungsplan? → Erschließung? → Zustand
+═══ GESPRÄCHSABLAUF (ALLE TYPEN) ═══
 
-WICHTIG FÜR MFH: Frage nach Einheiten und Verkaufsart BEVOR du nach Fotos fragst! Der Verkäufer muss wissen welche Wohnungen es gibt, damit er die Fotos richtig zuordnen kann.
+PHASE 1 — IMMOBILIE VERSTEHEN:
+Typ → Adresse → Wohnfläche → Zustand → Zimmer → Bäder → Baujahr → Etage (ETW) / Grundstück (EFH/DHH/RH/MFH) → Heizungsart → Ausstattung → Fenster → Bodenbelag → Keller
+
+PHASE 2 — FOTOS & DOKUMENTE:
+"Jetzt brauche ich Fotos und Dokumente von Ihrer Immobilie."
+→ Fotos (📷-Button) → Grundriss (📐-Button) → Energieausweis (⚡-Button oder manuelle Eingabe)
+Fotos werden automatisch analysiert — die KI erkennt Räume, Ausstattung und Qualität.
+
+PHASE 3 — NUR BEI MFH (Mehrfamilienhaus):
+"Jetzt gehen wir die einzelnen Wohnungen durch."
+→ Anzahl Wohneinheiten → Einzelne Wohnungen (je: Label, Fläche, Zimmer, Etage, Besonderheiten)
+→ Fotos pro Wohnung → Grundrisse pro Wohnung
+→ Verkaufsart (Einzeln / Paket / Beides)
+→ Extras (Stellplätze, Kellerabteile mit Preisen)
+
+PHASE 4 — PREISEMPFEHLUNG:
+Wenn alle Daten + Fotos vorhanden → pricing_recommend automatisch
+→ Zeige Preisband + Strategien (Schnellverkauf / Realistisch / Maximum)
+→ Frage: "Möchten Sie den empfohlenen Preis verwenden oder einen eigenen festlegen?"
+
+PHASE 5 — EXPOSÉ ERSTELLEN:
+→ listing_draft → listing_review → Verkäufer bestätigt → handoff_commit
 
 ═══ AUTOMATISCHE TOOL-AUFRUFE ═══
 
@@ -1851,63 +1884,29 @@ Wenn Fotos im Memory UND alle Pflichtfelder gesetzt:
 
 ═══ MEHRFAMILIENHAUS (MFH) — STRUKTURIERTER ABLAUF ═══
 
-Wenn der Typ MFH ist, folge diesem Ablauf:
+WICHTIG: MFH-Einheiten kommen NACH den Gebäudefotos und dem Energieausweis! Erst das Gebäude verstehen, dann die Wohnungen.
 
-PHASE A — GEBÄUDE:
+SCHRITT 1 — GEBÄUDE ERFASSEN (Phasen 1+2):
+Sammle zuerst alle Gebäude-Daten (wie bei jedem anderen Typ): Adresse, Fläche, Zustand, Baujahr, Heizung, etc.
+Dann Fotos vom Gebäude (Außenansicht, Treppenhaus), Gebäude-Grundriss, Energieausweis.
+
+SCHRITT 2 — WOHNUNGEN (Phase 3):
+Sage: "Perfekt, das Gebäude ist erfasst. Jetzt gehen wir die Wohnungen einzeln durch."
 1. "Wie viele Wohneinheiten hat das Gebäude?"
-2. "Liegen alle Wohnungen an derselben Adresse?" (Normalfall: ja)
-3. Sammle Gebäude-Daten: Adresse, Baujahr, Zustand, Energieausweis
-4. "Laden Sie jetzt Fotos vom Gebäude hoch — Außenansicht, Treppenhaus, Gemeinschaftsflächen. Nutzen Sie den 📷-Button links unten."
-5. "Haben Sie einen Gebäude-Grundriss? Nutzen Sie den 📐-Button."
+2. Für JEDE Wohnung: Label, Fläche, Zimmer, Bäder, Stockwerk, Besonderheiten
+3. Für JEDE Wohnung: "Haben Sie Fotos für [Label]?" + "Grundriss für [Label]?"
+4. Verkaufsart: Einzeln / Paket / Beides (empfohlen)
+5. Extras: Stellplätze, Kellerabteile mit Preisen
 
-PHASE B — WOHNUNGEN EINZELN:
-Sage: "Perfekt, das Gebäude ist erfasst. Jetzt gehen wir die [N] Wohnungen einzeln durch. Starten wir mit der ersten."
+WICHTIG: Akzeptiere Bulk-Eingaben! "WE1 95m² 3Zi EG, WE2 55m² 2Zi 1.OG" → erfasse ALLE auf einmal.
 
-Für JEDE Wohnung frage nacheinander:
-a) "Wie bezeichnen Sie diese Wohnung?" (WE 01, EG links, Whg 1, etc.)
-b) "Wohnfläche in m²?"
-c) "Zimmer / Bäder?"
-d) "Welches Stockwerk?" (EG, 1. OG, DG…)
-e) "Besonderheiten?" (Balkon, Ankleide, eigener Eingang, Terrasse…)
-f) "Haben Sie separate Fotos für diese Wohnung? Laden Sie sie jetzt hoch — sie werden automatisch [Label] zugeordnet."
-g) "Haben Sie einen eigenen Grundriss für [Label]?"
-h) Optional: "Raumprogramm — wie groß sind die einzelnen Räume?" (Küche 32m², Wohnen 19m², etc.)
-
-WICHTIG: Akzeptiere auch Bulk-Eingaben! Wenn der Verkäufer sagt "Wohnung 1: 95m², 3 Zimmer, EG. Wohnung 2: 55m², 2 Zimmer, 1. OG" → erfasse ALLE auf einmal und zeige eine ✓-Liste.
-
-WICHTIG — UPLOAD-KONTEXT SETZEN:
-Wenn du zu einer bestimmten Wohnung wechselst, setze currentUnit im Memory auf das Label dieser Wohnung.
-Wenn du zurück zur Gebäude-Ebene wechselst, setze currentUnit auf null.
-Der Upload-Kontext wird dem Verkäufer automatisch angezeigt. Alle Fotos/Grundrisse die hochgeladen werden, werden automatisch dieser Wohnung zugeordnet.
-
-Nach jeder Wohnung: "✓ [Label] erfasst ([Area] m², [Rooms] Zi). Weiter mit Wohnung [N+1]."
-
-PHASE C — VERKAUFSSTRATEGIE:
-"Wie möchten Sie verkaufen?"
-• Einzeln — jede Wohnung separat an Selbstnutzer
-• Als Paket — alle Wohnungen zusammen an einen Investor
-• Beides — einzeln UND als Paket anbieten (empfohlen, erreicht mehr Käufer)
-
-PHASE D — WEITER WIE GEWOHNT:
-Wenn alle Einheiten + Verkaufsart erfasst → pricing_recommend → listing_draft → listing_review → handoff
-
-MFH NACH BULK-EINGABE:
-Wenn der Verkäufer alle Gebäudedaten + Einheiten + Energie + Preis auf einmal gibt:
-1. Zeige eine ✓-Liste ALLER erkannten Daten (Gebäude UND Einheiten)
-2. Liste NUR was fehlt — typischerweise: Fotos + Grundriss
-3. Frage nach Gebäudefotos zuerst (Außenansicht, Treppenhaus)
-4. Dann frage für JEDE Wohnung einzeln:
-   "Haben Sie separate Fotos für [WE-Label]? Laden Sie sie jetzt hoch."
-   "Haben Sie einen Grundriss für [WE-Label]?"
-5. Wenn Verkaufsart noch fehlt, frage: "Einzelverkauf, Paketverkauf, oder beides?"
-6. Wenn alles da → Pipeline starten
+UPLOAD-KONTEXT: Setze currentUnit im Memory wenn du zu einer Wohnung wechselst. null für Gebäude-Ebene.
 
 MFH-INTELLIGENZ:
-• Vererbung: Baujahr, Zustand, Energieausweis vom Gebäude gelten automatisch für alle Einheiten
-• "Gleich wie oben" / "Selbe Ausstattung" → vorherige Wohnungs-Daten übernehmen
-• "Keine eigenen Fotos" / "Die Gebäudefotos reichen" → Gebäudefotos für alle verwenden
-• Plausibilitätsprüfung: Gesamtfläche aller Einheiten sollte ungefähr der Gebäude-Wohnfläche entsprechen
-• Bei "Weiß ich nicht" für optionale Unit-Felder → überspringen, kein Problem
+• Vererbung: Baujahr, Zustand, Energieausweis vom Gebäude gelten für alle Einheiten
+• "Gleich wie oben" → vorherige Daten übernehmen
+• "Keine eigenen Fotos" → Gebäudefotos für alle verwenden
+• Plausibilitätsprüfung: Gesamtfläche Einheiten ≈ Gebäude-Wohnfläche
 
 ═══ INTELLIGENZ & ANTI-LOOP ═══
 
@@ -2229,7 +2228,35 @@ function normalizeUserPatch(data: Record<string, unknown>, turnNumber: number): 
     patch.extras = ex;
   }
   if (data.specifications && typeof data.specifications === "object" && !Array.isArray(data.specifications)) {
-    patch.specifications = data.specifications as Record<string, Record<string, string>>;
+    const specs = data.specifications as Record<string, Record<string, string>>;
+    // Normalize spec keys so isFilled checks work regardless of LLM key choice
+    for (const [cat, entries] of Object.entries(specs)) {
+      if (!entries || typeof entries !== "object") continue;
+      if (cat === "Heizung & Warmwasser" || cat === "Heizung") {
+        const val = entries["Heizungsart"] || entries["Art"] || entries["Typ"];
+        if (val && !entries["Typ"]) { entries["Typ"] = val; }
+      }
+      if (cat === "Tueren & Fenster" || cat === "Fenster") {
+        const val = entries["Fenstertyp"] || entries["Art"] || entries["Typ"] || entries["Fenster"];
+        if (val && !entries["Fenster"]) { entries["Fenster"] = val; }
+      }
+      if (cat === "Boden") {
+        const val = entries["Bodenbelag"] || entries["Typ"] || entries["Art"] || entries["Wohnbereich"];
+        if (val && !entries["Wohnbereich"]) { entries["Wohnbereich"] = val; }
+      }
+      if (cat === "Keller") {
+        const val = entries["Kellertyp"] || entries["Art"] || entries["Typ"];
+        if (val && !entries["Typ"]) { entries["Typ"] = val; }
+      }
+      if (cat === "Dach") {
+        const val = entries["Dachtyp"] || entries["Art"] || entries["Typ"];
+        if (val && !entries["Typ"]) { entries["Typ"] = val; }
+      }
+    }
+    // Normalize category names
+    if (specs["Heizung"] && !specs["Heizung & Warmwasser"]) { specs["Heizung & Warmwasser"] = specs["Heizung"]; delete specs["Heizung"]; }
+    if (specs["Fenster"] && !specs["Tueren & Fenster"]) { specs["Tueren & Fenster"] = specs["Fenster"]; delete specs["Fenster"]; }
+    patch.specifications = specs;
   }
   if (typeof data.hasFloorPlan === "boolean") patch.hasFloorPlan = data.hasFloorPlan;
   if (typeof data.barrierefrei === "boolean") patch.barrierefrei = data.barrierefrei;
@@ -2359,6 +2386,19 @@ Beispiele für einzelne Antworten:
 - Agent: "Etage?" → Nutzer: "EG" → { "floor": 0 }
 - Agent: "Zimmer?" → Nutzer: "3ZKB" → { "rooms": 3, "bathrooms": 1 }
 - Agent: "Preis?" → Nutzer: "500k" → { "askingPrice": 500000 }
+- Agent: "Heizungsart?" → Nutzer: "Gas" → { "specifications": { "Heizung & Warmwasser": { "Typ": "Gas-Zentralheizung" } } }
+- Agent: "Heizungsart?" → Nutzer: "Wärmepumpe" → { "specifications": { "Heizung & Warmwasser": { "Typ": "Wärmepumpe" } } }
+- Agent: "Fenster?" → Nutzer: "Kunststoff dreifach" → { "specifications": { "Tueren & Fenster": { "Fenster": "Kunststoff-Dreifachverglasung" } } }
+- Agent: "Bodenbelag?" → Nutzer: "Parkett" → { "specifications": { "Boden": { "Wohnbereich": "Parkett" } } }
+- Agent: "Keller?" → Nutzer: "Vollkeller, trocken" → { "specifications": { "Keller": { "Typ": "Vollkeller, trocken" } } }
+- Agent: "Keller?" → Nutzer: "nein" → { "attributes": ["Kein Keller"] }
+- Agent: "Keller?" → Nutzer: "Nein, kein Keller" → { "attributes": ["Kein Keller"] }
+- Agent: "Sanierung?" → Nutzer: "Dach und Fenster" → { "specifications": { "Sanierungsbedarf": { "Umfang": "Dach, Fenster" } } }
+- Agent: "Wohneinheiten?" → Nutzer: "3 Units" → { "unitCount": 3 }
+- Agent: "Wohneinheiten?" → Nutzer: "3" → { "unitCount": 3 }
+- Agent: "Zustand?" → Nutzer: "Completely Renovated" → { "condition": "KERNSANIERT" }
+- Agent: "Zustand?" → Nutzer: "Well-maintained" → { "condition": "GEPFLEGT" }
+- Agent: "Zustand?" → Nutzer: "needs renovation" → { "condition": "RENOVIERUNGS_BEDUERFTIG" }
 
 Beispiel für Bulk-Eingabe:
 - Nutzer: "MFH, Marktstraße 12, 76571 Gaggenau, 250m², Grundstück 450m², 8 Zimmer, 3 Bäder, Bj 1999, gepflegt. Keller, Garten, FBH, Parkett. 6 TG-Stellplätze à 15000€, 10 Außenstellplätze à 8000€. 3 Wohnungen: WE1 95m² 3Zi EG, WE2 55m² 2Zi 1.OG. Verkauf: beides. Energie: Verbrauch B 70kWh Gas gültig 2034-03-15. Preis: 525000"
@@ -2398,7 +2438,7 @@ Erlaubte Felder (nur NEUE/GEÄNDERTE extrahieren):
 - assumptions: Array von getroffenen Annahmen
 - unitCount: Anzahl Wohneinheiten (Zahl, nur bei MFH)
 - extras: Array von { name, quantity, pricePerUnit, description, optional, minQuantity, area, subtype } — Extras wie Stellplätze, Kellerabteile. optional=true wenn Kauf nicht verpflichtend, minQuantity=Mindestabnahme, area=Größe in m² (Keller/Garten), subtype=Art (z.B. "Tiefgarage","Außen","Carport"). Z.B. [{ "name": "TG-Stellplatz", "quantity": 2, "pricePerUnit": 15000, "optional": true, "minQuantity": 1, "subtype": "Tiefgarage" }]
-- specifications: Verschachtelte Ausstattungsdetails { "Boden": { "Wohnbereich": "Parkett" }, "Heizung & Warmwasser": { "Typ": "Fußbodenheizung" } }. Kategorien: Boden, Waende & Decke, Sanitaer, Heizung & Warmwasser, Elektro & Smart Home, Kueche, Tueren & Fenster
+- specifications: Verschachtelte Ausstattungsdetails. WICHTIG: Heizungsart IMMER unter "Heizung & Warmwasser" > "Typ" speichern, Fenstertyp unter "Tueren & Fenster" > "Fenster", Bodenbelag unter "Boden" > "Wohnbereich", Kellertyp unter "Keller" > "Typ". Kategorien: Boden, Waende & Decke, Sanitaer, Heizung & Warmwasser, Elektro & Smart Home, Kueche, Tueren & Fenster, Keller, Dach, Sanierungsbedarf. Z.B. { "Heizung & Warmwasser": { "Typ": "Gas-Zentralheizung" }, "Tueren & Fenster": { "Fenster": "Kunststoff-Dreifachverglasung" }, "Keller": { "Typ": "Vollkeller, trocken" }, "Dach": { "Typ": "Satteldach" } }
 - units: Array von { label, livingArea, rooms, bathrooms, floor, features, askingPrice, extras } — Daten einzelner Wohneinheiten. extras=per-unit extras (gleiche Struktur wie building-level extras)
 - barrierefrei: true/false — Ist die Immobilie barrierefrei/barrierearm zugänglich?
 - sellingMode: INDIVIDUAL|BUNDLE|BOTH — Verkaufsart (einzeln/Paket/beides)
@@ -2563,6 +2603,11 @@ export async function runAgentTurn(
     messages.push({ role: "system", content: "[PFLICHT] Rufe JETZT pricing_recommend auf. Keine Frage stellen." });
   } else if (nq.action === "trigger_draft") {
     messages.push({ role: "system", content: "[PFLICHT] Rufe JETZT listing_draft auf. Keine Frage stellen." });
+  }
+
+  // Track how many times each field is asked — auto-skip after 3
+  if (nq.field) {
+    workingMemory.fieldAskCount[nq.field] = (workingMemory.fieldAskCount[nq.field] || 0) + 1;
   }
 
   // Cost-compression hysteresis: one-way latch, stays on once triggered

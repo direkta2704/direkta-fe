@@ -755,8 +755,16 @@ export default function ExposeAgentPage() {
               {memory.floor != null && <MemoryItem label="Etage" value={String(memory.floor)} />}
               {memory.condition && <MemoryItem label="Zustand" value={memory.condition} />}
               {memory.attributes.length > 0 && <MemoryItem label="Ausstattung" value={memory.attributes.join(", ")} />}
+              {memory.barrierefrei != null && <MemoryItem label="Barrierefrei" value={memory.barrierefrei ? "Ja" : "Nein"} />}
+              {memory.specifications?.["Heizung & Warmwasser"]?.["Typ"] && <MemoryItem label="Heizung" value={memory.specifications["Heizung & Warmwasser"]["Typ"]} />}
+              {memory.specifications?.["Boden"]?.["Wohnbereich"] && <MemoryItem label="Boden" value={memory.specifications["Boden"]["Wohnbereich"]} />}
+              {memory.specifications?.["Tueren & Fenster"]?.["Fenster"] && <MemoryItem label="Fenster" value={memory.specifications["Tueren & Fenster"]["Fenster"]} />}
+              {memory.specifications?.["Keller"]?.["Typ"] && <MemoryItem label="Keller" value={memory.specifications["Keller"]["Typ"]} />}
+              {memory.specifications?.["Dach"]?.["Typ"] && <MemoryItem label="Dach" value={memory.specifications["Dach"]["Typ"]} />}
+              {memory.specifications?.["Sanierungsbedarf"]?.["Umfang"] && <MemoryItem label="Sanierung" value={memory.specifications["Sanierungsbedarf"]["Umfang"]} />}
+              {memory.extras?.length > 0 && <MemoryItem label="Extras" value={memory.extras.map((e: { name: string; quantity: number }) => `${e.quantity}× ${e.name}`).join(", ")} />}
               {memory.unitCount && <MemoryItem label="Einheiten" value={`${memory.unitCount} WE`} />}
-              {memory.sellingMode && <MemoryItem label="Verkauf" value={memory.sellingMode === "BOTH" ? "Beides" : memory.sellingMode === "BUNDLE" ? "Paket" : "Einzeln"} />}
+              {memory.sellingMode && <MemoryItem label="Verkauf" value={memory.sellingMode === "BOTH" ? "Einzeln & Paket" : memory.sellingMode === "BUNDLE" ? "Paket" : "Einzeln"} />}
               {memory.hasEnergyCert !== null && <MemoryItem label="Energieausweis" value={memory.hasEnergyCert ? "Ja" : "Nein"} />}
               {memory.energyCertType && <MemoryItem label="Ausweis-Typ" value={memory.energyCertType} />}
               {memory.energyClass && <MemoryItem label="Klasse" value={memory.energyClass} />}
@@ -924,7 +932,7 @@ function ExposePreview({
                 {passed ? "verified" : "warning"}
               </span>
               <span className={`text-sm font-black ${passed ? "text-green-700" : "text-amber-700"}`}>
-                {passed ? "Quality Rubric bestanden" : "Quality Rubric noch nicht bestanden"}
+                {passed ? "Qualitätsprüfung bestanden" : "Qualitätsprüfung noch nicht bestanden"}
               </span>
             </div>
             {failures.length > 0 && (
