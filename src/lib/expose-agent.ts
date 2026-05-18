@@ -205,6 +205,7 @@ export interface WorkingMemory {
   // Expose enrichment
   sellerContact: { name?: string; company?: string; phone?: string; email?: string } | null;
   roomProgram: { name: string; area: number }[];
+  draftRevisionCount: number;
 }
 
 export type FieldSource = "user" | "ocr" | "photo" | "inferred" | "default";
@@ -315,6 +316,7 @@ export const INITIAL_MEMORY: WorkingMemory = {
   barrierefrei: null,
   sellerContact: null,
   roomProgram: [],
+  draftRevisionCount: 0,
 };
 
 // ────────────────────────────────────────────────────────────────────────
@@ -475,7 +477,26 @@ export function nextQuestion(wm: WorkingMemory): QuestionResult {
     }
   }
 
-  return { action: best.field === "photos" ? "upload_photos" : "ask", field: best.field, prompt: best.prompt, priority: best.priority };
+  // Dynamic prompt for per-unit photos — ask for the FIRST unit missing photos
+  // Also set currentUnit so uploads get tagged with the right unit label
+  if (best.field === "unitPhotos" && wm.type === "MFH" && wm.units.length > 0) {
+    const missingUnit = wm.units.find(u => !wm.uploads.some(p => p.kind === "PHOTO" && p.unitLabel === u.label));
+    if (missingUnit) {
+      wm.currentUnit = missingUnit.label;
+      best.prompt = `Haben Sie Innenfotos für ${missingUnit.label} (${missingUnit.livingArea || "?"}m², ${missingUnit.rooms || "?"}Zi)? Laden Sie sie jetzt hoch — nutzen Sie den 📷-Button. Die Fotos werden ${missingUnit.label} zugeordnet.`;
+    }
+  }
+
+  // Dynamic prompt for per-unit floor plans — ask for the FIRST unit missing a plan
+  if (best.field === "unitFloorPlans" && wm.type === "MFH" && wm.units.length > 0) {
+    const missingUnit = wm.units.find(u => !wm.uploads.some(p => p.kind === "FLOORPLAN" && p.unitLabel === u.label));
+    if (missingUnit) {
+      wm.currentUnit = missingUnit.label;
+      best.prompt = `Haben Sie einen Grundriss für ${missingUnit.label}? Nutzen Sie den 📐-Button.`;
+    }
+  }
+
+  return { action: best.field === "photos" || best.field === "unitPhotos" ? "upload_photos" : "ask", field: best.field, prompt: best.prompt, priority: best.priority };
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -554,12 +575,67 @@ function summarizeProperty(m: WorkingMemory): string {
   }
   if (m.priceBand) lines.push(`Preisband: ${m.priceBand.low.toLocaleString("de")}–${m.priceBand.high.toLocaleString("de")} € (${m.priceBand.confidence})`);
   if (m.askingPrice) lines.push(`Wunschpreis: ${m.askingPrice.toLocaleString("de")} €`);
-  // Photo descriptions from AI analysis — feeds into draft generation
-  const photoDescs = m.uploads
-    .filter(u => u.kind === "PHOTO" && u.classification?.description)
-    .map(u => `${u.classification!.caption || "Foto"}: ${u.classification!.description}`)
-    .slice(0, 6);
-  if (photoDescs.length) lines.push(`\nFoto-Beschreibungen:\n${photoDescs.join("\n")}`);
+  // Photo classifications — feeds into draft generation with room-level detail
+  const classifiedPhotos = m.uploads
+    .filter(u => u.kind === "PHOTO" && u.classification && u.classification.qualityScore >= 40)
+    .slice(0, 12);
+  if (classifiedPhotos.length) {
+    const photoLines = classifiedPhotos.map(u => {
+      const c = u.classification!;
+      const parts = [c.caption || c.roomType];
+      if (c.description) parts.push(c.description);
+      if (c.features?.length) parts.push(`Erkannte Merkmale: ${c.features.join(", ")}`);
+      if (c.lighting) parts.push(`Licht: ${c.lighting}`);
+      if (c.estimatedArea) parts.push(`~${c.estimatedArea} m²`);
+      if (c.isRendering) parts.push("[Rendering/Visualisierung]");
+      return `- ${parts.join(" — ")}`;
+    });
+    lines.push(`\nFOTO-ERKENNTNISSE (aus KI-Analyse — diese Fakten sind belegt):\n${photoLines.join("\n")}`);
+  }
+  return lines.join("\n");
+}
+
+// Photo quality coaching: grouped improvement advice after batch analysis
+export function buildPhotoQualityCoaching(uploads: PhotoUpload[]): string | null {
+  const photos = uploads.filter(u => u.kind === "PHOTO" && u.classification);
+  if (photos.length === 0) return null;
+
+  const avgScore = photos.reduce((s, p) => s + p.classification!.qualityScore, 0) / photos.length;
+  if (avgScore >= 65) return null;
+
+  // Group quality flags across all photos
+  const flagCounts: Record<string, string[]> = {};
+  for (const p of photos) {
+    for (const flag of p.classification!.qualityFlags) {
+      if (!flagCounts[flag]) flagCounts[flag] = [];
+      flagCounts[flag].push(p.classification!.caption || p.classification!.roomType);
+    }
+  }
+
+  const tips: string[] = [];
+  const flagTips: Record<string, string> = {
+    dark: "Fotografieren Sie bei Tageslicht mit offenen Vorhängen und eingeschalteten Lampen.",
+    blur: "Halten Sie die Kamera ruhig oder nutzen Sie ein Stativ. Tippen Sie zum Fokussieren auf den Bildschirm.",
+    cluttered: "Räumen Sie persönliche Gegenstände weg — leere Flächen wirken professioneller.",
+    tilted: "Halten Sie die Kamera gerade. Aktivieren Sie die Gitter-Anzeige in der Kamera-App.",
+    perspective_distortion: "Fotografieren Sie mit dem normalen Objektiv (1x), nicht Weitwinkel (0.5x).",
+    overexposed: "Vermeiden Sie direktes Gegenlicht. Fotografieren Sie nicht bei Sonnenschein durchs Fenster.",
+    low_resolution: "Verwenden Sie die volle Auflösung Ihrer Kamera.",
+  };
+
+  for (const [flag, rooms] of Object.entries(flagCounts)) {
+    if (rooms.length >= 2 && flagTips[flag]) {
+      tips.push(`**${rooms.length} von ${photos.length} Fotos** (${rooms.slice(0, 3).join(", ")}): ${flagTips[flag]}`);
+    }
+  }
+
+  if (tips.length === 0) return null;
+
+  const lines = [`Die Fotoqualität liegt bei durchschnittlich ${Math.round(avgScore)}/100. Folgende Verbesserungen erhöhen die Anfragequote:`];
+  lines.push(...tips);
+  if (avgScore < 45) {
+    lines.push("\nMöchten Sie die Fotos ersetzen? Bessere Fotos erhöhen die Anfragequote deutlich.");
+  }
   return lines.join("\n");
 }
 
@@ -1222,6 +1298,55 @@ async function tool_listingDraft(m: WorkingMemory) {
   return { ok: true, draft, costCents: totalCost };
 }
 
+// Self-healing: revise a draft to fix specific rubric failures without seller involvement
+async function reviseDraft(
+  currentDraft: DraftResult,
+  rubric: RubricResult,
+  m: WorkingMemory,
+): Promise<{ ok: boolean; draft?: DraftResult; costCents: number }> {
+  const fixInstructions: string[] = [];
+  if (!rubric.details.wordCount.ok) {
+    const w = rubric.details.wordCount.words || 0;
+    const p = rubric.details.wordCount.paragraphs || 0;
+    if (w < 230) fixInstructions.push(`Text hat nur ${w} Wörter — erweitere auf mindestens 300 Wörter mit konkreten Details aus den Quelldaten.`);
+    else if (w > 600) fixInstructions.push(`Text hat ${w} Wörter — kürze auf maximal 500 Wörter, entferne Wiederholungen.`);
+    if (p < 2 || p > 4) fixInstructions.push(`Text hat ${p} Absätze — strukturiere in genau 3 Absätze (getrennt durch \\n\\n).`);
+  }
+  if (!rubric.details.noHallucination.ok && rubric.details.noHallucination.flagged?.length) {
+    fixInstructions.push(`ENTFERNE diese unbelegten Behauptungen: ${rubric.details.noHallucination.flagged.join("; ")}. Ersetze durch belegbare Fakten aus den Quelldaten.`);
+  }
+  if (!rubric.details.noSuperlatives.ok && rubric.details.noSuperlatives.found?.length) {
+    fixInstructions.push(`ERSETZE diese verbotenen Superlative: ${rubric.details.noSuperlatives.found.join(", ")}. Verwende stattdessen konkrete Fakten.`);
+  }
+  if (fixInstructions.length === 0) return { ok: false, costCents: 0 };
+
+  const ctx = summarizeProperty(m);
+  const result = await callLlm({
+    model: DRAFT_MODEL,
+    messages: [
+      { role: "system", content: `Du bist ein Immobilientext-Editor. Überarbeite den gegebenen Exposé-Text und behebe NUR die genannten Probleme. Behalte Stil und Struktur bei. Antwort als JSON: { "descriptionLong": string }\n\nQUELLDATEN:\n${ctx}` },
+      { role: "user", content: `AKTUELLER TEXT:\n${currentDraft.descriptionLong}\n\nPROBLEME ZU BEHEBEN:\n${fixInstructions.join("\n")}` },
+    ],
+    responseFormat: { type: "json_object" },
+    temperature: 0.4,
+    maxTokens: 2000,
+  });
+  let parsed: Record<string, unknown> = {};
+  try { parsed = JSON.parse(result.message.content || "{}"); } catch { return { ok: false, costCents: result.usage.costCents }; }
+  if (typeof parsed.descriptionLong !== "string") return { ok: false, costCents: result.usage.costCents };
+  return {
+    ok: true,
+    draft: { ...currentDraft, descriptionLong: parsed.descriptionLong as string },
+    costCents: result.usage.costCents,
+  };
+}
+
+function isAgentFixableRubric(rubric: RubricResult): boolean {
+  if (rubric.passed) return false;
+  const nonFixable = [!rubric.details.gegFields.ok, !rubric.details.photos.ok, !rubric.details.priceInBand.ok, rubric.details.floorPlans && !rubric.details.floorPlans.ok];
+  return !nonFixable.some(Boolean);
+}
+
 // ────────────────────────────────────────────────────────────────────────
 // Quality rubric (Lastenheft §4.5)
 // ────────────────────────────────────────────────────────────────────────
@@ -1312,16 +1437,20 @@ export async function runRubric(m: WorkingMemory): Promise<{ result: RubricResul
   if (photoCount < 1) failures.push("Mindestens 1 Foto erforderlich");
 
   // 5b. Per-unit floor plans (MFH bundles)
+  // Building-level floor plans count as fallback for all units
   let floorPlanDetails: { ok: boolean; missingUnits?: string[] } = { ok: true };
   if (m.type === "MFH" && m.units.length > 0) {
-    const missing: string[] = [];
-    for (const unit of m.units) {
-      const hasFloorPlan = m.uploads.some(u => u.kind === "FLOORPLAN" && u.unitLabel === unit.label);
-      if (!hasFloorPlan) missing.push(unit.label);
-    }
-    if (missing.length > 0) {
-      floorPlanDetails = { ok: false, missingUnits: missing };
-      failures.push(`Grundriss fehlt für: ${missing.join(", ")}`);
+    const hasBuildingFloorPlan = m.uploads.some(u => u.kind === "FLOORPLAN" && !u.unitLabel);
+    if (!hasBuildingFloorPlan) {
+      const missing: string[] = [];
+      for (const unit of m.units) {
+        const hasFloorPlan = m.uploads.some(u => u.kind === "FLOORPLAN" && u.unitLabel === unit.label);
+        if (!hasFloorPlan) missing.push(unit.label);
+      }
+      if (missing.length > 0) {
+        floorPlanDetails = { ok: false, missingUnits: missing };
+        failures.push(`Grundriss fehlt für: ${missing.join(", ")}`);
+      }
     }
   }
 
@@ -1345,7 +1474,15 @@ export async function runRubric(m: WorkingMemory): Promise<{ result: RubricResul
       passed: failures.length === 0,
       failures,
       details: {
-        gegFields: { ok: gegOk, reason: gegOk ? undefined : "fehlende Felder" },
+        gegFields: { ok: gegOk, reason: gegOk ? undefined : (() => {
+          const missing: string[] = [];
+          if (m.hasEnergyCert && !m.energyCertType) missing.push("energyCertType");
+          if (m.hasEnergyCert && !m.energyClass) missing.push("energyClass");
+          if (m.hasEnergyCert && m.energyValue == null) missing.push("energyValue");
+          if (m.hasEnergyCert && !m.energySource) missing.push("energySource");
+          if (m.hasEnergyCert && !m.energyValidUntil) missing.push("energyValidUntil");
+          return missing.length > 0 ? `fehlend: ${missing.join(", ")}` : "fehlende Felder";
+        })() },
         wordCount: wcDetails,
         noHallucination: hallDetails,
         noSuperlatives: supDetails,
@@ -1364,8 +1501,20 @@ export async function runRubric(m: WorkingMemory): Promise<{ result: RubricResul
 
 export function rubricFailureToQuestions(rubric: RubricResult, wm?: WorkingMemory): string[] {
   const questions: string[] = [];
-  if (!rubric.details.gegFields.ok) {
-    questions.push("Bitte ergänzen Sie die fehlenden Energieausweis-Daten: Energieklasse, Energieverbrauch (kWh/m²·a) und Primärenergieträger.");
+  if (!rubric.details.gegFields.ok && wm) {
+    const missingGeg: string[] = [];
+    if (wm.hasEnergyCert && !wm.energyCertType) missingGeg.push("Ausweistyp (Verbrauch oder Bedarf)");
+    if (wm.hasEnergyCert && !wm.energyClass) missingGeg.push("Energieklasse");
+    if (wm.hasEnergyCert && wm.energyValue == null) missingGeg.push("Energieverbrauch (kWh/m²·a)");
+    if (wm.hasEnergyCert && !wm.energySource) missingGeg.push("Primärenergieträger");
+    if (wm.hasEnergyCert && !wm.energyValidUntil) missingGeg.push("Gültigkeitsdatum des Energieausweises (z.B. 2034-05-15)");
+    if (missingGeg.length > 0) {
+      questions.push(`Bitte ergänzen Sie die fehlenden Energieausweis-Daten: ${missingGeg.join(", ")}.`);
+    } else {
+      questions.push("Bitte ergänzen Sie die fehlenden Energieausweis-Daten.");
+    }
+  } else if (!rubric.details.gegFields.ok) {
+    questions.push("Bitte ergänzen Sie die fehlenden Energieausweis-Daten.");
   }
   if (!rubric.details.wordCount.ok) {
     const w = rubric.details.wordCount.words || 0;
@@ -1702,6 +1851,24 @@ function applyPatch(memory: WorkingMemory, patch: MemoryPatch): WorkingMemory {
           next.uploads[i] = { ...next.uploads[i], classification: cls };
         }
       }
+      // Auto-merge photo-detected features into attributes
+      const featureToAttribute: Record<string, string> = {
+        einbaukueche: "Einbauküche", parkettboden: "Parkett", fussbodenheizung: "Fußbodenheizung",
+        balkon: "Balkon", garten: "Garten", terrasse: "Terrasse", kamin: "Kamin",
+        aufzug: "Aufzug", garage: "Garage", dachschraege: "Dachschräge", keller: "Keller",
+        smart_home: "Smart Home", photovoltaik: "Photovoltaik", pool: "Pool",
+        sauna: "Sauna", carport: "Carport",
+      };
+      const photoFeatures = new Set(next.attributes);
+      for (const cls of Object.values(map)) {
+        if (cls.qualityScore >= 50 && cls.features) {
+          for (const f of cls.features) {
+            const attr = featureToAttribute[f];
+            if (attr) photoFeatures.add(attr);
+          }
+        }
+      }
+      next.attributes = Array.from(photoFeatures);
     } else if (k === "uploads" && Array.isArray(v)) {
       next.uploads = [...next.uploads, ...(v as PhotoUpload[])];
     } else if (k === "attributes" && Array.isArray(v)) {
@@ -2450,9 +2617,12 @@ Erlaubte Felder (nur NEUE/GEÄNDERTE extrahieren):
 
 Antworte NUR mit JSON. Leeres Objekt {} wenn nichts Neues extrahiert wurde.`;
 
-  // Inject learned corrections from past mistakes
+  // Inject learned corrections filtered by relevance to current property type
   try {
+    const mfhFields = ["unitCount", "sellingMode", "units", "currentUnit"];
+    const isMfh = currentMemory.type === "MFH";
     const corrections = await prisma.extractionCorrection.findMany({
+      where: isMfh ? undefined : { field: { notIn: mfhFields } },
       orderBy: { usageCount: "desc" },
       take: 10,
     });
@@ -2956,6 +3126,70 @@ export async function runAgentTurn(
           },
         });
 
+        // Self-healing: if rubric failed on fixable issues, auto-revise up to 2 times
+        if (
+          workingMemory.lastRubric &&
+          !workingMemory.lastRubric.passed &&
+          isAgentFixableRubric(workingMemory.lastRubric) &&
+          workingMemory.draftRevisionCount < 2 &&
+          canAffordChainedTool(costCentsTotal, 12)
+        ) {
+          const revisionResult = await reviseDraft(workingMemory.draft!, workingMemory.lastRubric, workingMemory);
+          costCentsThisTurn += revisionResult.costCents;
+          costCentsTotal += revisionResult.costCents;
+          if (revisionResult.ok && revisionResult.draft) {
+            workingMemory = applyPatch(workingMemory, {
+              draft: revisionResult.draft,
+              draftRevisionCount: workingMemory.draftRevisionCount + 1,
+            } as MemoryPatch);
+
+            await prisma.agentStep.create({
+              data: {
+                agentRunId: ctx.agentRunId,
+                ordinal: await nextStepOrdinal(ctx.agentRunId),
+                toolName: "listing_revise",
+                input: asJson({ revision: workingMemory.draftRevisionCount, failures: workingMemory.lastRubric!.failures }),
+                output: asJson({ ok: true }),
+                latencyMs: 0,
+                ok: true,
+              },
+            });
+
+            // Re-run rubric on revised draft
+            if (canAffordChainedTool(costCentsTotal, 5)) {
+              const reReviewTr = await executeTool("listing_review", {}, workingMemory, turnNumber);
+              toolStepsExecuted++;
+              costCentsThisTurn += reReviewTr.costCents;
+              costCentsTotal += reReviewTr.costCents;
+              if (reReviewTr.memoryPatch) workingMemory = applyPatch(workingMemory, reReviewTr.memoryPatch);
+
+              await prisma.agentStep.create({
+                data: {
+                  agentRunId: ctx.agentRunId,
+                  ordinal: await nextStepOrdinal(ctx.agentRunId),
+                  toolName: "listing_review",
+                  input: asJson({ afterRevision: workingMemory.draftRevisionCount }),
+                  output: asJson({ ...reReviewTr.output, memoryPatch: reReviewTr.memoryPatch }),
+                  latencyMs: reReviewTr.latencyMs,
+                  ok: reReviewTr.ok,
+                },
+              });
+
+              await prisma.conversationTurn.create({
+                data: {
+                  conversationId: ctx.conversationId,
+                  role: "TOOL",
+                  content: "listing_review",
+                  toolName: "listing_review",
+                  toolInput: asJson({ afterRevision: workingMemory.draftRevisionCount }),
+                  toolOutput: asJson({ ...reReviewTr.output, memoryPatch: reReviewTr.memoryPatch }),
+                  latencyMs: reReviewTr.latencyMs,
+                },
+              });
+            }
+          }
+        }
+
         const reviewResult = chainedReviewMessage(workingMemory.lastRubric!, workingMemory.draft!, workingMemory);
         agentMessage = reviewResult.message;
         break; // exit iter loop — deterministic message set
@@ -3037,9 +3271,12 @@ export async function runAgentTurn(
 
   // Mechanical pipeline: when all required fields + photos are present but no
   // price band yet, chain pricing → draft → review without waiting for the LLM.
+  // MFH: wait until units are fully captured before triggering pricing.
+  const mfhUnitsComplete = workingMemory.type !== "MFH" || (workingMemory.unitCount != null && workingMemory.units.length >= workingMemory.unitCount && workingMemory.sellingMode != null);
   if (
     !finished &&
     isReadyForDraft(workingMemory) &&
+    mfhUnitsComplete &&
     workingMemory.uploads.filter(u => u.kind === "PHOTO").length >= 1 &&
     !workingMemory.priceBand &&
     canAffordChainedTool(costCentsTotal, 15)

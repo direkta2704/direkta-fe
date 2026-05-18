@@ -7,7 +7,7 @@ import { randomUUID } from "crypto";
 import sharp from "sharp";
 import { isS3Enabled, uploadToS3 } from "@/lib/s3";
 import { detectImageRotation } from "@/lib/image-rotation";
-import { executeTool, rebuildMemory, MAX_COST_CENTS } from "@/lib/expose-agent";
+import { executeTool, rebuildMemory, MAX_COST_CENTS, buildPhotoQualityCoaching } from "@/lib/expose-agent";
 import type { PhotoUpload } from "@/lib/expose-agent";
 import type { Prisma } from "@prisma/client";
 
@@ -224,13 +224,17 @@ export async function POST(
       const photoCount = newMem.uploads.filter((u) => u.kind === "PHOTO" && !u.unitLabel).length;
       const hasMinPhotos = photoCount >= 1;
       const allFieldsReady = !!(newMem.type && newMem.street && newMem.houseNumber && newMem.postcode && newMem.city && newMem.livingArea && newMem.condition);
+      // MFH: don't auto-continue until units are captured — per-unit photos/floor plans need to be collected first
+      const mfhNeedsUnits = newMem.type === "MFH" && (newMem.unitCount == null || newMem.units.length < (newMem.unitCount || 0));
+      const photoCoaching = buildPhotoQualityCoaching(newMem.uploads);
       return NextResponse.json({
         ok: true,
         upload,
         memory: newMem,
-        autoContinue: hasMinPhotos && allFieldsReady,
+        autoContinue: hasMinPhotos && allFieldsReady && !mfhNeedsUnits,
         photoCount,
         rotationCorrected,
+        photoCoaching,
       });
     }
 

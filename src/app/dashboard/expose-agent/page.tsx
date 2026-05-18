@@ -233,6 +233,9 @@ export default function ExposeAgentPage() {
           ? `__MEDIA__${key}__${kind}__${msg}`
           : msg;
         setTurns((prev) => [...prev, { role: "SYSTEM", content }]);
+        if (data?.photoCoaching) {
+          setTurns((prev) => [...prev, { role: "AGENT", content: data.photoCoaching }]);
+        }
         if (kind === "FLOORPLAN") {
           setTimeout(() => sendText("Grundriss hochgeladen."), 800);
         } else if (kind === "ENERGY_PDF") {
