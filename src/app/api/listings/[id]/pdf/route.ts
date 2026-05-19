@@ -166,15 +166,19 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
         <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"><\/script>
         <script>
           var map=L.map('map',{zoomControl:false,attributionControl:false}).setView([${lat},${lng}],15);
-          L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+          var tileLayer=L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
           L.marker([${lat},${lng}]).addTo(map);
+          var tilesLoaded=false;
+          tileLayer.on('load',function(){tilesLoaded=true;document.title='TILES_OK';});
+          setTimeout(function(){if(!tilesLoaded)document.title='TILES_OK';},8000);
         <\/script></body></html>`;
         const mapBrowser = await puppeteer.launch({ headless: true, args: ["--no-sandbox", "--disable-setuid-sandbox"] });
         try {
           const mapPage = await mapBrowser.newPage();
           await mapPage.setViewport({ width: 800, height: 400 });
-          await mapPage.setContent(mapHtml, { waitUntil: "networkidle0", timeout: 20000 });
-          await new Promise(r => setTimeout(r, 1000));
+          await mapPage.setContent(mapHtml, { waitUntil: "networkidle0", timeout: 25000 });
+          await mapPage.waitForFunction(() => document.title === "TILES_OK", { timeout: 12000 }).catch(() => {});
+          await new Promise(r => setTimeout(r, 500));
           const screenshot = await mapPage.screenshot({ type: "png" });
           mapImageBase64 = `data:image/png;base64,${Buffer.from(screenshot).toString("base64")}`;
         } finally {
@@ -353,7 +357,17 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       exposeHeadline: listing.exposeHeadline || undefined,
       exposeSubheadline: listing.exposeSubheadline || undefined,
       units: unitData,
-      specifications: p.specifications && typeof p.specifications === "object" && !Array.isArray(p.specifications) ? (p.specifications as Record<string, string>) : undefined,
+      specifications: p.specifications && typeof p.specifications === "object" && !Array.isArray(p.specifications) ? (() => {
+        const flat: Record<string, string> = {};
+        for (const [cat, val] of Object.entries(p.specifications as Record<string, unknown>)) {
+          if (typeof val === "string") { flat[cat] = val; }
+          else if (val && typeof val === "object") {
+            const entries = Object.entries(val as Record<string, string>);
+            flat[cat] = entries.map(([k, v]) => typeof v === "string" ? (k === "Typ" || k === "Art" ? v : `${k}: ${v}`) : String(v)).join(", ");
+          }
+        }
+        return Object.keys(flat).length > 0 ? flat : undefined;
+      })() : undefined,
       buildingDescription: listing.buildingDescription || undefined,
       listingSlug: listing.slug || undefined,
       extras: Array.isArray(p.extras) ? (p.extras as { name: string; quantity: number; pricePerUnit: number; description?: string; optional?: boolean; minQuantity?: number; area?: number; subtype?: string }[]) : undefined,

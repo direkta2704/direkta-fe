@@ -45,7 +45,7 @@ export default function ExposeAgentPage() {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [memory, setMemory] = useState<WorkingMemory | null>(null);
   const [costCents, setCostCents] = useState(0);
-  const [maxCostCents, setMaxCostCents] = useState(200);
+  const [maxCostCents, setMaxCostCents] = useState(500);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [starting, setStarting] = useState(false);
@@ -89,7 +89,7 @@ export default function ExposeAgentPage() {
         setTurns(detail.turns || []);
         setMemory(detail.memory);
         setCostCents(detail.costCents || 0);
-        setMaxCostCents(detail.maxCostCents || 200);
+        setMaxCostCents(detail.maxCostCents || 500);
       } catch {
         // ignore — fall through to start screen
       } finally {
@@ -121,7 +121,7 @@ export default function ExposeAgentPage() {
       setTurns(data.turns);
       setMemory(data.memory);
       setCostCents(data.costCents || 0);
-      setMaxCostCents(data.maxCostCents || 200);
+      setMaxCostCents(data.maxCostCents || 500);
     } catch (err) {
       alert(err instanceof Error ? err.message : "Fehler beim Starten");
     }

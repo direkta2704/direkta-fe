@@ -17,7 +17,7 @@ function asJson<T>(v: T): Prisma.InputJsonValue {
 // ────────────────────────────────────────────────────────────────────────
 
 export const MAX_TURNS = 60;
-export const MAX_COST_CENTS = 200;           // ≈ €2 per run
+export const MAX_COST_CENTS = 500;           // ≈ €5 per run
 export const MAX_TOOL_ITERATIONS_PER_TURN = 6;
 const MAX_ADDRESS_VALIDATION_ATTEMPTS = 3;
 
@@ -445,7 +445,7 @@ export function nextQuestion(wm: WorkingMemory): QuestionResult {
     if (spec.isFilled(wm)) continue;
     if (wm.costCompressed && spec.optional) continue;
     if (spec.optional && wm.skippedFields.includes(spec.field)) continue;
-    if ((wm.fieldAskCount[spec.field] || 0) >= 3) continue;
+    if ((wm.fieldAskCount[spec.field] || 0) >= 2) continue;
     const priority = (spec.blocksPricing ? 4 : 0) + (spec.blocksPublish ? 2 : 0) + spec.infoValue;
     candidates.push({ field: spec.field, group: spec.group, prompt: spec.prompt, priority, tiebreaker: i });
   }
@@ -2681,6 +2681,19 @@ export async function runAgentTurn(
   const turnNumber = history.filter(m => m.role === "user").length;
   let abortedReason: AgentTurnResult["abortedReason"];
 
+  // If handoff was already committed, don't process further turns
+  if (workingMemory.handoffReady) {
+    return {
+      agentMessage: "Ihr Inserat wurde bereits erstellt. Sie finden es auf der Inserat-Seite.",
+      memory: workingMemory,
+      toolStepsExecuted: 0,
+      costCentsThisTurn: 0,
+      costCentsTotal,
+      finished: true,
+      abortedReason: undefined,
+    };
+  }
+
   // EXTRACT FIRST: Run extraction BEFORE the LLM so the orchestrator sees updated memory.
   // This prevents the #1 cause of loops: LLM re-asking for data the user just provided.
   if (userMessage && costCentsTotal < MAX_COST_CENTS) {
@@ -2727,7 +2740,7 @@ export async function runAgentTurn(
   // Mechanical skip: if user says "nein/skip/weiter" and the current nextQuestion
   // recommends an optional field, add it to skippedFields so the agent moves on.
   if (userMessage) {
-    const skipPhrases = /\bnein\b|^nein danke|^skip|^überspringen|^weiter$|^egal$|^keine ahnung|^weiß ich nicht|^nicht vorhanden|^kein\b|^hab ich nicht|^nein,?\s/i;
+    const skipPhrases = /\bnein\b|^nein danke|^skip|^überspringen|^weiter$|^egal$|^keine ahnung|^weiß ich nicht|^nicht vorhanden|^kein\b|^hab ich nicht|^nein,?\s|^no\b|^none$|^nothing|^i don'?t|^don'?t have|^not available|^no \w+$|^keine? \w+$/i;
     if (skipPhrases.test(userMessage.trim())) {
       const preNq = nextQuestion(workingMemory);
       if (preNq.action === "ask" && preNq.field) {
@@ -2781,7 +2794,7 @@ export async function runAgentTurn(
   }
 
   // Cost-compression hysteresis: one-way latch, stays on once triggered
-  if (costCentsTotal > 140 && !workingMemory.costCompressed) {
+  if (costCentsTotal > 350 && !workingMemory.costCompressed) {
     workingMemory = { ...workingMemory, costCompressed: true };
     await prisma.conversationTurn.create({
       data: {
@@ -2798,12 +2811,13 @@ export async function runAgentTurn(
   // directly. Don't let the LLM choose between re-drafting and committing.
   if (
     userMessage &&
+    !workingMemory.handoffReady &&
     workingMemory.lastRubric?.passed &&
     workingMemory.draft &&
     isReadyForHandoff(workingMemory)
   ) {
     const msg = userMessage.trim().toLowerCase();
-    const confirmPhrases = /\bja\b|erstellen|veröffentlichen|fertig|weiter|machen|los|bestätig/i;
+    const confirmPhrases = /\bja\b|\byes\b|erstellen|veröffentlichen|fertig|weiter|machen|los|bestätig|proceed|confirm|ok\b|okay/i;
     if (confirmPhrases.test(msg)) {
       const handoffTr = await executeTool("handoff_commit", {}, workingMemory, turnNumber);
       toolStepsExecuted++;
@@ -2994,8 +3008,10 @@ export async function runAgentTurn(
   for (let iter = 0; iter < MAX_TOOL_ITERATIONS_PER_TURN; iter++) {
     // Cost-cap pre-check
     if (costCentsTotal >= MAX_COST_CENTS) {
+      if (!workingMemory.costCompressed) {
+        workingMemory = { ...workingMemory, costCompressed: true };
+      }
       abortedReason = "cost_cap";
-      agentMessage = "Es tut mir leid — die Kostenobergrenze für dieses Gespräch wurde erreicht. Bitte starten Sie ein neues Gespräch oder nutzen Sie das Formular.";
       break;
     }
 
@@ -3207,7 +3223,10 @@ export async function runAgentTurn(
   }
 
   if (!agentMessage && !finished) {
-    if (!abortedReason) {
+    if (abortedReason === "cost_cap") {
+      const nq = nextQuestion(workingMemory);
+      agentMessage = nq.prompt || "Bitte fahren Sie fort — was möchten Sie als Nächstes angeben?";
+    } else if (!abortedReason) {
       abortedReason = "max_iterations";
       agentMessage = "Einen Moment bitte — ich versuche es erneut.";
     }

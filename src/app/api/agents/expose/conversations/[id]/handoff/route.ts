@@ -3,9 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { getRequiredUser } from "@/lib/session";
 import { rebuildMemory, isReadyForDraft } from "@/lib/expose-agent";
 import { calculatePricing } from "@/lib/pricing";
-import { generateExposePdf } from "@/lib/expose-pdf";
-import { isS3Enabled, uploadToS3, getFromS3 } from "@/lib/s3";
-import { writeFile, mkdir, readFile } from "fs/promises";
+import { isS3Enabled, uploadToS3 } from "@/lib/s3";
+import { writeFile, mkdir } from "fs/promises";
 import path from "path";
 import { randomUUID } from "crypto";
 
@@ -17,6 +16,7 @@ export async function POST(
 ) {
   try {
     const user = await getRequiredUser();
+    const fullUser = await prisma.user.findUnique({ where: { id: user.id }, select: { name: true, email: true, phone: true } });
     const { id } = await params;
     void req;
 
@@ -115,6 +115,11 @@ export async function POST(
         });
       }
     }
+    // sellerContact: use agent-collected contact, fall back to user profile (matches manual flow)
+    const sellerContact = memory.sellerContact && (memory.sellerContact.name || memory.sellerContact.email)
+      ? memory.sellerContact
+      : { name: fullUser?.name || "", email: fullUser?.email || "", phone: fullUser?.phone || "", company: "" };
+
     if (memory.type === "MFH" && (memory.sellingMode || memory.units.length > 0)) {
 
       // Create child unit properties
@@ -155,16 +160,11 @@ export async function POST(
           });
         }
 
-        // Assign unit-specific uploads, falling back to building-level photos
-        let uploadsForUnit = memory.uploads.filter(
+        // Assign unit-specific uploads only — building exterior photos are pulled
+        // in at PDF generation time from the parent property, not duplicated here.
+        const uploadsForUnit = memory.uploads.filter(
           (u) => (u.kind === "PHOTO" || u.kind === "FLOORPLAN") && u.unitLabel === unit.label
         );
-        if (uploadsForUnit.filter(u => u.kind === "PHOTO").length === 0) {
-          const buildingPhotos = memory.uploads.filter(
-            (u) => u.kind === "PHOTO" && !u.unitLabel
-          );
-          uploadsForUnit = [...uploadsForUnit, ...buildingPhotos];
-        }
         for (let i = 0; i < uploadsForUnit.length; i++) {
           const u = uploadsForUnit[i];
           await prisma.mediaAsset.create({
@@ -202,7 +202,7 @@ export async function POST(
           const closingParagraph = buildingParagraphs.length >= 3 ? buildingParagraphs[2] : "";
           const unitDescription = [unitIntro, locationParagraph, closingParagraph].filter(Boolean).join("\n\n");
 
-          await prisma.listing.create({
+          const unitListing = await prisma.listing.create({
             data: {
               propertyId: unitProp.id,
               slug: unitSlug,
@@ -210,8 +210,59 @@ export async function POST(
               descriptionLong: unitDescription,
               askingPrice: unit.askingPrice ?? null,
               status: "REVIEW",
+              locationDescription: memory.draft!.locationDescription || null,
+              buildingDescription: memory.draft!.buildingDescription || null,
+              highlights: memory.draft!.highlights && memory.draft!.highlights.length > 0 ? memory.draft!.highlights : undefined,
+              exposeHeadline: memory.draft!.exposeHeadline || null,
+              exposeSubheadline: memory.draft!.exposeSubheadline || null,
+              sellerContact,
             },
           });
+
+          // Price recommendation for each unit (matches manual flow)
+          if (unit.askingPrice || memory.priceBand) {
+            try {
+              const unitPricing = calculatePricing({
+                type: "ETW",
+                city: memory.city!,
+                postcode: memory.postcode!,
+                livingArea: unit.livingArea || memory.livingArea!,
+                plotArea: null,
+                yearBuilt: memory.yearBuilt,
+                rooms: unit.rooms,
+                bathrooms: unit.bathrooms,
+                floor: unit.floor,
+                condition: memory.condition!,
+                attributes: unit.features.length > 0 ? unit.features : memory.attributes.length > 0 ? memory.attributes : null,
+                energyCert: memory.energyClass ? { energyClass: memory.energyClass, energyValue: memory.energyValue || 0 } : null,
+              });
+              await prisma.priceRecommendation.create({
+                data: {
+                  listingId: unitListing.id,
+                  low: unitPricing.low,
+                  median: unitPricing.median,
+                  high: unitPricing.high,
+                  strategyQuick: unitPricing.strategyQuick,
+                  strategyReal: unitPricing.strategyReal,
+                  strategyMax: unitPricing.strategyMax,
+                  confidence: unitPricing.confidence,
+                  comparables: {
+                    create: unitPricing.comparables.map((c) => ({
+                      source: c.source,
+                      type: c.type as "ETW" | "EFH" | "MFH" | "DHH" | "RH" | "GRUNDSTUECK",
+                      livingArea: c.livingArea,
+                      pricePerSqm: c.pricePerSqm,
+                      distanceMeters: c.distanceMeters,
+                      ageDays: c.ageDays,
+                      similarityScore: c.similarityScore,
+                    })),
+                  },
+                },
+              });
+            } catch (e) {
+              console.warn("Unit pricing failed:", e);
+            }
+          }
         }
       }
     }
@@ -229,9 +280,14 @@ export async function POST(
       });
     }
 
-    // Attach uploaded media to the property (with classification metadata)
-    for (let i = 0; i < memory.uploads.length; i++) {
-      const u = memory.uploads[i];
+    // Attach building-level media to the building property.
+    // Unit-specific uploads (with unitLabel) are attached to their unit properties above.
+    const isMfh = memory.type === "MFH" && memory.units.length > 0;
+    const buildingUploads = isMfh
+      ? memory.uploads.filter(u => !u.unitLabel)
+      : memory.uploads;
+    for (let i = 0; i < buildingUploads.length; i++) {
+      const u = buildingUploads[i];
       await prisma.mediaAsset.create({
         data: {
           propertyId: property.id,
@@ -264,7 +320,7 @@ export async function POST(
         highlights: memory.draft.highlights && memory.draft.highlights.length > 0 ? memory.draft.highlights : undefined,
         exposeHeadline: memory.draft.exposeHeadline || null,
         exposeSubheadline: memory.draft.exposeSubheadline || null,
-        sellerContact: memory.sellerContact || undefined,
+        sellerContact,
       },
     });
 
@@ -310,130 +366,44 @@ export async function POST(
     }
 
     // Generate the designed Exposé PDF (F-M5-09)
+    // Delegate to the same on-demand PDF route logic that handles all listing
+    // types — it loads all photos with classification, does cover selection,
+    // geocoding, map rendering, unit assembly, spec flattening, etc.
     try {
-      const PROPERTY_TYPE_DE: Record<string, string> = {
-        ETW: "Eigentumswohnung", EFH: "Einfamilienhaus", MFH: "Mehrfamilienhaus",
-        DHH: "Doppelhaushälfte", RH: "Reihenhaus", GRUNDSTUECK: "Grundstück",
-      };
-      const CONDITION_DE: Record<string, string> = {
-        ERSTBEZUG: "Erstbezug", NEUBAU: "Neubau", GEPFLEGT: "Gepflegt",
-        RENOVIERUNGS_BEDUERFTIG: "Renovierungsbedürftig",
-        SANIERUNGS_BEDUERFTIG: "Sanierungsbedürftig", ROHBAU: "Rohbau", KERNSANIERT: "Kernsaniert",
-      };
-
-      // Load up to 6 photo bytes for the PDF
-      const photoBytes: { bytes: Uint8Array; mimeType: string }[] = [];
-      for (const u of memory.uploads.filter((u) => u.kind === "PHOTO")) {
-        try {
-          if (u.storageKey.startsWith("/uploads/")) {
-            const local = path.join(process.cwd(), "public", u.storageKey.replace(/^\/+/, ""));
-            const buf = await readFile(local);
-            photoBytes.push({ bytes: new Uint8Array(buf), mimeType: u.mimeType });
-          } else {
-            const key = u.storageKey.replace(/^https?:\/\/[^/]+\//, "").replace(/^\/+/, "");
-            const obj = await getFromS3(key);
-            if (obj) {
-              const reader = obj.body.getReader();
-              const chunks: Uint8Array[] = [];
-              while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-                if (value) chunks.push(value);
-              }
-              const total = chunks.reduce((n, c) => n + c.length, 0);
-              const merged = new Uint8Array(total);
-              let off = 0;
-              for (const c of chunks) { merged.set(c, off); off += c.length; }
-              photoBytes.push({ bytes: merged, mimeType: u.mimeType });
-            }
-          }
-        } catch (e) {
-          console.error("Failed to load photo for PDF:", u.fileName, e);
-        }
-      }
-
-      // Load floor plans for PDF
-      const floorPlanBytes: { bytes: Uint8Array; mimeType: string }[] = [];
-      for (const u of memory.uploads.filter((u) => u.kind === "FLOORPLAN")) {
-        try {
-          if (u.storageKey.startsWith("/uploads/")) {
-            const local = path.join(process.cwd(), "public", u.storageKey.replace(/^\/+/, ""));
-            const buf = await readFile(local);
-            floorPlanBytes.push({ bytes: new Uint8Array(buf), mimeType: u.mimeType });
-          } else {
-            const key = u.storageKey.replace(/^https?:\/\/[^/]+\//, "").replace(/^\/+/, "");
-            const obj = await getFromS3(key);
-            if (obj) {
-              const reader = obj.body.getReader();
-              const chunks: Uint8Array[] = [];
-              while (true) { const { done, value } = await reader.read(); if (done) break; if (value) chunks.push(value); }
-              const total = chunks.reduce((n, c) => n + c.length, 0);
-              const merged = new Uint8Array(total);
-              let off = 0;
-              for (const c of chunks) { merged.set(c, off); off += c.length; }
-              floorPlanBytes.push({ bytes: merged, mimeType: u.mimeType });
-            }
-          }
-        } catch (e) {
-          console.error("Failed to load floor plan for PDF:", u.fileName, e);
-        }
-      }
-
-      const pdfBuffer = await generateExposePdf({
-        titleShort: memory.draft.titleShort,
-        descriptionLong: memory.draft.descriptionLong,
-        address: `${memory.street} ${memory.houseNumber}, ${memory.postcode}`,
-        city: memory.city!,
-        propertyType: PROPERTY_TYPE_DE[memory.type!] || memory.type!,
-        livingArea: memory.livingArea!,
-        rooms: memory.rooms,
-        yearBuilt: memory.yearBuilt,
-        condition: CONDITION_DE[memory.condition!] || memory.condition!,
-        askingPrice: memory.askingPrice,
-        priceBand: memory.priceBand
-          ? { low: memory.priceBand.low, median: memory.priceBand.median, high: memory.priceBand.high, confidence: memory.priceBand.confidence }
-          : null,
-        energy: memory.energyClass
-          ? {
-              class: memory.energyClass,
-              value: memory.energyValue || 0,
-              source: memory.energySource || "—",
-              type: memory.energyCertType || "VERBRAUCH",
-              validUntil: memory.energyValidUntil || "—",
-            }
-          : null,
-        attributes: memory.attributes,
-        photos: photoBytes,
-        floorPlans: floorPlanBytes,
-        generatedAt: new Date().toLocaleDateString("de-DE"),
+      const baseUrl = process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3001";
+      const pdfRes = await fetch(`${baseUrl}/api/listings/${listing.id}/pdf`, {
+        headers: { cookie: req.headers.get("cookie") || "" },
       });
+      if (pdfRes.ok) {
+        const pdfBuffer = Buffer.from(await pdfRes.arrayBuffer());
+        const fileName = `expose-${randomUUID()}.pdf`;
+        let storageKey: string;
+        if (isS3Enabled()) {
+          const s3Key = `properties/${property.id}/${fileName}`;
+          storageKey = await uploadToS3(s3Key, pdfBuffer, "application/pdf");
+        } else {
+          const dir = path.join(process.cwd(), "public", "uploads", property.id);
+          await mkdir(dir, { recursive: true });
+          await writeFile(path.join(dir, fileName), pdfBuffer);
+          storageKey = `/uploads/${property.id}/${fileName}`;
+        }
 
-      const fileName = `expose-${randomUUID()}.pdf`;
-      let storageKey: string;
-      if (isS3Enabled()) {
-        const s3Key = `properties/${property.id}/${fileName}`;
-        storageKey = await uploadToS3(s3Key, pdfBuffer, "application/pdf");
+        await prisma.mediaAsset.create({
+          data: {
+            propertyId: property.id,
+            listingId: listing.id,
+            kind: "DOCUMENT",
+            storageKey,
+            fileName: `Exposé-${memory.city}-${memory.draft.titleShort.slice(0, 30)}.pdf`,
+            mimeType: "application/pdf",
+            sizeBytes: pdfBuffer.length,
+          },
+        });
       } else {
-        const dir = path.join(process.cwd(), "public", "uploads", property.id);
-        await mkdir(dir, { recursive: true });
-        await writeFile(path.join(dir, fileName), pdfBuffer);
-        storageKey = `/uploads/${property.id}/${fileName}`;
+        console.error("PDF generation via listing route failed:", pdfRes.status, await pdfRes.text().catch(() => ""));
       }
-
-      await prisma.mediaAsset.create({
-        data: {
-          propertyId: property.id,
-          listingId: listing.id,
-          kind: "DOCUMENT",
-          storageKey,
-          fileName: `Exposé-${memory.city}-${memory.draft.titleShort.slice(0, 30)}.pdf`,
-          mimeType: "application/pdf",
-          sizeBytes: pdfBuffer.length,
-        },
-      });
     } catch (e) {
       console.error("Exposé PDF generation failed:", e);
-      // PDF is SHOULD priority — don't block handoff if it fails
     }
 
     await prisma.conversation.update({

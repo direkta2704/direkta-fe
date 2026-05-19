@@ -1,110 +1,356 @@
-========================================
+================================================================================
+AGENT CONVERSATION FLOW — MFH (Mehrfamilienhaus)
+================================================================================
+
+This is the ideal conversation flow for the expose agent to collect all data
+needed to produce a bundle PDF + individual apartment PDFs matching the manual
+flow output. The agent should follow this exact sequence.
+
+Seller can provide data in bulk or one question at a time — the agent adapts.
+But it must NOT skip to pricing/draft until ALL phases are complete.
+
+────────────────────────────────────────────────────────────────────────────────
+PHASE 1 — GEBÄUDE VERSTEHEN (Building basics)
+────────────────────────────────────────────────────────────────────────────────
+
+Q1:  "Was für eine Immobilie möchten Sie verkaufen?"
+A:   Mehrfamilienhaus
+
+Q2:  "In welcher Straße liegt die Immobilie?"
+A:   Marktstraße 12
+
+Q3:  "Postleitzahl und Stadt?"
+A:   76571 Gaggenau
+     → Agent: address_validate (automatic)
+
+Q4:  "Wie groß ist die Gesamtwohnfläche in m²?"
+A:   237,86
+
+Q5:  "Wie groß ist das Grundstück in m²?"
+A:   450
+
+Q6:  "Wie viele Zimmer insgesamt?"
+A:   8
+
+Q7:  "Wie viele Badezimmer?"
+A:   3
+
+Q8:  "Baujahr?"
+A:   1999
+
+Q9:  "In welchem Zustand ist die Immobilie?"
+A:   Kernsaniert
+
+Q10: "Welche Ausstattung hat die Immobilie?"
+A:   Keller, Stellplatz, Garten, Fußbodenheizung, Smart Home
+
+Q11: "Welche Heizungsart?"
+A:   Fußbodenheizung (Gas-Zentralheizung)
+
+     (Optional details: Fenster, Bodenbelag, Keller — agent asks passively)
+
+────────────────────────────────────────────────────────────────────────────────
+PHASE 2 — ENERGIEAUSWEIS
+────────────────────────────────────────────────────────────────────────────────
+
+Q12: "Haben Sie einen Energieausweis?"
+A:   Ja
+
+     Option A: Upload energy PDF → agent extracts automatically via energy_extract
+     Option B: Manual entry:
+
+Q13: "Ausweistyp?"
+A:   Verbrauchsausweis
+
+Q14: "Energieklasse?"
+A:   B
+
+Q15: "Energieverbrauch in kWh/(m²·a)?"
+A:   75
+
+Q16: "Primärenergieträger?"
+A:   Gas
+
+Q17: "Bis wann ist der Energieausweis gültig? (Datum)"
+A:   2029-07-31
+
+────────────────────────────────────────────────────────────────────────────────
+PHASE 3 — GEBÄUDEFOTOS + GRUNDRISS
+────────────────────────────────────────────────────────────────────────────────
+
+Q18: "Jetzt brauche ich Fotos und Dokumente vom Gebäude.
+      Bitte laden Sie Außenfotos hoch — Fassade, Eingang, Garten, Straße, Tiefgarage.
+      Nutzen Sie den 📷-Button."
+A:   → Seller uploads 9 building exterior photos
+     → Agent: photo_analyse (automatic for each)
+     → Agent shows: "9 Fotos erhalten! ✓"
+
+Q19: "Haben Sie einen Grundriss? Nutzen Sie den 📐-Button."
+A:   → Seller uploads building floor plan PDF
+     → Agent: "Grundriss erhalten! ✓"
+
+────────────────────────────────────────────────────────────────────────────────
+PHASE 4 — WOHNEINHEITEN (MFH only)
+────────────────────────────────────────────────────────────────────────────────
+
+Q20: "Wie viele Wohneinheiten hat das Gebäude?"
+A:   3
+
+Q21: "Starten wir mit Wohnung 1. Bitte Bezeichnung, Größe, Zimmer, Bäder, Stockwerk."
+A:   WE01, 94 m², 3 Zimmer, 1 Bad, 1. OG
+
+Q22: "✓ WE01 erfasst. Weiter mit Wohnung 2."
+A:   WE02, 95,36 m², 3 Zimmer, 1 Bad, EG
+
+Q23: "✓ WE02 erfasst. Weiter mit Wohnung 3."
+A:   WE03, 48,5 m², 2 Zimmer, 1 Bad, EG
+
+     (Agent also accepts bulk: "WE01 94m² 3Zi 1.OG, WE02 95m² 3Zi EG, WE03 48m² 2Zi EG")
+
+────────────────────────────────────────────────────────────────────────────────
+PHASE 5 — WOHNUNGSFOTOS (per-unit interior photos)
+────────────────────────────────────────────────────────────────────────────────
+
+Q24: "Haben Sie Innenfotos für WE01 (94 m², 3 Zi)?
+      Laden Sie sie jetzt hoch — die Fotos werden WE01 zugeordnet. 📷-Button."
+A:   → Seller uploads 4 interior photos for WE01
+     → Agent sets currentUnit = "WE01"
+     → Agent: photo_analyse (auto) → "4 Fotos für WE01 erhalten! ✓"
+
+Q25: "Haben Sie Innenfotos für WE02 (95 m², 3 Zi)?"
+A:   → Seller uploads 4 interior photos for WE02
+     → Agent sets currentUnit = "WE02"
+     → "4 Fotos für WE02 erhalten! ✓"
+
+Q26: "Haben Sie Innenfotos für WE03 (48,5 m², 2 Zi)?"
+A:   → Seller uploads 4 interior photos for WE03
+     → Agent sets currentUnit = "WE03"
+     → "4 Fotos für WE03 erhalten! ✓"
+
+     (If no per-unit photos: "nein" or "skip" → agent accepts and continues)
+
+────────────────────────────────────────────────────────────────────────────────
+PHASE 6 — VERKAUFSART + EXTRAS
+────────────────────────────────────────────────────────────────────────────────
+
+Q27: "Wie möchten Sie verkaufen? Einzeln, als Paket, oder beides?"
+A:   Beides (Paket und Einzelverkauf)
+
+Q28: "Hat die Immobilie Extras wie Stellplätze oder Kellerabteile?
+      Bitte pro Wohnung: Art, Anzahl, Preis pro Stück."
+A:   Pro Wohnung: 2 TG-Stellplätze à 15.000€, 1 Außenstellplatz à 7.000€
+
+     (Agent stores as per-unit extras on each unit)
+
+────────────────────────────────────────────────────────────────────────────────
+PHASE 7 — PREISE (per unit + bundle)
+────────────────────────────────────────────────────────────────────────────────
+
+     → Agent: pricing_recommend (automatic — requires type, address, area, condition + photos)
+
+Q29: Agent shows price recommendation for each unit:
+     "Die Preise für Ihre Immobilie wurden berechnet:
+      • WE01 (94 m²): empfohlen X €
+      • WE02 (95 m²): empfohlen Y €
+      • WE03 (48,5 m²): empfohlen Z €
+      • Paketpreis: empfohlen X+Y+Z €
+
+      Welche Preise möchten Sie verwenden?"
+A:   WE01: 375.958€, WE02: 381.437€, WE03: 194.000€ (Paket: 951.395€)
+
+────────────────────────────────────────────────────────────────────────────────
+PHASE 8 — KONTAKTDATEN
+────────────────────────────────────────────────────────────────────────────────
+
+Q30: "Welche Kontaktdaten sollen im Exposé stehen? (Name, Telefon, E-Mail)"
+A:   Florian Marthaler, +49 173 4383864, florian@baueno.de
+
+     (If skipped: falls back to user profile data)
+
+────────────────────────────────────────────────────────────────────────────────
+PHASE 9 — ENTWURF + QUALITÄTSPRÜFUNG (automatic)
+────────────────────────────────────────────────────────────────────────────────
+
+     → Agent: listing_draft (automatic)
+       Generates: titleShort, descriptionLong, locationDescription,
+       buildingDescription, highlights, exposeHeadline, exposeSubheadline
+
+     → Agent: listing_review (automatic)
+       Checks: GEG fields, word count, hallucination, superlatives, photos, price
+       If fails on fixable issues → auto-revise up to 2x (self-healing)
+       If fails on data issues → asks seller
+
+     → Agent shows draft to seller:
+       "Ihr Exposé-Entwurf ist fertig und hat die Qualitätsprüfung bestanden.
+        Überschrift: ...
+        Kurztitel: ...
+        Beschreibung: ...
+        Möchten Sie das Inserat erstellen?"
+
+Q31: "Möchten Sie das Inserat erstellen?"
+A:   Ja
+
+     → Agent: handoff_commit
+     → Creates: Property + Units + Listings + PriceRecommendations + MediaAssets
+     → Generates: Bundle PDF + individual apartment PDFs (via on-demand route)
+
+
+================================================================================
+RESULTING PDF STRUCTURE — BUNDLE (Marktstraße 12)
+================================================================================
+
+Page  | Section                 | Data source
+------|-------------------------|---------------------------------------------
+1     | Cover                   | type, condition, city, address, area, units,
+      |                         | yearBuilt, condition, bundlePrice, tagline
+2     | Auf einen Blick         | summary + highlights + key facts table
+3     | Objektbeschreibung      | descriptionLong (AI-generated)
+4     | Lage                    | locationDescription + map (geocoded)
+5     | Grundriss               | building floor plan (uploaded)
+6     | WE01 divider            | unit stats + extras table
+7-10  | WE01 interior photos    | 4 photos with caption, roomType, description
+11    | WE02 divider            | unit stats + extras table
+12-15 | WE02 interior photos    | 4 photos
+16    | WE03 divider            | unit stats + extras table
+17-20 | WE03 interior photos    | 4 photos
+21-29 | Building photos         | 9 exterior shots (facade, garden, garage etc.)
+30    | Energie                 | energy cert data (GEG)
+31    | Verkaufsoptionen        | unit price table + extras per unit
+32    | Kontakt                 | seller contact
+33    | Back cover              | tagline + QR link
+
+
+================================================================================
+RESULTING PDF STRUCTURE — INDIVIDUAL APARTMENT (e.g. WE01)
+================================================================================
+
+Page  | Section                 | Data source
+------|-------------------------|---------------------------------------------
+1     | Cover                   | ETW, condition, city, address, area, rooms,
+      |                         | floor, yearBuilt, condition, unitPrice
+2     | Auf einen Blick         | unit summary + highlights
+3     | Objektbeschreibung      | unit descriptionLong
+4     | Lage                    | locationDescription + map
+5     | Grundriss               | unit or building floor plan
+6-9   | Interior photos         | 4 unit-specific photos
+10-15 | Building exterior photos| pulled from parent property (exterior only)
+16    | Energie                 | energy cert
+17    | Verkaufsoptionen        | unit price + extras
+18    | Kontakt                 | seller contact
+19    | Back cover              | tagline + QR link
+
+
+================================================================================
 SCENARIO A — Whole MFH (Bundle + Individual)
-========================================
+================================================================================
 
 1. Property type?        → Mehrfamilienhaus
 2. Address?              → Marktstraße 12
 3. Postcode + city?      → 76571 Gaggenau
-4. Living area?          → 250
+4. Living area?          → 237.86
 5. Plot area?            → 450
 6. Rooms?                → 8
 7. Bathrooms?            → 3
 8. Year built?           → 1999
-9. Condition?            → Gepflegt
+9. Condition?            → Kernsaniert
 10. Features?            → Keller, Stellplatz, Garten, Fußbodenheizung, Smart Home
 11. Floors?              → 2
-12. Parking spaces?      → 16 (10 Außenstellplätze + 6 Tiefgaragenstellplätze)
-13. Bedrooms?            → 5
-14. Balconies/terraces?  → 0
-15. Basement rooms?      → 3
-16. Elevator?            → Nein
+12. Parking spaces?      → 2 Tiefgaragenstellplätze + 1 Außenstellplatz (per unit)
+13. Elevator?            → Nein
 
 --- Multi-unit questions (MFH only) ---
-17. How many units?      → 3
-18. Unit 1 details?      → Wohnung 1: 95 m², 3 Zimmer, 1 Bad, Obergeschoss
-19. Unit 2 details?      → Wohnung 2: 95 m², 3 Zimmer, 1 Bad, Erdgeschoss
-20. Unit 3 details?      → Wohnung 3: 55 m², 2 Zimmer, 1 Bad, Erdgeschoss
-21. Selling mode?        → Beides (Paket und Einzelverkauf)
+14. How many units?      → 3
+15. Unit 1 (WE01)?       → 94 m², 3 Zimmer, 1 Bad, 1. OG, Preis: 375.958 €
+16. Unit 2 (WE02)?       → 95,36 m², 3 Zimmer, 1 Bad, EG, Preis: 381.437 €
+17. Unit 3 (WE03)?       → 48,5 m², 2 Zimmer, 1 Bad, EG, Preis: 194.000 €
+18. Selling mode?        → Beides (Paket und Einzelverkauf)
+
+--- Extras per unit ---
+19. WE01 extras?         → 2 Tiefgaragenstellplätze à 15.000 €, 1 Außenstellplatz à 7.000 € (Summe: 37.000 €)
+20. WE02 extras?         → 2 Tiefgaragenstellplätze à 15.000 €, 1 Außenstellplatz à 7.000 € (Summe: 37.000 €)
+21. WE03 extras?         → 2 Tiefgaragenstellplätze à 15.000 €, 1 Außenstellplatz à 7.000 € (Summe: 37.000 €)
 
 --- Energy certificate ---
 22. Energy cert?         → Ja
 23. Cert type?           → Verbrauchsausweis
 24. Energy class?        → B
-25. Energy value?        → 70,2
+25. Energy value?        → 75 kWh/(m²·a)
 26. Energy source?       → Gas
+27. Valid until?         → 2029-07-31
 
 --- Media ---
-27. Photos?              → Upload 6+ images from public/uploads/cmojjb6jj0027j0iw38kjgdtl/
-28. Floor plan?          → Upload PDF from public/uploads/cmojjb6jj0027j0iw38kjgdtl/ (the .pdf file)
+28. Building photos?     → 9 exterior/building photos (facade, garden, entrance, street view, garage)
+29. WE01 photos?         → 4 interior photos (Schlafzimmer 18m², Bad 6m², Wohnzimmer 20m², Küche/Essen 25m²)
+30. WE02 photos?         → 4 interior photos (Schlafzimmer 12m², Bad 8m², Küche 12m², Wohnzimmer 25m²)
+31. WE03 photos?         → 4 interior photos (Schlafzimmer 12m², Bad 6m², Küche 8m², Wohnen/Essen 15m²)
+32. Floor plan?          → 1 building floor plan (PDF)
 
 --- Pricing ---
-29. Price?               → 525000
+33. Bundle price?        → 951.395 € (all 3 units)
+34. Seller contact?      → Florian Marthaler, +49 173 4383864, florian@baueno.de
 
 
 ========================================
-SCENARIO B1 — Apartment 1 (large, upper)
+SCENARIO B1 — Apartment 1 (WE01, 1. OG)
 ========================================
 
 1. Property type?        → Eigentumswohnung
 2. Address?              → Marktstraße 12
 3. Postcode + city?      → 76571 Gaggenau
-4. Living area?          → 95
+4. Living area?          → 94
 5. Rooms?                → 3
 6. Bathrooms?            → 1
 7. Year built?           → 1999
-8. Floor?                → 1
-9. Condition?            → Gepflegt
-10. Features?            → Keller, Stellplatz, Fußbodenheizung, Smart Home, Abstellkammer
-11. Bedrooms?            → 2
-12. Balconies/terraces?  → 0
-13. Basement rooms?      → 1
-14. Energy cert?         → Ja, Verbrauchsausweis, B, 70,2 kWh, Gas
-15. Photos?              → Upload 6+ images
-16. Floor plan?          → Upload if available
-17. Price?               → 195000
+8. Floor?                → 1 (1. OG)
+9. Condition?            → Kernsaniert
+10. Features?            → Keller, Stellplatz, Garten, Fußbodenheizung, Smart Home
+11. Energy cert?         → Ja, Verbrauchsausweis, B, 75 kWh, Gas, gültig bis 2029-07-31
+12. Interior photos?     → 4 (Schlafzimmer, Bad, Wohnzimmer, Küche/Essbereich)
+13. Building photos?     → 9 exterior (from parent property)
+14. Floor plan?          → 1 (from parent property)
+15. Price?               → 375.958 €
+16. Extras?              → 2 TG-Stellplätze à 15.000 €, 1 Außenstellplatz à 7.000 € (37.000 €)
 
 
 ========================================
-SCENARIO B2 — Apartment 2 (large, lower + garden)
+SCENARIO B2 — Apartment 2 (WE02, EG)
 ========================================
 
 1. Property type?        → Eigentumswohnung
 2. Address?              → Marktstraße 12
 3. Postcode + city?      → 76571 Gaggenau
-4. Living area?          → 95
+4. Living area?          → 95.36
 5. Rooms?                → 3
 6. Bathrooms?            → 1
 7. Year built?           → 1999
-8. Floor?                → 0
-9. Condition?            → Gepflegt
-10. Features?            → Keller, Stellplatz, Garten, Fußbodenheizung, Smart Home, Abstellkammer
-11. Bedrooms?            → 2
-12. Balconies/terraces?  → 0
-13. Basement rooms?      → 1
-14. Energy cert?         → Ja, Verbrauchsausweis, B, 70,2 kWh, Gas
-15. Photos?              → Upload 6+ images
-16. Floor plan?          → Upload if available
-17. Price?               → 199000
+8. Floor?                → 0 (EG)
+9. Condition?            → Kernsaniert
+10. Features?            → Keller, Stellplatz, Garten, Fußbodenheizung, Smart Home
+11. Energy cert?         → Ja, Verbrauchsausweis, B, 75 kWh, Gas, gültig bis 2029-07-31
+12. Interior photos?     → 4 (Schlafzimmer, Bad, Küche, Wohnbereich)
+13. Building photos?     → 9 exterior (from parent property)
+14. Floor plan?          → 1 (from parent property)
+15. Price?               → 381.437 €
+16. Extras?              → 2 TG-Stellplätze à 15.000 €, 1 Außenstellplatz à 7.000 € (37.000 €)
 
 
 ========================================
-SCENARIO B3 — Apartment 3 (small, lower + garden)
+SCENARIO B3 — Apartment 3 (WE03, EG)
 ========================================
 
 1. Property type?        → Eigentumswohnung
 2. Address?              → Marktstraße 12
 3. Postcode + city?      → 76571 Gaggenau
-4. Living area?          → 55
+4. Living area?          → 48.5
 5. Rooms?                → 2
 6. Bathrooms?            → 1
 7. Year built?           → 1999
-8. Floor?                → 0
-9. Condition?            → Gepflegt
+8. Floor?                → 0 (EG)
+9. Condition?            → Kernsaniert
 10. Features?            → Keller, Stellplatz, Garten, Fußbodenheizung, Smart Home
-11. Bedrooms?            → 1
-12. Balconies/terraces?  → 0
-13. Basement rooms?      → 1
-14. Energy cert?         → Ja, Verbrauchsausweis, B, 70,2 kWh, Gas
-15. Photos?              → Upload 6+ images
-16. Floor plan?          → Upload if available
-17. Price?               → 145000
+11. Energy cert?         → Ja, Verbrauchsausweis, B, 75 kWh, Gas, gültig bis 2029-07-31
+12. Interior photos?     → 4 (Schlafzimmer, Bad, Küche, Wohnen/Essen)
+13. Building photos?     → 9 exterior (from parent property)
+14. Floor plan?          → 1 (from parent property)
+15. Price?               → 194.000 €
+16. Extras?              → 2 TG-Stellplätze à 15.000 €, 1 Außenstellplatz à 7.000 € (37.000 €)

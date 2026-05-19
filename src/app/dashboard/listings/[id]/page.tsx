@@ -583,8 +583,8 @@ export default function ListingDetailPage() {
                         {pricePerSqm > 0 && (
                           <span className="text-xs text-slate-400">
                             Ihr Preis: <strong className="text-blueprint">{pricePerSqm.toLocaleString("de-DE")} €/m²</strong>
-                            {medianPerSqm > 0 && <> · Markt: <strong>{medianPerSqm.toLocaleString("de-DE")} €/m²</strong></>}
-                            {pctAbove !== 0 && <> · <span className={pctAbove > 0 ? "text-amber-600" : "text-emerald-600"}>{pctAbove > 0 ? "+" : ""}{pctAbove}%</span></>}
+                            {medianPerSqm > 0 && <span> · Markt: <strong>{medianPerSqm.toLocaleString("de-DE")} €/m²</strong></span>}
+                            {pctAbove !== 0 && <span> · <span className={pctAbove > 0 ? "text-amber-600" : "text-emerald-600"}>{pctAbove > 0 ? "+" : ""}{pctAbove}%</span></span>}
                           </span>
                         )}
                       </div>
