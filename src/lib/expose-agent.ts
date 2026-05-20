@@ -1840,7 +1840,7 @@ function projectBeliefToFlat(patch: MemoryPatch): MemoryPatch {
   return result;
 }
 
-function applyPatch(memory: WorkingMemory, patch: MemoryPatch): WorkingMemory {
+export function applyPatch(memory: WorkingMemory, patch: MemoryPatch): WorkingMemory {
   const next = { ...memory, uploads: [...memory.uploads] };
   for (const [k, v] of Object.entries(patch)) {
     if (v === undefined) continue;

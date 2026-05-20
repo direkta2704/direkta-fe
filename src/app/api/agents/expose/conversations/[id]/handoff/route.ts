@@ -142,7 +142,19 @@ export async function POST(
             floor: unit.floor,
             condition: memory.condition as "ERSTBEZUG" | "NEUBAU" | "GEPFLEGT" | "RENOVIERUNGS_BEDUERFTIG" | "SANIERUNGS_BEDUERFTIG" | "ROHBAU" | "KERNSANIERT",
             attributes: unit.features.length > 0 ? unit.features : memory.attributes,
-            extras: unit.extras && unit.extras.length > 0 ? JSON.parse(JSON.stringify(unit.extras)) : undefined,
+            extras: unit.extras && unit.extras.length > 0
+              ? JSON.parse(JSON.stringify(unit.extras))
+              : memory.extras && memory.extras.length > 0
+                ? JSON.parse(JSON.stringify(memory.extras))
+                : undefined,
+            specifications: memory.specifications && Object.keys(memory.specifications).length > 0
+              ? JSON.parse(JSON.stringify(memory.specifications))
+              : undefined,
+            roomProgram: memory.roomProgram && memory.roomProgram.length > 0
+              ? memory.roomProgram
+              : undefined,
+            yearBuilt: memory.yearBuilt,
+            plotArea: null,
           },
         });
 
@@ -208,7 +220,10 @@ export async function POST(
               slug: unitSlug,
               titleShort: unitTitle.length > 160 ? unitTitle.slice(0, 157) + "..." : unitTitle,
               descriptionLong: unitDescription,
-              askingPrice: unit.askingPrice ?? null,
+              askingPrice: unit.askingPrice
+                ?? (memory.askingPrice && memory.livingArea
+                  ? Math.round(memory.askingPrice * ((unit.livingArea || 0) / memory.livingArea))
+                  : null),
               status: "REVIEW",
               locationDescription: memory.draft!.locationDescription || null,
               buildingDescription: memory.draft!.buildingDescription || null,
