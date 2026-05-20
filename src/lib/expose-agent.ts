@@ -2326,7 +2326,10 @@ function normalizeUserPatch(data: Record<string, unknown>, turnNumber: number): 
     });
   }
   if (typeof data.hasEnergyCert === "boolean") patch.hasEnergyCert = data.hasEnergyCert;
-  if (typeof data.energyCertType === "string") patch.energyCertType = data.energyCertType.toUpperCase();
+  if (typeof data.energyCertType === "string") {
+    const raw = data.energyCertType.toUpperCase();
+    patch.energyCertType = raw.includes("BEDARF") ? "BEDARF" : "VERBRAUCH";
+  }
   if (typeof data.energyClass === "string") patch.energyClass = data.energyClass;
   if (typeof data.energyValue === "number") patch.energyValue = data.energyValue;
   if (typeof data.energySource === "string") patch.energySource = data.energySource;
@@ -2665,6 +2668,22 @@ Antworte NUR mit JSON. Leeres Objekt {} wenn nichts Neues extrahiert wurde.`;
 
     const raw = JSON.parse(llm.message.content || "{}");
     const patch = normalizeUserPatch(raw, turnNumber);
+
+    // Guard: don't overwrite existing energy fields from unrelated messages.
+    // The extraction LLM sometimes hallucinates energy values when the user
+    // talks about pricing or other topics. Only apply energy fields if the
+    // user's message actually mentions energy-related keywords.
+    const energyKeywords = /energieausweis|energieklasse|energieverbrauch|kwh|verbrauch|bedarf|primärenergie|energieträger|gültig bis|energy|certificate/i;
+    const mentionsEnergy = energyKeywords.test(userMessage);
+    if (!mentionsEnergy && currentMemory.hasEnergyCert !== null) {
+      delete (patch as Record<string, unknown>).hasEnergyCert;
+      delete (patch as Record<string, unknown>).energyCertType;
+      delete (patch as Record<string, unknown>).energyClass;
+      delete (patch as Record<string, unknown>).energyValue;
+      delete (patch as Record<string, unknown>).energySource;
+      delete (patch as Record<string, unknown>).energyValidUntil;
+    }
+
     const hasData = Object.keys(patch).length > 0;
     return { patch: hasData ? patch : null, costCents: llm.usage.costCents };
   } catch {
