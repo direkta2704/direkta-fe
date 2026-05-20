@@ -1888,8 +1888,22 @@ export function applyPatch(memory: WorkingMemory, patch: MemoryPatch): WorkingMe
       const merged = [...next.units];
       for (const u of incoming) {
         const idx = merged.findIndex(m => m.label === u.label);
-        if (idx >= 0) merged[idx] = u;
-        else merged.push(u);
+        if (idx >= 0) {
+          // Deep merge: preserve existing fields, only overwrite non-null incoming
+          merged[idx] = {
+            ...merged[idx],
+            ...(u.livingArea != null ? { livingArea: u.livingArea } : {}),
+            ...(u.rooms != null ? { rooms: u.rooms } : {}),
+            ...(u.bathrooms != null ? { bathrooms: u.bathrooms } : {}),
+            ...(u.floor != null ? { floor: u.floor } : {}),
+            ...(u.features?.length ? { features: u.features } : {}),
+            ...(u.askingPrice != null ? { askingPrice: u.askingPrice } : {}),
+            ...(u.extras?.length ? { extras: u.extras } : {}),
+            label: u.label,
+          };
+        } else {
+          merged.push(u);
+        }
       }
       next.units = merged;
     } else if (k === "beliefs" && v && typeof v === "object") {
@@ -2510,6 +2524,46 @@ async function extractMemoryFromMessage(
   agentRunId: string,
   turnNumber: number,
 ): Promise<{ patch: MemoryPatch | null; costCents: number }> {
+  // Fast-path: deterministic extraction for obvious single-field inputs.
+  // GPT-4o-mini is unreliable for short messages like "Mehrfamilienhaus" or "Beides".
+  const trimmed = userMessage.trim().toLowerCase().replace(/[.!?,;:]+$/, "");
+  const fastPatch: MemoryPatch = {};
+  let fastMatched = false;
+  if (!currentMemory.type) {
+    const typeMap: Record<string, string> = {
+      mehrfamilienhaus: "MFH", mfh: "MFH", "mehrfamilien-haus": "MFH", "apartment building": "MFH",
+      eigentumswohnung: "ETW", etw: "ETW", wohnung: "ETW", apartment: "ETW",
+      einfamilienhaus: "EFH", efh: "EFH", haus: "EFH", house: "EFH",
+      "doppelhaushälfte": "DHH", doppelhaus: "DHH", dhh: "DHH",
+      reihenhaus: "RH", rh: "RH",
+      "grundstück": "GRUNDSTUECK", grundstueck: "GRUNDSTUECK", land: "GRUNDSTUECK",
+    };
+    const matched = typeMap[trimmed];
+    if (matched) { fastPatch.type = matched; fastMatched = true; }
+  }
+  if (!currentMemory.sellingMode && currentMemory.type === "MFH") {
+    const modeMap: Record<string, WorkingMemory["sellingMode"]> = {
+      beides: "BOTH", both: "BOTH", "paket und einzelverkauf": "BOTH", "einzeln und paket": "BOTH",
+      "beides (paket und einzelverkauf)": "BOTH", "both (package and individual sale)": "BOTH",
+      einzeln: "INDIVIDUAL", individual: "INDIVIDUAL", "nur einzeln": "INDIVIDUAL",
+      paket: "BUNDLE", bundle: "BUNDLE", "nur paket": "BUNDLE", "als paket": "BUNDLE",
+    };
+    const matched = modeMap[trimmed];
+    if (matched) { fastPatch.sellingMode = matched; fastMatched = true; }
+  }
+  if (currentMemory.hasEnergyCert === null) {
+    if (/^(ja|yes|haben wir|vorhanden|ja habe ich)$/i.test(trimmed)) {
+      fastPatch.hasEnergyCert = true; fastMatched = true;
+    } else if (/^(nein|no|nicht vorhanden|kein energieausweis|nein habe ich nicht)$/i.test(trimmed)) {
+      fastPatch.hasEnergyCert = false; fastMatched = true;
+    }
+  }
+  // If fast-path matched AND the message is short (< 40 chars), return immediately.
+  // For longer messages, still run the LLM to extract additional data.
+  if (fastMatched && trimmed.length < 40) {
+    return { patch: Object.keys(fastPatch).length > 0 ? fastPatch : null, costCents: 0 };
+  }
+
   const known = Object.entries(currentMemory)
     .filter(([k, v]) => v !== null && k !== "uploads" && k !== "draft" && k !== "lastRubric" && k !== "assumptions" && k !== "priceBand")
     .map(([k, v]) => `${k}: ${v}`)
@@ -2685,10 +2739,14 @@ Antworte NUR mit JSON. Leeres Objekt {} wenn nichts Neues extrahiert wurde.`;
       delete (patch as Record<string, unknown>).energyValidUntil;
     }
 
-    const hasData = Object.keys(patch).length > 0;
-    return { patch: hasData ? patch : null, costCents: llm.usage.costCents };
+    // Merge fast-path results into LLM results (fast-path wins for fields it detected)
+    const merged = { ...patch, ...fastPatch };
+    const hasData = Object.keys(merged).length > 0;
+    return { patch: hasData ? merged : null, costCents: llm.usage.costCents };
   } catch {
-    return { patch: null, costCents: 0 };
+    // LLM call failed — still return fast-path results if any
+    const hasData = Object.keys(fastPatch).length > 0;
+    return { patch: hasData ? fastPatch : null, costCents: 0 };
   }
 }
 
