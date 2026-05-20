@@ -2260,7 +2260,7 @@ function normalizeUserPatch(data: Record<string, unknown>, turnNumber: number): 
     };
     patch.type = map[data.type.toLowerCase()] || data.type.toUpperCase();
   }
-  if (typeof data.street === "string") {
+  if (typeof data.street === "string" && data.street.trim()) {
     // Split "Marktstraße 12" into street + houseNumber if LLM merged them
     const streetMatch = data.street.match(/^(.+?)\s+(\d+\s*\w?)$/);
     if (streetMatch && !data.houseNumber) {
@@ -2270,8 +2270,8 @@ function normalizeUserPatch(data: Record<string, unknown>, turnNumber: number): 
       patch.street = data.street;
     }
   }
-  if (typeof data.houseNumber === "string" || typeof data.houseNumber === "number") patch.houseNumber = String(data.houseNumber);
-  if (typeof data.postcode === "string" || typeof data.postcode === "number") {
+  if ((typeof data.houseNumber === "string" && data.houseNumber.trim()) || typeof data.houseNumber === "number") patch.houseNumber = String(data.houseNumber);
+  if ((typeof data.postcode === "string" && data.postcode.trim()) || typeof data.postcode === "number") {
     // Split "76571 Gaggenau" into postcode + city if LLM merged them
     const pcStr = String(data.postcode);
     const pcMatch = pcStr.match(/^(\d{5})\s+(.+)$/);
@@ -2279,10 +2279,11 @@ function normalizeUserPatch(data: Record<string, unknown>, turnNumber: number): 
       patch.postcode = pcMatch[1];
       patch.city = pcMatch[2];
     } else {
-      patch.postcode = pcStr.replace(/\D/g, "").slice(0, 5);
+      const digits = pcStr.replace(/\D/g, "").slice(0, 5);
+      if (digits) patch.postcode = digits;
     }
   }
-  if (typeof data.city === "string") patch.city = data.city;
+  if (typeof data.city === "string" && data.city.trim()) patch.city = data.city;
   if (typeof data.livingArea === "number") patch.livingArea = data.livingArea;
   if (typeof data.plotArea === "number") patch.plotArea = data.plotArea;
   if (typeof data.yearBuilt === "number") {
@@ -2304,7 +2305,7 @@ function normalizeUserPatch(data: Record<string, unknown>, turnNumber: number): 
     if (fl !== undefined) patch.floor = fl;
     else { const n = parseInt(data.floor); if (!isNaN(n)) patch.floor = n; }
   }
-  if (typeof data.condition === "string") {
+  if (typeof data.condition === "string" && data.condition.trim()) {
     const map: Record<string, string> = {
       erstbezug: "ERSTBEZUG", neubau: "NEUBAU", gepflegt: "GEPFLEGT",
       "renovierungsbedürftig": "RENOVIERUNGS_BEDUERFTIG", renovierungsbeduerftig: "RENOVIERUNGS_BEDUERFTIG",
@@ -2330,10 +2331,10 @@ function normalizeUserPatch(data: Record<string, unknown>, turnNumber: number): 
     const raw = data.energyCertType.toUpperCase();
     patch.energyCertType = raw.includes("BEDARF") ? "BEDARF" : "VERBRAUCH";
   }
-  if (typeof data.energyClass === "string") patch.energyClass = data.energyClass;
-  if (typeof data.energyValue === "number") patch.energyValue = data.energyValue;
-  if (typeof data.energySource === "string") patch.energySource = data.energySource;
-  if (typeof data.energyValidUntil === "string") patch.energyValidUntil = data.energyValidUntil;
+  if (typeof data.energyClass === "string" && data.energyClass.trim()) patch.energyClass = data.energyClass;
+  if (typeof data.energyValue === "number" && data.energyValue > 0) patch.energyValue = data.energyValue;
+  if (typeof data.energySource === "string" && data.energySource.trim()) patch.energySource = data.energySource;
+  if (typeof data.energyValidUntil === "string" && data.energyValidUntil.trim()) patch.energyValidUntil = data.energyValidUntil;
   if (typeof data.askingPrice === "number") patch.askingPrice = data.askingPrice;
   else if (typeof data.askingPrice === "string") {
     const priceStr = data.askingPrice.toLowerCase().replace(/[€\s]/g, "");
@@ -2372,7 +2373,7 @@ function normalizeUserPatch(data: Record<string, unknown>, turnNumber: number): 
       })).filter(e => e.name) } : {}),
     }));
   }
-  if (typeof data.sellingMode === "string") {
+  if (typeof data.sellingMode === "string" && data.sellingMode.trim()) {
     const modeMap: Record<string, string> = {
       individual: "INDIVIDUAL", einzeln: "INDIVIDUAL",
       bundle: "BUNDLE", paket: "BUNDLE",
@@ -2885,15 +2886,15 @@ export async function runAgentTurn(
     }
 
     if (nq.action === "ask" && nq.prompt) {
-      parts.push(`[NÄCHSTE FRAGE] Stelle danach EINE Frage zum Thema: ${nq.prompt}`);
-      parts.push(`Formuliere die Frage natürlich und passend zum Gesprächsfluss — nicht robotisch.`);
+      parts.push(`[FRAGE] Du MUSST jetzt nach diesem Thema fragen: "${nq.prompt}"`);
+      parts.push(`Formuliere natürlich, aber das THEMA ist Pflicht. Keine andere Frage stellen.`);
     } else if (nq.action === "upload_photos") {
-      parts.push(`[NÄCHSTER SCHRITT] Bitte den Verkäufer um Foto-Upload. Weise auf den 📷-Button hin.`);
+      parts.push(`[FRAGE] Bitte den Verkäufer um Foto-Upload: "${nq.prompt}"`);
     } else if (nq.action === "wait_confirm") {
-      parts.push(`[NÄCHSTER SCHRITT] Warte auf Bestätigung des Verkäufers.`);
+      parts.push(`[AKTION] Warte auf Bestätigung des Verkäufers.`);
     }
 
-    parts.push(`REGELN: Stelle NUR EINE Frage. Maximal 2-3 Sätze insgesamt.`);
+    parts.push(`REGELN: Maximal 2-3 Sätze. Bestätigung + EINE Frage.`);
 
     if (parts.length > 0) {
       messages.push({ role: "system", content: parts.join("\n") });
