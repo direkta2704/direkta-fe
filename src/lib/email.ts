@@ -368,3 +368,48 @@ export async function sendSyndicationFailureEmail(to: string, data: {
     `),
   });
 }
+
+export async function sendCredentialExpiryEmail(to: string, data: {
+  portal: string;
+  action: "warning" | "expired";
+  daysLeft?: number;
+}) {
+  const portalName = data.portal === "IMMOSCOUT24" ? "ImmobilienScout24" : data.portal;
+
+  if (data.action === "warning") {
+    await transporter.sendMail({
+      from: FROM,
+      to,
+      subject: `Direkta: Portal-Zugangsdaten laufen in ${data.daysLeft} Tagen ab`,
+      html: layout(`
+        <h2 style="font-size:18px;font-weight:700;color:#0F1B2E;margin-bottom:4px;">🔑 Zugangsdaten bestätigen</h2>
+        <p style="color:#485468;font-size:13px;margin-bottom:16px;">
+          Ihre Zugangsdaten für <strong>${portalName}</strong> müssen aus Sicherheitsgründen alle 90 Tage bestätigt werden.
+          In <strong>${data.daysLeft} Tagen</strong> wird die Portal-Synchronisation automatisch pausiert.
+        </p>
+        <p style="color:#485468;font-size:13px;margin-bottom:16px;">
+          Bestätigen Sie jetzt Ihre Zugangsdaten, um eine Unterbrechung zu vermeiden.
+        </p>
+        ${btn(`${APP_URL}/dashboard/syndication`, "Zugangsdaten bestätigen")}
+      `),
+    });
+  } else {
+    await transporter.sendMail({
+      from: FROM,
+      to,
+      subject: `Direkta: Portal-Synchronisation pausiert — Zugangsdaten abgelaufen`,
+      html: layout(`
+        <h2 style="font-size:18px;font-weight:700;color:#0F1B2E;margin-bottom:4px;">⚠️ Synchronisation pausiert</h2>
+        <p style="color:#485468;font-size:13px;margin-bottom:16px;">
+          Ihre Zugangsdaten für <strong>${portalName}</strong> sind abgelaufen (90-Tage-Frist).
+          Die automatische Synchronisation Ihrer Inserate wurde <strong>pausiert</strong>.
+        </p>
+        <p style="color:#485468;font-size:13px;margin-bottom:16px;">
+          Ihre Inserate bleiben auf Direkta aktiv, werden aber nicht mehr automatisch mit ${portalName} synchronisiert,
+          bis Sie Ihre Zugangsdaten erneut bestätigen.
+        </p>
+        ${btn(`${APP_URL}/dashboard/syndication`, "Jetzt bestätigen")}
+      `),
+    });
+  }
+}

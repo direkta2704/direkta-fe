@@ -73,9 +73,10 @@ export async function POST(
       return NextResponse.json({ error: "Keine aktiven Zugangsdaten für dieses Portal" }, { status: 400 });
     }
 
-    // Check 90-day reconfirmation
-    const daysSinceConsent = (Date.now() - credential.consentedAt.getTime()) / (1000 * 60 * 60 * 24);
-    if (daysSinceConsent > 90 && !credential.reconfirmedAt) {
+    // F-M6-14: Check 90-day reconfirmation — use the most recent confirmation date
+    const lastConfirmed = credential.reconfirmedAt || credential.consentedAt;
+    const daysSinceConfirm = (Date.now() - lastConfirmed.getTime()) / (1000 * 60 * 60 * 24);
+    if (daysSinceConfirm > 90) {
       return NextResponse.json({ error: "Bitte bestätigen Sie Ihre Zugangsdaten erneut (90-Tage-Frist)" }, { status: 403 });
     }
 

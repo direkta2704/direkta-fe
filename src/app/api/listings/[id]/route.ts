@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getRequiredUser } from "@/lib/session";
+import { getDriver } from "@/lib/portal-driver";
+import { isCircuitOpen, recordSuccess, recordFailure } from "@/lib/circuit-breaker";
 
 export const dynamic = "force-dynamic";
 
@@ -120,16 +122,36 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         },
       });
 
-      // F-M6-05/06: Auto-sync IS24 on status change
+      // F-M6-05/06: Auto-sync portals on status change — execute inline, fallback to cron
       if (["PAUSED", "WITHDRAWN", "RESERVED", "CLOSED"].includes(body.status)) {
         const targets = await prisma.syndicationTarget.findMany({
           where: { listingId: id, status: "LIVE" },
         });
         for (const target of targets) {
           const kind = body.status === "PAUSED" ? "PAUSE" : "WITHDRAW";
-          await prisma.syndicationJob.create({
+          const job = await prisma.syndicationJob.create({
             data: { syndicationTargetId: target.id, kind: kind as "PAUSE" | "WITHDRAW", status: "QUEUED" },
           });
+
+          // Execute inline if circuit is healthy
+          if (target.externalListingId && !isCircuitOpen(target.portal)) {
+            try {
+              const driver = getDriver(target.portal);
+              await prisma.syndicationJob.update({ where: { id: job.id }, data: { status: "RUNNING", startedAt: new Date() } });
+              if (kind === "PAUSE") {
+                await driver.pause(target.externalListingId);
+              } else {
+                await driver.withdraw(target.externalListingId);
+              }
+              await prisma.syndicationJob.update({ where: { id: job.id }, data: { status: "SUCCESS", finishedAt: new Date() } });
+              recordSuccess(target.portal);
+            } catch (driverErr) {
+              console.error(`Inline ${kind} failed for ${target.portal}:`, driverErr);
+              await prisma.syndicationJob.update({ where: { id: job.id }, data: { status: "RETRYING", lastError: String(driverErr) } });
+              recordFailure(target.portal);
+            }
+          }
+
           await prisma.syndicationTarget.update({
             where: { id: target.id },
             data: { status: body.status === "PAUSED" ? "PAUSED" : "WITHDRAWN" },
@@ -203,15 +225,34 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       }
     }
 
-    // F-M6-05: Auto-update IS24 when listing content changes
+    // F-M6-05: Auto-update portals when listing content changes
     if ((body.askingPrice || body.descriptionLong || body.titleShort) && listing.status === "ACTIVE") {
       const liveTargets = await prisma.syndicationTarget.findMany({
         where: { listingId: id, status: "LIVE" },
       });
       for (const target of liveTargets) {
-        await prisma.syndicationJob.create({
+        const job = await prisma.syndicationJob.create({
           data: { syndicationTargetId: target.id, kind: "UPDATE", status: "QUEUED" },
         });
+
+        // Execute inline — cron picks up failures
+        if (target.externalListingId && !isCircuitOpen(target.portal)) {
+          try {
+            const driver = getDriver(target.portal);
+            await prisma.syndicationJob.update({ where: { id: job.id }, data: { status: "RUNNING", startedAt: new Date() } });
+            await driver.update(target.externalListingId, {
+              title: listing.titleShort || "",
+              description: listing.descriptionLong || "",
+              price: listing.askingPrice ? Number(listing.askingPrice) : 0,
+            });
+            await prisma.syndicationJob.update({ where: { id: job.id }, data: { status: "SUCCESS", finishedAt: new Date() } });
+            recordSuccess(target.portal);
+          } catch (driverErr) {
+            console.error(`Inline UPDATE failed for ${target.portal}:`, driverErr);
+            await prisma.syndicationJob.update({ where: { id: job.id }, data: { status: "RETRYING", lastError: String(driverErr) } });
+            recordFailure(target.portal);
+          }
+        }
       }
     }
 
