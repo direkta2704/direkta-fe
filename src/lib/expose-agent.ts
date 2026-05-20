@@ -2696,6 +2696,8 @@ export async function runAgentTurn(
 
   // EXTRACT FIRST: Run extraction BEFORE the LLM so the orchestrator sees updated memory.
   // This prevents the #1 cause of loops: LLM re-asking for data the user just provided.
+  const memoryBeforeExtraction = { ...workingMemory };
+  let justExtractedFields: string[] = [];
   if (userMessage && costCentsTotal < MAX_COST_CENTS) {
     const lastAgentMsg = [...history].reverse().find(m => m.role === "assistant")?.content || "";
     const ext = await extractMemoryFromMessage(lastAgentMsg, userMessage, workingMemory, ctx.agentRunId, turnNumber);
@@ -2734,6 +2736,45 @@ export async function runAgentTurn(
           latencyMs: 0,
         },
       });
+
+      // Compute what changed — used to build acknowledgment context for the LLM
+      const TRACKABLE_FIELDS: Record<string, string> = {
+        type: "Immobilientyp", street: "Straße", houseNumber: "Hausnummer",
+        postcode: "PLZ", city: "Stadt", livingArea: "Wohnfläche",
+        plotArea: "Grundstück", yearBuilt: "Baujahr", rooms: "Zimmer",
+        bathrooms: "Bäder", floor: "Etage", condition: "Zustand",
+        hasEnergyCert: "Energieausweis", energyCertType: "Ausweistyp",
+        energyClass: "Energieklasse", energyValue: "Energieverbrauch",
+        energySource: "Energieträger", energyValidUntil: "Gültig bis",
+        unitCount: "Wohneinheiten", sellingMode: "Verkaufsart",
+        barrierefrei: "Barrierefrei", askingPrice: "Angebotspreis",
+      };
+      const wmPre = memoryBeforeExtraction as unknown as Record<string, unknown>;
+      const wmPost = workingMemory as unknown as Record<string, unknown>;
+      for (const [field, label] of Object.entries(TRACKABLE_FIELDS)) {
+        const before = wmPre[field];
+        const after = wmPost[field];
+        if (after != null && JSON.stringify(before) !== JSON.stringify(after)) {
+          justExtractedFields.push(`${label}: ${after}`);
+        }
+      }
+      if (ext.patch.attributes && (ext.patch.attributes as string[]).length > 0) {
+        const newAttrs = (ext.patch.attributes as string[]).filter(a => !memoryBeforeExtraction.attributes.includes(a));
+        if (newAttrs.length) justExtractedFields.push(`Ausstattung: ${newAttrs.join(", ")}`);
+      }
+      if (ext.patch.units && (ext.patch.units as UnitData[]).length > 0) {
+        const newUnits = (ext.patch.units as UnitData[]).filter(u => !memoryBeforeExtraction.units.find(e => e.label === u.label));
+        if (newUnits.length) justExtractedFields.push(`Neue Einheiten: ${newUnits.map(u => `${u.label} (${u.livingArea}m²)`).join(", ")}`);
+      }
+      if (ext.patch.extras && (ext.patch.extras as PropertyExtra[]).length > 0) {
+        justExtractedFields.push(`Extras: ${(ext.patch.extras as PropertyExtra[]).map(e => `${e.quantity}× ${e.name}`).join(", ")}`);
+      }
+      if (ext.patch.specifications && Object.keys(ext.patch.specifications as object).length > 0) {
+        for (const [cat, entries] of Object.entries(ext.patch.specifications as Record<string, Record<string, string>>)) {
+          const vals = Object.values(entries).join(", ");
+          justExtractedFields.push(`${cat}: ${vals}`);
+        }
+      }
     }
   }
 
@@ -2762,7 +2803,33 @@ export async function runAgentTurn(
     }
   }
 
-  // Build messages with UPDATED memory (after extraction + skip detection)
+  // Implicit skip: if user provided data for DIFFERENT fields than what was asked,
+  // and the asked field is optional, treat it as skipped. This prevents the agent
+  // from repeating "What type of windows?" after the user clearly moved on to energy data.
+  if (justExtractedFields.length > 0 && userMessage) {
+    const preNq = nextQuestion(workingMemory);
+    if (preNq.action === "ask" && preNq.field) {
+      const spec = FIELD_PRIORITY.find(s => s.field === preNq.field);
+      if (spec && spec.optional && !spec.isFilled(workingMemory)) {
+        // User gave data but didn't answer THIS question — implicit skip
+        if (!workingMemory.skippedFields.includes(preNq.field)) {
+          const skipPatch: MemoryPatch = { skippedFields: [...workingMemory.skippedFields, preNq.field] };
+          workingMemory = applyPatch(workingMemory, skipPatch);
+          await prisma.conversationTurn.create({
+            data: {
+              conversationId: ctx.conversationId,
+              role: "SYSTEM",
+              content: `[implicit-skip:${preNq.field}]`,
+              toolName: "system",
+              toolOutput: asJson({ memoryPatch: skipPatch }),
+            },
+          });
+        }
+      }
+    }
+  }
+
+  // Build messages with UPDATED memory (after extraction + skip + implicit-skip)
   const nq = nextQuestion(workingMemory);
   const messages: ChatMsg[] = [
     { role: "system", content: ORCHESTRATOR_SYSTEM_PROMPT },
@@ -2772,20 +2839,40 @@ export async function runAgentTurn(
   if (userMessage !== null) {
     messages.push({ role: "user", content: userMessage });
   }
-  // Focus directive: tell the LLM exactly what to do next.
-  // When rubric failed, let the LLM handle the re-draft conversation naturally.
-  // Otherwise, inject a strict directive.
+  // Context-aware directive: acknowledge what the user just provided, then guide to next step.
+  // Old approach used [PFLICHT] to force exact questions — this made the agent ignore user input.
+  // New approach: tell the LLM what was extracted, let it acknowledge naturally, then ask next question.
   const rubricPending = workingMemory.lastRubric && !workingMemory.lastRubric.passed && workingMemory.draft;
   if (rubricPending) {
     // Don't override — let the LLM address the rubric failures naturally
-  } else if (nq.action === "ask" && nq.prompt) {
-    messages.push({ role: "system", content: `[PFLICHT] Stelle jetzt GENAU diese EINE Frage und KEINE andere: "${nq.prompt}"` });
-  } else if (nq.action === "upload_photos") {
-    messages.push({ role: "system", content: `[PFLICHT] Bitte den Verkäufer um Foto-Upload: "${nq.prompt}"` });
   } else if (nq.action === "trigger_pricing") {
-    messages.push({ role: "system", content: "[PFLICHT] Rufe JETZT pricing_recommend auf. Keine Frage stellen." });
+    messages.push({ role: "system", content: "[AKTION] Rufe JETZT pricing_recommend auf. Keine Frage stellen." });
   } else if (nq.action === "trigger_draft") {
-    messages.push({ role: "system", content: "[PFLICHT] Rufe JETZT listing_draft auf. Keine Frage stellen." });
+    messages.push({ role: "system", content: "[AKTION] Rufe JETZT listing_draft auf. Keine Frage stellen." });
+  } else {
+    // Build the acknowledge-then-guide directive
+    const parts: string[] = [];
+
+    if (justExtractedFields.length > 0) {
+      parts.push(`[ERFASST] Aus der letzten Antwort des Verkäufers wurden folgende Daten extrahiert:`);
+      parts.push(justExtractedFields.map(f => `  ✓ ${f}`).join("\n"));
+      parts.push(`→ Bestätige KURZ (1 Satz) was du verstanden hast. Zeige die erfassten Werte.`);
+    }
+
+    if (nq.action === "ask" && nq.prompt) {
+      parts.push(`[NÄCHSTE FRAGE] Stelle danach EINE Frage zum Thema: ${nq.prompt}`);
+      parts.push(`Formuliere die Frage natürlich und passend zum Gesprächsfluss — nicht robotisch.`);
+    } else if (nq.action === "upload_photos") {
+      parts.push(`[NÄCHSTER SCHRITT] Bitte den Verkäufer um Foto-Upload. Weise auf den 📷-Button hin.`);
+    } else if (nq.action === "wait_confirm") {
+      parts.push(`[NÄCHSTER SCHRITT] Warte auf Bestätigung des Verkäufers.`);
+    }
+
+    parts.push(`REGELN: Stelle NUR EINE Frage. Maximal 2-3 Sätze insgesamt.`);
+
+    if (parts.length > 0) {
+      messages.push({ role: "system", content: parts.join("\n") });
+    }
   }
 
   // Track how many times each field is asked — auto-skip after 3
