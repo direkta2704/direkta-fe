@@ -274,6 +274,21 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       }
     }
 
+    // Child units inherit the parent building's floor plan if they have none
+    if (floorPlans.length === 0 && p.parent) {
+      for (const m of p.parent.media) {
+        if (m.kind !== "FLOORPLAN") continue;
+        const data = await loadMediaBytes(m.storageKey, m.mimeType);
+        if (!data) continue;
+        if (data.mimeType === "application/pdf") {
+          const converted = await convertPdfToImage(data.bytes);
+          if (converted) floorPlans.push(converted);
+        } else {
+          floorPlans.push(data);
+        }
+      }
+    }
+
     // Load unit data for MFH bundle listings
     const isBundle = !p.parentId && p.units && p.units.length > 0;
     let unitData: { label: string; livingArea: number; rooms: number | null; bathrooms?: number; floor?: number; askingPrice?: number; titleShort?: string; roomProgram?: { name: string; area: number }[]; photos: ExposePhoto[]; floorPlans: ExposePhoto[]; extras?: { name: string; quantity: number; pricePerUnit: number; description?: string }[] }[] | undefined;
