@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getRequiredUser } from "@/lib/session";
-import { writeFile, mkdir } from "fs/promises";
+import { writeFile, mkdir, unlink } from "fs/promises";
 import path from "path";
 import { randomUUID } from "crypto";
 import sharp from "sharp";
-import { isS3Enabled, uploadToS3 } from "@/lib/s3";
+import { isS3Enabled, uploadToS3, deleteFromS3 } from "@/lib/s3";
 import { detectImageRotation } from "@/lib/image-rotation";
 import { executeTool, rebuildMemory, MAX_COST_CENTS, buildPhotoQualityCoaching } from "@/lib/expose-agent";
 import type { PhotoUpload } from "@/lib/expose-agent";
@@ -328,5 +328,104 @@ export async function POST(
   } catch (err) {
     console.error("Upload error:", err);
     return NextResponse.json({ error: "Upload fehlgeschlagen" }, { status: 500 });
+  }
+}
+
+// DELETE: remove an uploaded file from the conversation's working memory.
+// The storageKey is passed as a query param: ?storageKey=...
+// This creates a SYSTEM turn that patches the memory to remove the upload.
+export async function DELETE(
+  req: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  try {
+    const user = await getRequiredUser();
+    const { id } = await params;
+
+    const url = new URL(req.url);
+    const storageKey = url.searchParams.get("storageKey");
+    if (!storageKey) {
+      return NextResponse.json({ error: "storageKey fehlt" }, { status: 400 });
+    }
+
+    const conversation = await prisma.conversation.findFirst({
+      where: { id, userId: user.id, status: "ACTIVE" },
+      include: { turns: { orderBy: { createdAt: "asc" } } },
+    });
+    if (!conversation) {
+      return NextResponse.json({ error: "Konversation nicht gefunden" }, { status: 404 });
+    }
+
+    const memory = rebuildMemory(conversation.turns);
+    const uploadIndex = memory.uploads.findIndex((u) => u.storageKey === storageKey);
+    if (uploadIndex === -1) {
+      return NextResponse.json({ error: "Datei nicht gefunden" }, { status: 404 });
+    }
+
+    const removed = memory.uploads[uploadIndex];
+
+    // Delete from storage
+    try {
+      if (isS3Enabled() && !storageKey.startsWith("/uploads/")) {
+        const s3Key = storageKey.replace(/^https?:\/\/[^/]+\//, "").replace(/^\/+/, "");
+        await deleteFromS3(s3Key);
+      } else if (storageKey.startsWith("/uploads/")) {
+        const local = path.join(process.cwd(), "public", storageKey.replace(/^\/+/, ""));
+        await unlink(local).catch(() => {});
+      }
+    } catch {
+      // storage cleanup is best-effort
+    }
+
+    // Persist removal as a SYSTEM turn with a special __removeUpload patch
+    await prisma.conversationTurn.create({
+      data: {
+        conversationId: id,
+        role: "SYSTEM",
+        content: `[Remove] ${removed.kind}: ${removed.fileName}`,
+        toolName: "upload_remove",
+        toolOutput: asJson({
+          memoryPatch: { __removeUploadKey: storageKey },
+        }),
+      },
+    });
+
+    // If energy PDF was removed, clear energy fields
+    if (removed.kind === "ENERGY_PDF") {
+      await prisma.conversationTurn.create({
+        data: {
+          conversationId: id,
+          role: "SYSTEM",
+          content: "[Energy cert removed — fields cleared]",
+          toolName: "system",
+          toolOutput: asJson({
+            memoryPatch: {
+              hasEnergyCert: null,
+              energyCertType: null,
+              energyClass: null,
+              energyValue: null,
+              energySource: null,
+              energyValidUntil: null,
+            },
+          }),
+        },
+      });
+    }
+
+    // Rebuild memory with the removal applied
+    const refreshed = await prisma.conversation.findFirst({
+      where: { id },
+      include: { turns: { orderBy: { createdAt: "asc" } } },
+    });
+    const newMem = rebuildMemory(refreshed?.turns ?? []);
+
+    return NextResponse.json({
+      ok: true,
+      removed: { storageKey: removed.storageKey, kind: removed.kind, fileName: removed.fileName },
+      memory: newMem,
+    });
+  } catch (err) {
+    console.error("Upload delete error:", err);
+    return NextResponse.json({ error: "Löschen fehlgeschlagen" }, { status: 500 });
   }
 }

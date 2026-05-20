@@ -344,6 +344,21 @@ export default function ExposeAgentPage() {
     setLoading(false);
   }
 
+  async function deleteUpload(storageKey: string) {
+    if (!conversationId) return;
+    try {
+      const res = await fetch(
+        `/api/agents/expose/conversations/${conversationId}/upload?storageKey=${encodeURIComponent(storageKey)}`,
+        { method: "DELETE" },
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      if (data.memory) setMemory(data.memory);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Löschen fehlgeschlagen");
+    }
+  }
+
   function switchToForm() {
     if (memory) {
       try {
@@ -768,7 +783,21 @@ export default function ExposeAgentPage() {
               {memory.extras?.length > 0 && <MemoryItem label="Extras" value={memory.extras.map((e: { name: string; quantity: number }) => `${e.quantity}× ${e.name}`).join(", ")} />}
               {memory.unitCount && <MemoryItem label="Einheiten" value={`${memory.unitCount} WE`} />}
               {memory.sellingMode && <MemoryItem label="Verkauf" value={memory.sellingMode === "BOTH" ? "Einzeln & Paket" : memory.sellingMode === "BUNDLE" ? "Paket" : "Einzeln"} />}
-              {memory.hasEnergyCert !== null && <MemoryItem label="Energieausweis" value={memory.hasEnergyCert ? "Ja" : "Nein"} />}
+              {memory.hasEnergyCert !== null && (
+                <div className="flex items-center justify-between">
+                  <MemoryItem label="Energieausweis" value={memory.hasEnergyCert ? "Ja" : "Nein"} />
+                  {memory.hasEnergyCert && memory.uploads.some(u => u.kind === "ENERGY_PDF") && (
+                    <button
+                      onClick={() => {
+                        const pdf = memory.uploads.find(u => u.kind === "ENERGY_PDF");
+                        if (pdf) deleteUpload(pdf.storageKey);
+                      }}
+                      className="text-[9px] text-red-400 hover:text-red-600 cursor-pointer ml-1"
+                      title="Energieausweis entfernen und neu hochladen"
+                    >✕</button>
+                  )}
+                </div>
+              )}
               {memory.energyCertType && <MemoryItem label="Ausweis-Typ" value={memory.energyCertType} />}
               {memory.energyClass && <MemoryItem label="Klasse" value={memory.energyClass} />}
               {memory.energyValue && <MemoryItem label="Verbrauch" value={`${memory.energyValue} kWh`} />}
@@ -790,8 +819,13 @@ export default function ExposeAgentPage() {
               </div>
               <div className="grid grid-cols-3 gap-1">
                 {memory.uploads.filter((u) => u.kind === "PHOTO").slice(0, 12).map((u, j) => (
-                  <div key={j} className="aspect-square rounded overflow-hidden bg-slate-100">
+                  <div key={j} className="aspect-square rounded overflow-hidden bg-slate-100 relative group">
                     <img src={u.storageKey} alt="" className="w-full h-full object-cover" loading="lazy" />
+                    <button
+                      onClick={() => deleteUpload(u.storageKey)}
+                      className="absolute top-0 right-0 w-5 h-5 bg-red-500 text-white rounded-bl text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                      title="Foto entfernen"
+                    >×</button>
                   </div>
                 ))}
               </div>
@@ -809,11 +843,16 @@ export default function ExposeAgentPage() {
               </div>
               <div className="grid grid-cols-2 gap-1">
                 {memory.uploads.filter((u) => u.kind === "FLOORPLAN").map((u, j) => (
-                  <div key={j} className="aspect-[4/3] rounded overflow-hidden bg-slate-100 flex items-center justify-center">
+                  <div key={j} className="aspect-[4/3] rounded overflow-hidden bg-slate-100 flex items-center justify-center relative group">
                     {/\.(jpg|jpeg|png|webp)$/i.test(u.storageKey)
                       ? <img src={u.storageKey} alt="" className="w-full h-full object-cover" loading="lazy" />
                       : <span className="material-symbols-outlined text-2xl text-slate-300">floor</span>
                     }
+                    <button
+                      onClick={() => deleteUpload(u.storageKey)}
+                      className="absolute top-0 right-0 w-5 h-5 bg-red-500 text-white rounded-bl text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                      title="Grundriss entfernen"
+                    >×</button>
                   </div>
                 ))}
               </div>

@@ -1636,6 +1636,7 @@ export interface ToolExecutionResult {
 // updates existing uploads in place rather than appending.
 export type MemoryPatch = Partial<WorkingMemory> & {
   __uploadClassifications?: Record<number, PhotoClassification>;
+  __removeUploadKey?: string;
 };
 
 export async function executeTool(
@@ -1843,6 +1844,11 @@ function applyPatch(memory: WorkingMemory, patch: MemoryPatch): WorkingMemory {
   const next = { ...memory, uploads: [...memory.uploads] };
   for (const [k, v] of Object.entries(patch)) {
     if (v === undefined) continue;
+    if (k === "__removeUploadKey" && typeof v === "string") {
+      next.uploads = next.uploads.filter((u) => u.storageKey !== v);
+      if (next.uploads.filter(u => u.kind === "FLOORPLAN").length === 0) next.hasFloorPlan = false;
+      continue;
+    }
     if (k === "__uploadClassifications" && v && typeof v === "object") {
       const map = v as Record<number, PhotoClassification>;
       for (const [idxStr, cls] of Object.entries(map)) {
