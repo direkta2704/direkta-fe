@@ -560,7 +560,11 @@ function summarizeProperty(m: WorkingMemory): string {
   if (m.floor != null) lines.push(`Etage: ${m.floor}`);
   if (m.condition) lines.push(`Zustand: ${CONDITION_DE[m.condition] || m.condition}`);
   if (m.attributes.length) lines.push(`Ausstattung: ${m.attributes.join(", ")}`);
-  if (m.energyClass) lines.push(`Energieklasse: ${m.energyClass} (${m.energyValue} kWh, ${m.energySource})`);
+  if (m.energyClass) {
+    lines.push(`Energieklasse: ${m.energyClass} (${m.energyValue} kWh, ${m.energySource})`);
+  } else {
+    lines.push(`ENERGIEAUSWEIS: NICHT VORHANDEN — erwähne KEINE Energiewerte im Text! Kein "kWh", kein "Klasse", kein "Energieträger".`);
+  }
   if (m.roomProgram.length) lines.push(`Raumprogramm: ${m.roomProgram.map(r => `${r.name} ${r.area}m²`).join(", ")}`);
   if (m.barrierefrei != null) lines.push(`Barrierefrei: ${m.barrierefrei ? "Ja" : "Nein"}`);
   if (m.extras.length) lines.push(`Extras: ${m.extras.map(e => `${e.quantity}× ${e.name}${e.subtype ? ` (${e.subtype})` : ""}${e.area ? ` ${e.area}m²` : ""}${e.pricePerUnit ? ` ${e.pricePerUnit.toLocaleString("de")}€/Stk` : ""}${e.optional ? " [optional]" : ""}`).join(", ")}`);
@@ -2558,6 +2562,13 @@ async function extractMemoryFromMessage(
       fastPatch.hasEnergyCert = false; fastMatched = true;
     }
   }
+  if (currentMemory.barrierefrei === null) {
+    if (/^(ja|yes|fully|voll|barrierefrei|barrier.?free|without barriers|komplett|vollständig)$/i.test(trimmed)) {
+      fastPatch.barrierefrei = true; fastMatched = true;
+    } else if (/^(nein|no|nicht barrierefrei|not accessible|keine barrierefreiheit)$/i.test(trimmed)) {
+      fastPatch.barrierefrei = false; fastMatched = true;
+    }
+  }
   // If fast-path matched AND the message is short (< 40 chars), return immediately.
   // For longer messages, still run the LLM to extract additional data.
   if (fastMatched && trimmed.length < 40) {
@@ -2725,18 +2736,16 @@ Antworte NUR mit JSON. Leeres Objekt {} wenn nichts Neues extrahiert wurde.`;
     const patch = normalizeUserPatch(raw, turnNumber);
 
     // Guard: don't overwrite existing energy fields from unrelated messages.
-    // The extraction LLM sometimes hallucinates energy values when the user
-    // talks about pricing or other topics. Only apply energy fields if the
-    // user's message actually mentions energy-related keywords.
+    // Only strip energy fields when the extraction ALSO contains non-energy
+    // fields — meaning the user was talking about something else and the LLM
+    // hallucinated energy values. If the extraction ONLY has energy fields,
+    // the user was answering an energy question (e.g. "2029-07-31") — keep them.
     const energyKeywords = /energieausweis|energieklasse|energieverbrauch|kwh|verbrauch|bedarf|primärenergie|energieträger|gültig bis|energy|certificate/i;
     const mentionsEnergy = energyKeywords.test(userMessage);
-    if (!mentionsEnergy && currentMemory.hasEnergyCert !== null) {
-      delete (patch as Record<string, unknown>).hasEnergyCert;
-      delete (patch as Record<string, unknown>).energyCertType;
-      delete (patch as Record<string, unknown>).energyClass;
-      delete (patch as Record<string, unknown>).energyValue;
-      delete (patch as Record<string, unknown>).energySource;
-      delete (patch as Record<string, unknown>).energyValidUntil;
+    const energyFieldNames = ["hasEnergyCert", "energyCertType", "energyClass", "energyValue", "energySource", "energyValidUntil"];
+    const nonEnergyKeys = Object.keys(patch).filter(k => !energyFieldNames.includes(k) && k !== "beliefs");
+    if (!mentionsEnergy && currentMemory.hasEnergyCert !== null && nonEnergyKeys.length > 0) {
+      for (const f of energyFieldNames) delete (patch as Record<string, unknown>)[f];
     }
 
     // Merge fast-path results into LLM results (fast-path wins for fields it detected)

@@ -135,6 +135,7 @@ export default function ListingsPage() {
     fetch("/api/listings")
       .then((r) => r.json())
       .then((data) => setListings(Array.isArray(data) ? data : []))
+      .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
 
