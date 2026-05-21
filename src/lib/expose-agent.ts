@@ -187,6 +187,7 @@ export interface WorkingMemory {
   draft: DraftResult | null;
   lastRubric: RubricResult | null;
   assumptions: string[];
+  approvedClaims: string[];
   handoffReady: boolean;
   // Multi-unit support
   unitCount: number | null;
@@ -300,6 +301,7 @@ export const INITIAL_MEMORY: WorkingMemory = {
   draft: null,
   lastRubric: null,
   assumptions: [],
+  approvedClaims: [],
   handoffReady: false,
   unitCount: null,
   units: [],
@@ -1416,13 +1418,16 @@ export async function runRubric(m: WorkingMemory): Promise<{ result: RubricResul
     failures.push("Kein Entwurf vorhanden");
   }
 
-  // 3. Hallucination check (LLM judge)
+  // 3. Hallucination check (LLM judge) — skip claims the seller already approved
   let hallDetails: { ok: boolean; flagged?: string[] } = { ok: false };
   if (m.draft) {
     const h = await checkHallucination(m.draft, m);
     costCents += h.costCents;
-    hallDetails = { ok: h.ok, flagged: h.flagged };
-    if (!h.ok) failures.push(`Unbelegte Behauptungen: ${h.flagged.join("; ")}`);
+    const unapproved = h.flagged.filter(claim =>
+      !m.approvedClaims.some(approved => claim.includes(approved) || approved.includes(claim))
+    );
+    hallDetails = { ok: unapproved.length === 0, flagged: unapproved };
+    if (unapproved.length > 0) failures.push(`Unbelegte Behauptungen: ${unapproved.join("; ")}`);
   }
 
   // 4. No banned superlatives
@@ -1786,7 +1791,7 @@ interface PersistedTurn {
 }
 
 export function rebuildMemory(turns: PersistedTurn[]): WorkingMemory {
-  let memory: WorkingMemory = { ...INITIAL_MEMORY, attributes: [], uploads: [], assumptions: [], units: [] };
+  let memory: WorkingMemory = { ...INITIAL_MEMORY, attributes: [], uploads: [], assumptions: [], approvedClaims: [], units: [] };
   for (const turn of turns) {
     if (turn.toolOutput && typeof turn.toolOutput === "object") {
       const patch = (turn.toolOutput as { memoryPatch?: MemoryPatch }).memoryPatch;
@@ -1888,6 +1893,9 @@ export function applyPatch(memory: WorkingMemory, patch: MemoryPatch): WorkingMe
     } else if (k === "assumptions" && Array.isArray(v)) {
       const merged = new Set([...next.assumptions, ...(v as string[])]);
       next.assumptions = Array.from(merged);
+    } else if (k === "approvedClaims" && Array.isArray(v)) {
+      const merged = new Set([...next.approvedClaims, ...(v as string[])]);
+      next.approvedClaims = Array.from(merged);
     } else if (k === "units" && Array.isArray(v)) {
       const incoming = (v as UnitData[]).filter(u => u.label && u.label.trim());
       const merged = [...next.units];
@@ -2985,6 +2993,57 @@ export async function runAgentTurn(
         toolOutput: asJson({ memoryPatch: { costCompressed: true } }),
       },
     });
+  }
+
+  // Mechanical claim approval: when rubric has hallucination flags and seller says
+  // "yes/correct/keep/don't remove", approve all flagged claims so the rubric
+  // doesn't loop forever asking about the same claims.
+  if (
+    userMessage &&
+    workingMemory.lastRubric &&
+    !workingMemory.lastRubric.passed &&
+    workingMemory.lastRubric.details.noHallucination?.flagged?.length
+  ) {
+    const msg = userMessage.trim().toLowerCase();
+    const approvalPhrases = /\bja\b|\byes\b|\bcorrect\b|\bkorrekt\b|\bstimmt\b|\bbehalten\b|\bnicht entfernen\b|\bkeep\b|\bdon'?t remove\b|\brichtig\b|\bpasst\b|\berstellen\b|\bcreate\b|\binserat\b|\blisting\b|\bweiter\b|\bfortfahren\b|\bproceed\b|\bcontinue\b|\beverything.*(correct|right|ok)\b/i;
+    if (approvalPhrases.test(msg)) {
+      const flagged = workingMemory.lastRubric.details.noHallucination.flagged as string[];
+      const newApproved = flagged.filter(c => !workingMemory.approvedClaims.includes(c));
+      if (newApproved.length > 0) {
+        const approvalPatch: MemoryPatch = { approvedClaims: [...workingMemory.approvedClaims, ...newApproved] };
+        workingMemory = applyPatch(workingMemory, approvalPatch);
+        await prisma.conversationTurn.create({
+          data: {
+            conversationId: ctx.conversationId,
+            role: "SYSTEM",
+            content: `[claims-approved:${newApproved.length}]`,
+            toolName: "system",
+            toolOutput: asJson({ memoryPatch: approvalPatch }),
+          },
+        });
+
+        // Re-run rubric with approved claims — should now pass
+        if (workingMemory.draft) {
+          const recheck = await runRubric(workingMemory);
+          costCentsThisTurn += recheck.costCents;
+          costCentsTotal += recheck.costCents;
+          workingMemory = applyPatch(workingMemory, {
+            lastRubric: recheck.result,
+            handoffReady: recheck.result.passed,
+          });
+          await prisma.conversationTurn.create({
+            data: {
+              conversationId: ctx.conversationId,
+              role: "TOOL",
+              content: "listing_review (post-approval)",
+              toolName: "listing_review",
+              toolInput: asJson({ approvedClaims: newApproved.length }),
+              toolOutput: asJson({ ...recheck.result, memoryPatch: { lastRubric: recheck.result, handoffReady: recheck.result.passed } }),
+            },
+          });
+        }
+      }
+    }
   }
 
   // Mechanical handoff: when rubric passed and seller confirms, trigger handoff
