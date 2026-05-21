@@ -450,7 +450,9 @@ export function nextQuestion(wm: WorkingMemory): QuestionResult {
     if (spec.isFilled(wm)) continue;
     if (wm.costCompressed && spec.optional) continue;
     if (spec.optional && wm.skippedFields.includes(spec.field)) continue;
-    if ((wm.fieldAskCount[spec.field] || 0) >= 2) continue;
+    // Per-unit fields need more asks (one per unit); others max 2
+    const maxAsks = (spec.field === "unitPhotos" || spec.field === "unitFloorPlans") ? (wm.unitCount || 3) + 1 : 2;
+    if ((wm.fieldAskCount[spec.field] || 0) >= maxAsks) continue;
     const priority = (spec.blocksPricing ? 4 : 0) + (spec.blocksPublish ? 2 : 0) + spec.infoValue;
     candidates.push({ field: spec.field, group: spec.group, prompt: spec.prompt, priority, tiebreaker: i });
   }

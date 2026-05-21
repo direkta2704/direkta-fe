@@ -224,14 +224,18 @@ export async function POST(
       const photoCount = newMem.uploads.filter((u) => u.kind === "PHOTO" && !u.unitLabel).length;
       const hasMinPhotos = photoCount >= 1;
       const allFieldsReady = !!(newMem.type && newMem.street && newMem.houseNumber && newMem.postcode && newMem.city && newMem.livingArea && newMem.condition);
-      // MFH: don't auto-continue until units are captured — per-unit photos/floor plans need to be collected first
-      const mfhNeedsUnits = newMem.type === "MFH" && (newMem.unitCount == null || newMem.units.length < (newMem.unitCount || 0));
+      // MFH: don't auto-continue until units AND per-unit photos are captured
+      const mfhNeedsMore = newMem.type === "MFH" && (
+        newMem.unitCount == null ||
+        newMem.units.length < (newMem.unitCount || 0) ||
+        newMem.units.some(u => !newMem.uploads.some(p => p.kind === "PHOTO" && p.unitLabel === u.label))
+      );
       const photoCoaching = buildPhotoQualityCoaching(newMem.uploads);
       return NextResponse.json({
         ok: true,
         upload,
         memory: newMem,
-        autoContinue: hasMinPhotos && allFieldsReady && !mfhNeedsUnits,
+        autoContinue: hasMinPhotos && allFieldsReady && !mfhNeedsMore,
         photoCount,
         rotationCorrected,
         photoCoaching,
