@@ -2363,7 +2363,7 @@ function normalizeUserPatch(data: Record<string, unknown>, turnNumber: number): 
   if (typeof data.energyValue === "number" && data.energyValue > 0) patch.energyValue = data.energyValue;
   if (typeof data.energySource === "string" && data.energySource.trim()) patch.energySource = data.energySource;
   if (typeof data.energyValidUntil === "string" && data.energyValidUntil.trim()) patch.energyValidUntil = data.energyValidUntil;
-  if (typeof data.askingPrice === "number") patch.askingPrice = data.askingPrice;
+  if (typeof data.askingPrice === "number" && data.askingPrice > 10000) patch.askingPrice = data.askingPrice;
   else if (typeof data.askingPrice === "string") {
     const priceStr = data.askingPrice.toLowerCase().replace(/[€\s]/g, "");
     if (/mio/i.test(priceStr)) {
@@ -2579,9 +2579,18 @@ async function extractMemoryFromMessage(
       fastPatch.barrierefrei = false; fastMatched = true;
     }
   }
+  // Fast-path: detect contact info pattern "Name, +49 123 456789, email@domain"
+  if (!currentMemory.sellerContact?.name) {
+    const contactMatch = trimmed.match(/^([a-zäöüß]+ [a-zäöüß]+)\s*[,;]\s*(\+?\d[\d\s\-/]{7,})\s*[,;]\s*(\S+@\S+\.\S+)$/i);
+    if (contactMatch) {
+      fastPatch.sellerContact = { name: contactMatch[1], phone: contactMatch[2].replace(/\s+/g, " "), email: contactMatch[3] };
+      fastMatched = true;
+    }
+  }
+
   // If fast-path matched AND the message is short (< 40 chars), return immediately.
   // For longer messages, still run the LLM to extract additional data.
-  if (fastMatched && trimmed.length < 40) {
+  if (fastMatched && trimmed.length < 80) {
     return { patch: Object.keys(fastPatch).length > 0 ? fastPatch : null, costCents: 0 };
   }
 
@@ -2744,6 +2753,13 @@ Antworte NUR mit JSON. Leeres Objekt {} wenn nichts Neues extrahiert wurde.`;
 
     const raw = JSON.parse(llm.message.content || "{}");
     const patch = normalizeUserPatch(raw, turnNumber);
+
+    // Guard: don't overwrite askingPrice from contact/phone messages.
+    // The LLM sometimes parses phone numbers (4383864) as prices.
+    const contactKeywords = /marthaler|kontakt|telefon|phone|email|e-mail|@|^\+?\d{2,3}\s?\d{3,}/i;
+    if (contactKeywords.test(userMessage) && currentMemory.askingPrice != null && patch.askingPrice) {
+      delete (patch as Record<string, unknown>).askingPrice;
+    }
 
     // Guard: don't overwrite existing energy fields from unrelated messages.
     // Only strip energy fields when the extraction ALSO contains non-energy
