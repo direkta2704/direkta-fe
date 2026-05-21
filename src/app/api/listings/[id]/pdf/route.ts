@@ -176,9 +176,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
         try {
           const mapPage = await mapBrowser.newPage();
           await mapPage.setViewport({ width: 800, height: 400 });
-          await mapPage.setContent(mapHtml, { waitUntil: "networkidle0", timeout: 25000 });
-          await mapPage.waitForFunction(() => document.title === "TILES_OK", { timeout: 12000 }).catch(() => {});
-          await new Promise(r => setTimeout(r, 500));
+          await mapPage.setContent(mapHtml, { waitUntil: "domcontentloaded", timeout: 15000 });
+          await mapPage.waitForFunction(() => document.title === "TILES_OK", { timeout: 15000 }).catch(() => {});
+          await new Promise(r => setTimeout(r, 1000));
           const screenshot = await mapPage.screenshot({ type: "png" });
           mapImageBase64 = `data:image/png;base64,${Buffer.from(screenshot).toString("base64")}`;
         } finally {
