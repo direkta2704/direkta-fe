@@ -34,8 +34,8 @@ export async function POST(
       return NextResponse.json({ error: "Nicht alle Pflichtfelder ausgefüllt" }, { status: 400 });
     }
 
-    // F-M5-05: handoff blocked unless the rubric passed
-    if (!memory.lastRubric?.passed) {
+    // F-M5-05: handoff blocked unless the rubric passed OR the seller approved the draft
+    if (!memory.lastRubric?.passed && !memory.draftApprovedByUser) {
       return NextResponse.json(
         {
           error: "Quality Rubric nicht bestanden. Bitte den Assistenten 'listing_review' erneut aufrufen lassen.",
