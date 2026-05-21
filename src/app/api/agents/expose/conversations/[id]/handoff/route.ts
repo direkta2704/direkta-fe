@@ -122,8 +122,9 @@ export async function POST(
 
     if (memory.type === "MFH" && (memory.sellingMode || memory.units.length > 0)) {
 
-      // Create child unit properties
-      for (const unit of memory.units) {
+      // Create child unit properties — skip ghost units (empty label or no data)
+      const validUnits = memory.units.filter(u => u.label && u.label.trim() && (u.livingArea || u.rooms));
+      for (const unit of validUnits) {
         const unitProp = await prisma.property.create({
           data: {
             userId: user.id,

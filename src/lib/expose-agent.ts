@@ -1888,12 +1888,11 @@ export function applyPatch(memory: WorkingMemory, patch: MemoryPatch): WorkingMe
       const merged = new Set([...next.assumptions, ...(v as string[])]);
       next.assumptions = Array.from(merged);
     } else if (k === "units" && Array.isArray(v)) {
-      const incoming = v as UnitData[];
+      const incoming = (v as UnitData[]).filter(u => u.label && u.label.trim());
       const merged = [...next.units];
       for (const u of incoming) {
         const idx = merged.findIndex(m => m.label === u.label);
         if (idx >= 0) {
-          // Deep merge: preserve existing fields, only overwrite non-null incoming
           merged[idx] = {
             ...merged[idx],
             ...(u.livingArea != null ? { livingArea: u.livingArea } : {}),
