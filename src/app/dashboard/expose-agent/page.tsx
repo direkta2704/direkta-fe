@@ -278,7 +278,7 @@ export default function ExposeAgentPage() {
       }
       setUploading(false);
     },
-    [uploadOne],
+    [uploadOne, memory?.currentUnit],
   );
 
   function onDrop(e: React.DragEvent) {

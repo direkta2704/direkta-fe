@@ -2952,6 +2952,20 @@ export async function runAgentTurn(
 
   // Build messages with UPDATED memory (after extraction + skip + implicit-skip)
   const nq = nextQuestion(workingMemory);
+
+  // Persist currentUnit if nextQuestion set it (for per-unit photo uploads)
+  if (workingMemory.currentUnit) {
+    await prisma.conversationTurn.create({
+      data: {
+        conversationId: ctx.conversationId,
+        role: "SYSTEM",
+        content: `[currentUnit:${workingMemory.currentUnit}]`,
+        toolName: "system",
+        toolOutput: asJson({ memoryPatch: { currentUnit: workingMemory.currentUnit } }),
+      },
+    });
+  }
+
   const messages: ChatMsg[] = [
     { role: "system", content: ORCHESTRATOR_SYSTEM_PROMPT },
     { role: "system", content: buildMemoryContext(workingMemory) },
