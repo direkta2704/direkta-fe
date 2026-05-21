@@ -359,7 +359,7 @@ export interface QuestionResult {
   priority: number;
 }
 
-type ConversationalGroup = "identity" | "core" | "mfh_structure" | "details" | "energy" | "media";
+type ConversationalGroup = "identity" | "core" | "mfh_structure" | "details" | "energy" | "media" | "finishing";
 
 interface FieldSpec {
   field: string;
@@ -417,17 +417,18 @@ const FIELD_PRIORITY: FieldSpec[] = [
   // ── media: uploads + enrichment, last group ──
   { field: "photos",        group: "media", blocksPricing: false, blocksPublish: true,  infoValue: 0.5, optional: false, isFilled: wm => wm.uploads.filter(u => u.kind === "PHOTO").length >= 1, prompt: "Bitte laden Sie Fotos hoch. Nutzen Sie den 📷-Button links unten." },
   { field: "floorPlan",     group: "media", blocksPricing: false, blocksPublish: false, infoValue: 0.6, optional: true,  isFilled: wm => wm.hasFloorPlan || wm.uploads.some(u => u.kind === "FLOORPLAN"), prompt: "Haben Sie einen Grundriss? Nutzen Sie den 📐-Button." },
-  { field: "roomProgram",   group: "media", blocksPricing: false, blocksPublish: false, infoValue: 0.3, optional: true,  isFilled: wm => wm.roomProgram.length > 0, prompt: "Möchten Sie die einzelnen Räume mit Größe angeben? Z.B. Wohnzimmer 25m², Küche 12m²" },
-  { field: "sellerContact", group: "media", blocksPricing: false, blocksPublish: false, infoValue: 0.3, optional: true,  isFilled: wm => !!(wm.sellerContact?.name || wm.sellerContact?.company || wm.sellerContact?.phone || wm.sellerContact?.email), prompt: "Welche Kontaktdaten sollen im Exposé stehen? (Name, Telefon, E-Mail)" },
+  { field: "roomProgram",   group: "finishing", blocksPricing: false, blocksPublish: false, infoValue: 0.3, optional: true,  isFilled: wm => wm.roomProgram.length > 0, prompt: "Möchten Sie die einzelnen Räume mit Größe angeben? Z.B. Wohnzimmer 25m², Küche 12m²" },
+  { field: "sellerContact", group: "finishing", blocksPricing: false, blocksPublish: false, infoValue: 0.3, optional: true,  isFilled: wm => !!(wm.sellerContact?.name || wm.sellerContact?.company || wm.sellerContact?.phone || wm.sellerContact?.email), prompt: "Welche Kontaktdaten sollen im Exposé stehen? (Name, Telefon, E-Mail)" },
 ];
 
 const GROUP_ORDER: Record<ConversationalGroup, number> = {
   identity: 0,
   core: 1,
   details: 2,
-  media: 3,
-  energy: 4,
+  energy: 3,
+  media: 4,
   mfh_structure: 5,
+  finishing: 6,
 };
 
 export function nextQuestion(wm: WorkingMemory): QuestionResult {
