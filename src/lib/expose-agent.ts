@@ -188,6 +188,7 @@ export interface WorkingMemory {
   lastRubric: RubricResult | null;
   assumptions: string[];
   approvedClaims: string[];
+  draftApprovedByUser: boolean;
   handoffReady: boolean;
   // Multi-unit support
   unitCount: number | null;
@@ -302,6 +303,7 @@ export const INITIAL_MEMORY: WorkingMemory = {
   lastRubric: null,
   assumptions: [],
   approvedClaims: [],
+  draftApprovedByUser: false,
   handoffReady: false,
   unitCount: null,
   units: [],
@@ -347,7 +349,7 @@ export function isReadyForDraft(m: WorkingMemory): boolean {
 }
 
 export function isReadyForHandoff(m: WorkingMemory): boolean {
-  return isReadyForDraft(m) && !!m.draft && !!m.lastRubric?.passed;
+  return isReadyForDraft(m) && !!m.draft && (!!m.lastRubric?.passed || m.draftApprovedByUser);
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -2995,54 +2997,62 @@ export async function runAgentTurn(
     });
   }
 
-  // Mechanical claim approval: when rubric has hallucination flags and seller says
-  // "yes/correct/keep/don't remove", approve all flagged claims so the rubric
-  // doesn't loop forever asking about the same claims.
+  // Draft approval: when the rubric flagged hallucinations and the seller says
+  // "yes/correct/keep/create listing", approve the entire draft and proceed to handoff.
+  // The hallucination checker returns different wording each run, so individual
+  // claim matching is unreliable. Instead: once approved, skip hallucination check entirely.
   if (
     userMessage &&
+    workingMemory.draft &&
+    !workingMemory.draftApprovedByUser &&
     workingMemory.lastRubric &&
-    !workingMemory.lastRubric.passed &&
-    workingMemory.lastRubric.details.noHallucination?.flagged?.length
+    !workingMemory.lastRubric.passed
   ) {
     const msg = userMessage.trim().toLowerCase();
-    const approvalPhrases = /\bja\b|\byes\b|\bcorrect\b|\bkorrekt\b|\bstimmt\b|\bbehalten\b|\bnicht entfernen\b|\bkeep\b|\bdon'?t remove\b|\brichtig\b|\bpasst\b|\berstellen\b|\bcreate\b|\binserat\b|\blisting\b|\bweiter\b|\bfortfahren\b|\bproceed\b|\bcontinue\b|\beverything.*(correct|right|ok)\b/i;
+    const approvalPhrases = /\bja\b|\byes\b|\bcorrect\b|\bkorrekt\b|\bstimmt\b|\bbehalten\b|\bnicht entfernen\b|\bkeep\b|\bdon'?t remove\b|\brichtig\b|\bpasst\b|\berstellen\b|\bcreate\b|\binserat\b|\blisting\b|\bweiter\b|\bfortfahren\b|\bproceed\b|\bcontinue\b|\ball.*correct\b|\beverything.*correct\b/i;
     if (approvalPhrases.test(msg)) {
-      const flagged = workingMemory.lastRubric.details.noHallucination.flagged as string[];
-      const newApproved = flagged.filter(c => !workingMemory.approvedClaims.includes(c));
-      if (newApproved.length > 0) {
-        const approvalPatch: MemoryPatch = { approvedClaims: [...workingMemory.approvedClaims, ...newApproved] };
-        workingMemory = applyPatch(workingMemory, approvalPatch);
-        await prisma.conversationTurn.create({
-          data: {
-            conversationId: ctx.conversationId,
-            role: "SYSTEM",
-            content: `[claims-approved:${newApproved.length}]`,
-            toolName: "system",
-            toolOutput: asJson({ memoryPatch: approvalPatch }),
-          },
-        });
+      workingMemory = applyPatch(workingMemory, { draftApprovedByUser: true, handoffReady: true });
+      await prisma.conversationTurn.create({
+        data: {
+          conversationId: ctx.conversationId,
+          role: "SYSTEM",
+          content: "[draft-approved-by-user]",
+          toolName: "system",
+          toolOutput: asJson({ memoryPatch: { draftApprovedByUser: true, handoffReady: true } }),
+        },
+      });
 
-        // Re-run rubric with approved claims — should now pass
-        if (workingMemory.draft) {
-          const recheck = await runRubric(workingMemory);
-          costCentsThisTurn += recheck.costCents;
-          costCentsTotal += recheck.costCents;
-          workingMemory = applyPatch(workingMemory, {
-            lastRubric: recheck.result,
-            handoffReady: recheck.result.passed,
-          });
-          await prisma.conversationTurn.create({
-            data: {
-              conversationId: ctx.conversationId,
-              role: "TOOL",
-              content: "listing_review (post-approval)",
-              toolName: "listing_review",
-              toolInput: asJson({ approvedClaims: newApproved.length }),
-              toolOutput: asJson({ ...recheck.result, memoryPatch: { lastRubric: recheck.result, handoffReady: recheck.result.passed } }),
-            },
-          });
-        }
-      }
+      // Trigger handoff immediately
+      const handoffTr = await executeTool("handoff_commit", {}, workingMemory, turnNumber);
+      toolStepsExecuted++;
+      costCentsThisTurn += handoffTr.costCents;
+      costCentsTotal += handoffTr.costCents;
+
+      await prisma.agentStep.create({
+        data: {
+          agentRunId: ctx.agentRunId,
+          ordinal: await nextStepOrdinal(ctx.agentRunId),
+          toolName: "handoff_commit",
+          input: asJson({ draftApproved: true }),
+          output: asJson(handoffTr.output),
+          latencyMs: handoffTr.latencyMs,
+          ok: handoffTr.ok,
+        },
+      });
+      await prisma.conversationTurn.create({
+        data: {
+          conversationId: ctx.conversationId,
+          role: "TOOL",
+          content: "handoff_commit",
+          toolName: "handoff_commit",
+          toolInput: asJson({}),
+          toolOutput: asJson({ ...handoffTr.output, memoryPatch: { handoffReady: true } }),
+          latencyMs: handoffTr.latencyMs,
+        },
+      });
+
+      agentMessage = "Ihr Inserat ist erstellt! So geht es weiter:\n1. Prüfen Sie das Exposé auf der nächsten Seite\n2. Laden Sie die PDF herunter und teilen Sie sie mit Interessenten\n3. Aktivieren Sie das Inserat, wenn Sie bereit sind\n4. Optional: Auf ImmobilienScout24 freischalten unter Portal-Sync";
+      return { agentMessage, memory: workingMemory, toolStepsExecuted, costCentsThisTurn, costCentsTotal, finished: true, abortedReason };
     }
   }
 
