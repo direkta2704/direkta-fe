@@ -44,17 +44,19 @@ export async function POST(
       return NextResponse.json({ error: "AgentRun nicht gefunden" }, { status: 500 });
     }
 
+    const memory = rebuildMemory(conversation.turns);
+
     const formData = await req.formData();
     const file = formData.get("file") as File | null;
     const kindRaw = (formData.get("kind") as string) || "PHOTO";
-    const unitLabel = (formData.get("unitLabel") as string) || undefined;
+    // unitLabel from form data, or fallback to memory.currentUnit
+    const unitLabelRaw = (formData.get("unitLabel") as string) || undefined;
+    const unitLabel = unitLabelRaw || (memory.currentUnit && kindRaw !== "ENERGY_PDF" ? memory.currentUnit : undefined);
 
     if (!file) return NextResponse.json({ error: "Keine Datei" }, { status: 400 });
     if (file.size > 25 * 1024 * 1024) {
       return NextResponse.json({ error: "Datei zu groß (max. 25 MB)" }, { status: 400 });
     }
-
-    const memory = rebuildMemory(conversation.turns);
 
     // Smart PDF type detection
     let kind: "PHOTO" | "FLOORPLAN" | "ENERGY_PDF" = "PHOTO";

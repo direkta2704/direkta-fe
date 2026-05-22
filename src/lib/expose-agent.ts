@@ -2466,6 +2466,7 @@ function normalizeUserPatch(data: Record<string, unknown>, turnNumber: number): 
     patch.specifications = specs;
   }
   if (typeof data.hasFloorPlan === "boolean") patch.hasFloorPlan = data.hasFloorPlan;
+  if (typeof data.currentUnit === "string") patch.currentUnit = data.currentUnit || null;
   if (typeof data.barrierefrei === "boolean") patch.barrierefrei = data.barrierefrei;
   if (Array.isArray(data.roomProgram)) {
     patch.roomProgram = data.roomProgram.filter((r: unknown) => r && typeof r === "object" && "name" in (r as Record<string, unknown>) && "area" in (r as Record<string, unknown>)).map((r: unknown) => {
@@ -2581,6 +2582,18 @@ async function extractMemoryFromMessage(
       fastPatch.barrierefrei = false; fastMatched = true;
     }
   }
+  // Fast-path: detect unit context from message ("WE01", "Wohnung 1", etc.)
+  if (currentMemory.type === "MFH" && currentMemory.units && (currentMemory.units as UnitData[]).length > 0) {
+    const unitMatch = userMessage.match(/\b(WE\s*0?[1-9]\d?)\b/i);
+    if (unitMatch) {
+      const label = unitMatch[1].replace(/\s+/g, "").toUpperCase();
+      if ((currentMemory.units as UnitData[]).some(u => u.label === label)) {
+        fastPatch.currentUnit = label;
+        fastMatched = true;
+      }
+    }
+  }
+
   // Fast-path: detect contact info pattern "Name, +49 123 456789, email@domain"
   if (!currentMemory.sellerContact?.name) {
     const contactMatch = trimmed.match(/^([a-zäöüß]+ [a-zäöüß]+)\s*[,;]\s*(\+?\d[\d\s\-/]{7,})\s*[,;]\s*(\S+@\S+\.\S+)$/i);
