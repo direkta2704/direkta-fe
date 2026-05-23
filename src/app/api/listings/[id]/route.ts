@@ -281,13 +281,21 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
       return NextResponse.json({ error: "Aktive Inserate können nicht gelöscht werden. Bitte zuerst deaktivieren." }, { status: 400 });
     }
 
-    // Delete related records first
+    // Delete related records first (order matters for FK constraints)
+    await prisma.viewing.deleteMany({ where: { listingId: id } });
+    await prisma.offer.deleteMany({ where: { listingId: id } });
+    await prisma.transaction.deleteMany({ where: { listingId: id } });
+    await prisma.lead.deleteMany({ where: { listingId: id } });
     await prisma.listingEvent.deleteMany({ where: { listingId: id } });
     await prisma.portalStat.deleteMany({ where: { syndicationTarget: { listingId: id } } });
     await prisma.syndicationJob.deleteMany({ where: { syndicationTarget: { listingId: id } } });
     await prisma.syndicationTarget.deleteMany({ where: { listingId: id } });
     await prisma.comparable.deleteMany({ where: { priceRecommendation: { listingId: id } } });
     await prisma.priceRecommendation.deleteMany({ where: { listingId: id } });
+    await prisma.conversationTurn.deleteMany({ where: { conversation: { listingId: id } } });
+    await prisma.agentStep.deleteMany({ where: { agentRun: { listingId: id } } });
+    await prisma.agentRun.deleteMany({ where: { listingId: id } });
+    await prisma.conversation.deleteMany({ where: { listingId: id } });
     await prisma.listing.delete({ where: { id } });
 
     return NextResponse.json({ ok: true });
