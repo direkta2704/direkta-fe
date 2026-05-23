@@ -52,7 +52,7 @@ export default function Sidebar({ userName, userEmail }: SidebarProps) {
   const sidebarContent = (
     <div className="flex flex-col h-full">
       {/* Logo */}
-      <div className="px-6 pt-7 pb-8">
+      <div className="px-6 pt-5 pb-5">
         <Link href="/" className="flex items-center gap-2 group">
           <span className="material-symbols-outlined text-2xl text-primary transition-transform duration-500 group-hover:rotate-12">
             home_work
@@ -64,17 +64,17 @@ export default function Sidebar({ userName, userEmail }: SidebarProps) {
       </div>
 
       {/* Main nav */}
-      <div className="px-3 flex-1">
-        <div className="text-[9px] font-black uppercase tracking-[0.25em] text-white/30 px-3 mb-3">
+      <div className="px-3 flex-1 overflow-y-auto min-h-0 no-scrollbar">
+        <div className="text-[9px] font-black uppercase tracking-[0.25em] text-white/30 px-3 mb-2">
           Hauptmenü
         </div>
-        <nav className="space-y-1">
+        <nav className="space-y-0.5">
           {navMain.map((item) => (
             <Link
               key={item.href}
               href={item.href}
               onClick={() => setMobileOpen(false)}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 ${
+              className={`flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-semibold transition-all duration-200 ${
                 isActive(item.href)
                   ? "bg-primary text-white shadow-lg shadow-primary/25"
                   : "text-white/60 hover:text-white hover:bg-white/[0.06]"
@@ -93,16 +93,16 @@ export default function Sidebar({ userName, userEmail }: SidebarProps) {
           ))}
         </nav>
 
-        <div className="text-[9px] font-black uppercase tracking-[0.25em] text-white/30 px-3 mb-3 mt-8">
+        <div className="text-[9px] font-black uppercase tracking-[0.25em] text-white/30 px-3 mb-2 mt-5">
           KI-Assistenten
         </div>
-        <nav className="space-y-1 mb-6">
+        <nav className="space-y-0.5">
           {navAgents.map((item) => (
             <Link
               key={item.href}
               href={item.href}
               onClick={() => setMobileOpen(false)}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 ${
+              className={`flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-semibold transition-all duration-200 ${
                 isActive(item.href)
                   ? "bg-primary text-white shadow-lg shadow-primary/25"
                   : "text-white/60 hover:text-white hover:bg-white/[0.06]"
@@ -114,16 +114,16 @@ export default function Sidebar({ userName, userEmail }: SidebarProps) {
           ))}
         </nav>
 
-        <div className="text-[9px] font-black uppercase tracking-[0.25em] text-white/30 px-3 mb-3">
+        <div className="text-[9px] font-black uppercase tracking-[0.25em] text-white/30 px-3 mb-2 mt-5">
           Werkzeuge
         </div>
-        <nav className="space-y-1">
+        <nav className="space-y-0.5">
           {navTools.map((item) => (
             <Link
               key={item.href}
               href={item.href}
               onClick={() => setMobileOpen(false)}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 ${
+              className={`flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-semibold transition-all duration-200 ${
                 isActive(item.href)
                   ? "bg-primary text-white shadow-lg shadow-primary/25"
                   : "text-white/60 hover:text-white hover:bg-white/[0.06]"
@@ -139,11 +139,10 @@ export default function Sidebar({ userName, userEmail }: SidebarProps) {
       </div>
 
       {/* Bottom nav */}
-      <div className="px-3 pb-4 space-y-1">
-        {/* Help / Support escalation button */}
+      <div className="px-3 pb-2 space-y-0.5 shrink-0">
         <a
           href="mailto:support@direkta.de?subject=Hilfe%20ben%C3%B6tigt%20%E2%80%93%20Direkta%20Dashboard"
-          className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold border border-white/20 text-white/70 hover:text-white hover:border-primary hover:bg-primary/10 transition-all duration-200 w-full"
+          className="flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-semibold border border-white/20 text-white/70 hover:text-white hover:border-primary hover:bg-primary/10 transition-all duration-200 w-full"
         >
           <span className="material-symbols-outlined text-xl">support_agent</span>
           Hilfe
@@ -153,7 +152,7 @@ export default function Sidebar({ userName, userEmail }: SidebarProps) {
             key={item.href}
             href={item.href}
             onClick={() => setMobileOpen(false)}
-            className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 ${
+            className={`flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-semibold transition-all duration-200 ${
               isActive(item.href)
                 ? "bg-primary text-white"
                 : "text-white/60 hover:text-white hover:bg-white/[0.06]"
@@ -167,7 +166,7 @@ export default function Sidebar({ userName, userEmail }: SidebarProps) {
         ))}
         <button
           onClick={() => signOut({ callbackUrl: "/" })}
-          className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-white/60 hover:text-white hover:bg-white/[0.06] transition-all duration-200 w-full"
+          className="flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-semibold text-white/60 hover:text-white hover:bg-white/[0.06] transition-all duration-200 w-full"
         >
           <span className="material-symbols-outlined text-xl">logout</span>
           Abmelden
@@ -175,7 +174,7 @@ export default function Sidebar({ userName, userEmail }: SidebarProps) {
       </div>
 
       {/* User info */}
-      <div className="px-4 py-4 border-t border-white/10 mx-3">
+      <div className="px-4 py-3 border-t border-white/10 mx-3 shrink-0">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-full bg-primary/20 text-primary flex items-center justify-center text-sm font-black">
             {(userName || userEmail || "U").charAt(0).toUpperCase()}
