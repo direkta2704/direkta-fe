@@ -293,28 +293,62 @@ export default function PropertyDetailPage() {
     setUnitListingCreating(null);
   }
 
+  function compressImage(file: File, maxDim = 2400, quality = 0.85): Promise<File> {
+    return new Promise((resolve, reject) => {
+      if (!file.type.startsWith("image/") || file.type === "application/pdf") { resolve(file); return; }
+      const img = new window.Image();
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > maxDim || height > maxDim) {
+          const ratio = Math.min(maxDim / width, maxDim / height);
+          width = Math.round(width * ratio);
+          height = Math.round(height * ratio);
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d")!;
+        ctx.drawImage(img, 0, 0, width, height);
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) { reject(new Error("Compression failed")); return; }
+            resolve(new File([blob], file.name.replace(/\.\w+$/, ".jpg"), { type: "image/jpeg" }));
+          },
+          "image/jpeg",
+          quality,
+        );
+        URL.revokeObjectURL(img.src);
+      };
+      img.onerror = () => resolve(file);
+      img.src = URL.createObjectURL(file);
+    });
+  }
+
   async function uploadSingleFile(propertyId: string, file: File, kind = "PHOTO"): Promise<Response> {
-    // Try presigned S3 upload first (bypasses Vercel body size limit)
+    // Compress images client-side to stay under Vercel's 4.5MB body limit
+    const compressed = await compressImage(file);
+
+    // Try presigned S3 upload first (bypasses Vercel body size limit entirely)
     try {
       const presignRes = await fetch(`/api/properties/${propertyId}/media`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ presign: true, fileName: file.name, contentType: file.type, kind }),
+        body: JSON.stringify({ presign: true, fileName: compressed.name, contentType: compressed.type, kind }),
       });
       if (presignRes.ok) {
         const { uploadUrl, s3Key } = await presignRes.json();
-        const putRes = await fetch(uploadUrl, { method: "PUT", headers: { "Content-Type": file.type }, body: file });
+        const putRes = await fetch(uploadUrl, { method: "PUT", headers: { "Content-Type": compressed.type }, body: compressed });
         if (!putRes.ok) throw new Error("S3 upload failed");
         return fetch(`/api/properties/${propertyId}/media`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ s3Key, fileName: file.name, contentType: file.type, kind }),
+          body: JSON.stringify({ s3Key, fileName: compressed.name, contentType: compressed.type, kind }),
         });
       }
     } catch {}
-    // Fallback: FormData upload (local dev / small files)
+    // Fallback: FormData upload (works because images are now compressed)
     const form = new FormData();
-    form.append("file", file);
+    form.append("file", compressed);
     if (kind !== "PHOTO") form.append("kind", kind);
     return fetch(`/api/properties/${propertyId}/media`, { method: "POST", body: form });
   }
@@ -322,17 +356,28 @@ export default function PropertyDetailPage() {
   async function uploadFiles(files: FileList | File[]) {
     setUploading(true);
     const uploaded: MediaItem[] = [];
+    let failed = 0;
     for (const file of Array.from(files)) {
       if (!file.type.startsWith("image/")) continue;
-      const res = await uploadSingleFile(id!, file);
-      if (res.ok) {
-        const asset = await res.json();
-        uploaded.push(asset);
+      try {
+        const res = await uploadSingleFile(id!, file);
+        if (res.ok) {
+          const asset = await res.json();
+          uploaded.push(asset);
+        } else {
+          const err = await res.json().catch(() => ({ error: "Upload fehlgeschlagen" }));
+          toast({ message: `${file.name}: ${err.error || "Upload fehlgeschlagen"}`, type: "error" });
+          failed++;
+        }
+      } catch {
+        toast({ message: `${file.name}: Upload fehlgeschlagen`, type: "error" });
+        failed++;
       }
     }
     fetchProperty();
     setUploading(false);
     if (uploaded.length > 0) {
+      toast({ message: `${uploaded.length} Foto${uploaded.length > 1 ? "s" : ""} hochgeladen`, type: "success" });
       const descs: Record<string, { caption: string; description: string; roomType: string }> = {};
       for (const a of uploaded) descs[a.id] = { caption: "", description: "", roomType: "other" };
       setUploadDescriptions(descs);

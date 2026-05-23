@@ -73,6 +73,7 @@ export default function Sidebar({ userName, userEmail }: SidebarProps) {
             <Link
               key={item.href}
               href={item.href}
+              prefetch={false}
               onClick={() => setMobileOpen(false)}
               className={`flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-semibold transition-all duration-200 ${
                 isActive(item.href)
@@ -101,6 +102,7 @@ export default function Sidebar({ userName, userEmail }: SidebarProps) {
             <Link
               key={item.href}
               href={item.href}
+              prefetch={false}
               onClick={() => setMobileOpen(false)}
               className={`flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-semibold transition-all duration-200 ${
                 isActive(item.href)
@@ -122,6 +124,7 @@ export default function Sidebar({ userName, userEmail }: SidebarProps) {
             <Link
               key={item.href}
               href={item.href}
+              prefetch={false}
               onClick={() => setMobileOpen(false)}
               className={`flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-semibold transition-all duration-200 ${
                 isActive(item.href)
@@ -151,6 +154,7 @@ export default function Sidebar({ userName, userEmail }: SidebarProps) {
           <Link
             key={item.href}
             href={item.href}
+            prefetch={false}
             onClick={() => setMobileOpen(false)}
             className={`flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-semibold transition-all duration-200 ${
               isActive(item.href)

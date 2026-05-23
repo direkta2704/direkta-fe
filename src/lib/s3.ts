@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand, PutBucketCorsCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 const bucket = process.env.AWS_S3_BUCKET;
@@ -42,8 +42,34 @@ export async function uploadToS3(key: string, body: Buffer, contentType: string)
   return getStorageUrl(key);
 }
 
+let corsEnsured = false;
+
+async function ensureBucketCors(): Promise<void> {
+  if (corsEnsured || !client || !bucket) return;
+  try {
+    await client.send(new PutBucketCorsCommand({
+      Bucket: bucket,
+      CORSConfiguration: {
+        CORSRules: [{
+          AllowedHeaders: ["*"],
+          AllowedMethods: ["PUT", "GET", "HEAD"],
+          AllowedOrigins: ["*"],
+          ExposeHeaders: ["ETag"],
+          MaxAgeSeconds: 86400,
+        }],
+      },
+    }));
+    corsEnsured = true;
+  } catch (err) {
+    console.warn("[S3] Could not set CORS (check IAM permissions):", (err as Error).message);
+    corsEnsured = true;
+  }
+}
+
 export async function createPresignedUploadUrl(key: string, contentType: string): Promise<string> {
   if (!client || !bucket) throw new Error("S3 not configured");
+
+  await ensureBucketCors();
 
   const command = new PutObjectCommand({
     Bucket: bucket,
