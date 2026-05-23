@@ -293,17 +293,38 @@ export default function PropertyDetailPage() {
     setUnitListingCreating(null);
   }
 
+  async function uploadSingleFile(propertyId: string, file: File, kind = "PHOTO"): Promise<Response> {
+    // Try presigned S3 upload first (bypasses Vercel body size limit)
+    try {
+      const presignRes = await fetch(`/api/properties/${propertyId}/media`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ presign: true, fileName: file.name, contentType: file.type, kind }),
+      });
+      if (presignRes.ok) {
+        const { uploadUrl, s3Key } = await presignRes.json();
+        const putRes = await fetch(uploadUrl, { method: "PUT", headers: { "Content-Type": file.type }, body: file });
+        if (!putRes.ok) throw new Error("S3 upload failed");
+        return fetch(`/api/properties/${propertyId}/media`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ s3Key, fileName: file.name, contentType: file.type, kind }),
+        });
+      }
+    } catch {}
+    // Fallback: FormData upload (local dev / small files)
+    const form = new FormData();
+    form.append("file", file);
+    if (kind !== "PHOTO") form.append("kind", kind);
+    return fetch(`/api/properties/${propertyId}/media`, { method: "POST", body: form });
+  }
+
   async function uploadFiles(files: FileList | File[]) {
     setUploading(true);
     const uploaded: MediaItem[] = [];
     for (const file of Array.from(files)) {
       if (!file.type.startsWith("image/")) continue;
-      const form = new FormData();
-      form.append("file", file);
-      const res = await fetch(`/api/properties/${id}/media`, {
-        method: "POST",
-        body: form,
-      });
+      const res = await uploadSingleFile(id!, file);
       if (res.ok) {
         const asset = await res.json();
         uploaded.push(asset);
@@ -625,10 +646,7 @@ export default function PropertyDetailPage() {
       const unit = await res.json();
 
       if (unitFloorplan) {
-        const form = new FormData();
-        form.append("file", unitFloorplan);
-        form.append("kind", "FLOORPLAN");
-        await fetch(`/api/properties/${unit.id}/media`, { method: "POST", body: form });
+        await uploadSingleFile(unit.id, unitFloorplan, "FLOORPLAN");
       }
 
       setAddUnitOpen(false);
@@ -1068,10 +1086,7 @@ export default function PropertyDetailPage() {
                   onChange={async (e) => {
                     if (e.target.files && e.target.files.length > 0) {
                       for (const file of Array.from(e.target.files)) {
-                        const form = new FormData();
-                        form.append("file", file);
-                        form.append("kind", "FLOORPLAN");
-                        await fetch(`/api/properties/${id}/media`, { method: "POST", body: form });
+                        await uploadSingleFile(id!, file, "FLOORPLAN");
                       }
                       fetchProperty();
                     }
@@ -1708,10 +1723,7 @@ export default function PropertyDetailPage() {
                       <input type="file" accept=".pdf" hidden onChange={async (e) => {
                         const file = e.target.files?.[0];
                         if (!file) return;
-                        const form = new FormData();
-                        form.append("file", file);
-                        form.append("kind", "ENERGY_PDF");
-                        await fetch(`/api/properties/${id}/media`, { method: "POST", body: form });
+                        await uploadSingleFile(id!, file, "ENERGY_PDF");
                         fetchProperty();
                       }} />
                     </label>
@@ -1863,10 +1875,7 @@ export default function PropertyDetailPage() {
                           const file = e.target.files?.[0];
                           if (!file) return;
                           setEnergyPdfUploading(true);
-                          const form = new FormData();
-                          form.append("file", file);
-                          form.append("kind", "ENERGY_PDF");
-                          const res = await fetch(`/api/properties/${id}/media`, { method: "POST", body: form });
+                          const res = await uploadSingleFile(id!, file, "ENERGY_PDF");
                           if (res.ok) {
                             const asset = await res.json();
                             setEnergyPdfName(file.name);

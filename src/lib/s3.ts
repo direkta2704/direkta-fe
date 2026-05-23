@@ -1,4 +1,5 @@
 import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 const bucket = process.env.AWS_S3_BUCKET;
 const region = process.env.AWS_S3_REGION || process.env.AWS_REGION || "eu-central-1";
@@ -39,6 +40,27 @@ export async function uploadToS3(key: string, body: Buffer, contentType: string)
   }));
 
   return getStorageUrl(key);
+}
+
+export async function createPresignedUploadUrl(key: string, contentType: string): Promise<string> {
+  if (!client || !bucket) throw new Error("S3 not configured");
+
+  const command = new PutObjectCommand({
+    Bucket: bucket,
+    Key: key,
+    ContentType: contentType,
+    CacheControl: "public, max-age=31536000, immutable",
+  });
+
+  return getSignedUrl(client, command, { expiresIn: 600 });
+}
+
+export async function getS3Buffer(key: string): Promise<Buffer> {
+  if (!client || !bucket) throw new Error("S3 not configured");
+
+  const res = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+  const bytes = await res.Body!.transformToByteArray();
+  return Buffer.from(bytes);
 }
 
 export async function getFromS3(key: string): Promise<{ body: ReadableStream; contentType: string; contentLength: number } | null> {
