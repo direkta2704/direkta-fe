@@ -9,6 +9,7 @@ import {
 } from "@/lib/expose-agent";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 120;
 
 export async function POST(
   req: Request,
@@ -81,10 +82,13 @@ export async function POST(
         content: (t.content || "").replace(/###MEMORY###[\s\S]*?###END###/g, "").trim(),
       }));
 
-    // Persist the user turn first
+    // Persist the user turn first (full message for audit)
     const userTurn = await prisma.conversationTurn.create({
       data: { conversationId: id, role: "USER", content: userMessage },
     });
+
+    // Truncate for LLM processing — 4000 chars covers any realistic input
+    const llmMessage = userMessage.length > 4000 ? userMessage.slice(0, 4000) : userMessage;
 
     const startTime = Date.now();
     const result = await runAgentTurn(
@@ -96,7 +100,7 @@ export async function POST(
       },
       memory,
       history,
-      userMessage,
+      llmMessage,
     );
     const latencyMs = Date.now() - startTime;
 

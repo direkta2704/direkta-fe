@@ -140,8 +140,11 @@ export default function ExposeAgentPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content: userMessage }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
+      const text = await res.text();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let data: any;
+      try { data = JSON.parse(text); } catch { throw new Error("Server-Fehler. Bitte versuchen Sie es erneut."); }
+      if (!res.ok) throw new Error((data.error as string) || "Unbekannter Fehler");
       setTurns((prev) => {
         const next = [...prev];
         // Patch the optimistic user turn with its real id
