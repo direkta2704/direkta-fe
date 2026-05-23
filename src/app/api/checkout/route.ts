@@ -30,6 +30,7 @@ export async function POST(req: Request) {
     const pricingModel = askingPrice > PRICING.SUCCESS_FEE_THRESHOLD * 100 ? "SUCCESS_FEE" : "FLAT_FEE";
 
     const p = listing.property;
+    const origin = new URL(req.url).origin;
     const url = await createCheckoutSession({
       listingId,
       userId: user.id,
@@ -37,6 +38,7 @@ export async function POST(req: Request) {
       propertyAddress: `${p.street} ${p.houseNumber}, ${p.city}`,
       pricingModel: pricingModel as "FLAT_FEE" | "SUCCESS_FEE",
       askingPrice: askingPrice,
+      baseUrl: origin,
     });
 
     return NextResponse.json({ url });

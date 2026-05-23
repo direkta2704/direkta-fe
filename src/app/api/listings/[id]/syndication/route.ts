@@ -49,7 +49,7 @@ export async function POST(
     const portal = body.portal || "IMMOSCOUT24";
 
     const listing = await prisma.listing.findFirst({
-      where: { id, property: { userId: user.id }, status: "ACTIVE" },
+      where: { id, property: { userId: user.id } },
       include: {
         property: {
           include: {
@@ -62,7 +62,11 @@ export async function POST(
     });
 
     if (!listing) {
-      return NextResponse.json({ error: "Inserat nicht gefunden oder nicht aktiv" }, { status: 404 });
+      return NextResponse.json({ error: "Inserat nicht gefunden" }, { status: 404 });
+    }
+
+    if (listing.status !== "ACTIVE") {
+      return NextResponse.json({ error: `Inserat ist nicht aktiv (Status: ${listing.status})` }, { status: 422 });
     }
 
     const credential = await prisma.portalCredential.findFirst({

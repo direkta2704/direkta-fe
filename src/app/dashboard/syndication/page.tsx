@@ -323,6 +323,11 @@ export default function SyndicationPage() {
                           </div>
                           <div className="flex items-center gap-3">
                             {!is24Target || is24Target.status === "NONE" || is24Target.status === "WITHDRAWN" ? (
+                              l.status !== "ACTIVE" ? (
+                                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 bg-slate-100 px-2.5 py-1 rounded-full">
+                                  {l.status === "DRAFT" ? "Entwurf" : l.status === "REVIEW" ? "In Prüfung" : l.status}
+                                </span>
+                              ) : (
                               <button
                                 onClick={() => publishToIS24(l.id)}
                                 disabled={publishing === l.id}
@@ -331,12 +336,19 @@ export default function SyndicationPage() {
                                 <span className="material-symbols-outlined text-sm">publish</span>
                                 {publishing === l.id ? "Wird veröffentlicht..." : "Auf IS24 veröffentlichen"}
                               </button>
+                              )
                             ) : is24Target.status === "LIVE" ? (
                               <div className="flex items-center gap-2">
-                                <a href={is24Target.externalUrl || "#"} target="_blank" rel="noopener noreferrer"
-                                  className="bg-white border border-slate-200 hover:border-slate-300 text-blueprint px-3 py-2 rounded-lg text-xs font-bold flex items-center gap-1 transition-colors">
-                                  <span className="material-symbols-outlined text-sm">open_in_new</span>IS24
-                                </a>
+                                {is24Target.externalUrl?.includes("sandbox") ? (
+                                  <span className="bg-amber-50 border border-amber-200 text-amber-700 px-3 py-2 rounded-lg text-xs font-bold flex items-center gap-1" title="Sandbox-Inserate sind nicht oeffentlich sichtbar">
+                                    <span className="material-symbols-outlined text-sm">science</span>Sandbox
+                                  </span>
+                                ) : (
+                                  <a href={is24Target.externalUrl || "#"} target="_blank" rel="noopener noreferrer"
+                                    className="bg-white border border-slate-200 hover:border-slate-300 text-blueprint px-3 py-2 rounded-lg text-xs font-bold flex items-center gap-1 transition-colors">
+                                    <span className="material-symbols-outlined text-sm">open_in_new</span>IS24
+                                  </a>
+                                )}
                                 <button onClick={() => syndicationAction(l.id, "IMMOSCOUT24", "resync")}
                                   className="w-8 h-8 rounded-lg hover:bg-blue-50 text-slate-400 hover:text-blue-600 flex items-center justify-center transition-colors" title="Statistiken aktualisieren">
                                   <span className="material-symbols-outlined text-lg">sync</span>

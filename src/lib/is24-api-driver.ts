@@ -429,9 +429,21 @@ export class IS24ApiDriver implements PortalDriver {
     const pubBody = await pubRes.text();
     console.log("[IS24-API] Publish-to-channel:", pubRes.status, pubBody.slice(0, 200));
 
+    // Verify listing exists via API
+    const verifyRes = await api("GET", `/api/offer/v1.0/user/me/realestate/${realEstateId}`);
+    if (verifyRes.ok) {
+      console.log("[IS24-API] Verified: listing exists on IS24 (ID:", realEstateId + ")");
+    } else {
+      console.warn("[IS24-API] Verification failed:", verifyRes.status);
+    }
+
     const domain = isSandbox()
       ? "www.sandbox-immobilienscout24.de"
       : "www.immobilienscout24.de";
+
+    if (isSandbox()) {
+      console.log("[IS24-API] Note: Sandbox exposes are not publicly visible — use production for live URLs");
+    }
 
     const result: PublishResult = {
       externalListingId: realEstateId,
@@ -487,8 +499,19 @@ export class IS24ApiDriver implements PortalDriver {
       }
     }
 
-    const boundary = `----IS24${randomBytes(8).toString("hex")}`;
+    // Detect actual format from magic bytes when MIME is generic
+    if (mime === "application/octet-stream" || mime === "binary/octet-stream") {
+      if (buf[0] === 0x89 && buf[1] === 0x50) mime = "image/png";
+      else if (buf[0] === 0xFF && buf[1] === 0xD8) mime = "image/jpeg";
+      else if (buf[0] === 0x25 && buf[1] === 0x50) mime = "application/pdf";
+      else if (buf.slice(0, 4).toString() === "RIFF") mime = "image/webp";
+    }
+
     const isPdf = mime === "application/pdf";
+    const ext = isPdf ? "pdf" : mime === "image/png" ? "png" : "jpg";
+    const filename = isFloorPlan ? `grundriss.${ext}` : titlePicture ? `titelbild.${ext}` : `foto.${ext}`;
+
+    const boundary = `----IS24${randomBytes(8).toString("hex")}`;
     const meta = JSON.stringify({
       "common.attachment": isPdf ? {
         "@xsi.type": "common:PDFDocument",
@@ -503,7 +526,7 @@ export class IS24ApiDriver implements PortalDriver {
     });
 
     const head = Buffer.from(
-      `--${boundary}\r\nContent-Type: application/json;charset=UTF-8\r\nContent-Disposition: form-data; name="metadata"\r\n\r\n${meta}\r\n--${boundary}\r\nContent-Type: ${mime}\r\nContent-Disposition: form-data; name="attachment"; filename="photo.jpg"\r\n\r\n`
+      `--${boundary}\r\nContent-Type: application/json;charset=UTF-8\r\nContent-Disposition: form-data; name="metadata"\r\n\r\n${meta}\r\n--${boundary}\r\nContent-Type: ${mime}\r\nContent-Disposition: form-data; name="attachment"; filename="${filename}"\r\n\r\n`
     );
     const tail = Buffer.from(`\r\n--${boundary}--\r\n`);
     const body = Buffer.concat([head, buf, tail]);

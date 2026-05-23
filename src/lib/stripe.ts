@@ -4,8 +4,6 @@ export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "", {
   apiVersion: "2026-04-22.dahlia",
 });
 
-const APP_URL = process.env.NEXTAUTH_URL || "http://localhost:3000";
-
 export const PRICING = {
   FLAT_FEE: 99900,
   FLAT_FEE_LABEL: "Direkta Flat Fee — Inserat veroeffentlichen",
@@ -21,6 +19,7 @@ export async function createCheckoutSession(params: {
   propertyAddress: string;
   pricingModel: "FLAT_FEE" | "SUCCESS_FEE";
   askingPrice?: number;
+  baseUrl: string;
 }): Promise<string> {
   const lineItems: { price_data: { currency: string; product_data: { name: string; description: string }; unit_amount: number }; quantity: number }[] = [];
 
@@ -59,8 +58,8 @@ export async function createCheckoutSession(params: {
     customer_email: params.userEmail,
     payment_method_types: ["card", "sepa_debit"],
     line_items: lineItems,
-    success_url: `${APP_URL}/dashboard/listings/${params.listingId}?payment=success`,
-    cancel_url: `${APP_URL}/dashboard/listings/${params.listingId}?payment=cancelled`,
+    success_url: `${params.baseUrl}/dashboard/listings/${params.listingId}?payment=success`,
+    cancel_url: `${params.baseUrl}/dashboard/listings/${params.listingId}?payment=cancelled`,
     metadata: {
       listingId: params.listingId,
       userId: params.userId,
