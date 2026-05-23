@@ -339,16 +339,15 @@ export default function SyndicationPage() {
                               )
                             ) : is24Target.status === "LIVE" ? (
                               <div className="flex items-center gap-2">
-                                {is24Target.externalUrl?.includes("sandbox") ? (
-                                  <span className="bg-amber-50 border border-amber-200 text-amber-700 px-3 py-2 rounded-lg text-xs font-bold flex items-center gap-1" title="Sandbox-Inserate sind nicht oeffentlich sichtbar">
-                                    <span className="material-symbols-outlined text-sm">science</span>Sandbox
-                                  </span>
-                                ) : (
-                                  <a href={is24Target.externalUrl || "#"} target="_blank" rel="noopener noreferrer"
-                                    className="bg-white border border-slate-200 hover:border-slate-300 text-blueprint px-3 py-2 rounded-lg text-xs font-bold flex items-center gap-1 transition-colors">
-                                    <span className="material-symbols-outlined text-sm">open_in_new</span>IS24
-                                  </a>
-                                )}
+                                <a href={is24Target.externalUrl || "#"} target="_blank" rel="noopener noreferrer"
+                                  className={`border px-3 py-2 rounded-lg text-xs font-bold flex items-center gap-1 transition-colors ${
+                                    is24Target.externalUrl?.includes("sandbox")
+                                      ? "bg-amber-50 border-amber-200 text-amber-700 hover:border-amber-300"
+                                      : "bg-white border-slate-200 hover:border-slate-300 text-blueprint"
+                                  }`}>
+                                  <span className="material-symbols-outlined text-sm">{is24Target.externalUrl?.includes("sandbox") ? "science" : "open_in_new"}</span>
+                                  {is24Target.externalUrl?.includes("sandbox") ? "Sandbox" : "IS24"}
+                                </a>
                                 <button onClick={() => syndicationAction(l.id, "IMMOSCOUT24", "resync")}
                                   className="w-8 h-8 rounded-lg hover:bg-blue-50 text-slate-400 hover:text-blue-600 flex items-center justify-center transition-colors" title="Statistiken aktualisieren">
                                   <span className="material-symbols-outlined text-lg">sync</span>
