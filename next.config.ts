@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ["@prisma/client", ".prisma/client", "adm-zip", "puppeteer", "puppeteer-core", "@sparticuz/chromium", "nodemailer", "stripe", "playwright-core"],
+  serverExternalPackages: ["@prisma/client", ".prisma/client", "adm-zip", "puppeteer", "puppeteer-core", "@sparticuz/chromium-min", "nodemailer", "stripe", "playwright-core"],
   images: {
     remotePatterns: [
       {
