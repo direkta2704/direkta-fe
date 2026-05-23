@@ -735,7 +735,10 @@ async function callLlm(opts: LlmCallOptions): Promise<LlmCallResult> {
     throw new Error(`KI-Fehler (${res.status}): ${err.substring(0, 200)}`);
   }
 
-  const data = await res.json();
+  const text = await res.text();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let data: any;
+  try { data = JSON.parse(text); } catch { throw new Error(`KI-Antwort nicht parsebar: ${text.substring(0, 100)}`); }
   const choice = data.choices?.[0];
   if (!choice) throw new Error("Keine Antwort vom LLM");
 
@@ -2619,7 +2622,7 @@ async function extractMemoryFromMessage(
 Bereits bekannt: ${known || "nichts"}
 
 Agent fragte: "${agentQuestion}"
-Nutzer antwortete: "${userMessage}"
+Nutzer antwortete: "${userMessage.slice(0, 4000)}"
 
 WICHTIG: Extrahiere ALLE erkennbaren Daten aus der Antwort. Bei Bulk-Eingaben mit vielen Daten, extrahiere ALLES auf einmal.
 
