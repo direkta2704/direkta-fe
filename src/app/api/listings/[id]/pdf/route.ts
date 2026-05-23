@@ -5,7 +5,7 @@ import type { ExposePhoto } from "@/lib/expose-pdf";
 import { getFromS3 } from "@/lib/s3";
 import { readFile } from "fs/promises";
 import path from "path";
-import puppeteer from "puppeteer";
+import { launchBrowser } from "@/lib/browser";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -63,7 +63,7 @@ async function convertPdfToImage(pdfBytes: Uint8Array): Promise<{ bytes: Uint8Ar
       });
     </script></body></html>`;
 
-    browser = await puppeteer.launch({ headless: true, args: ["--no-sandbox", "--disable-setuid-sandbox"] });
+    browser = await launchBrowser();
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: "domcontentloaded", timeout: 30000 });
     await page.waitForFunction(() => document.title === "OK", { timeout: 20000 });
@@ -172,7 +172,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
           tileLayer.on('load',function(){tilesLoaded=true;document.title='TILES_OK';});
           setTimeout(function(){if(!tilesLoaded)document.title='TILES_OK';},8000);
         <\/script></body></html>`;
-        const mapBrowser = await puppeteer.launch({ headless: true, args: ["--no-sandbox", "--disable-setuid-sandbox"] });
+        const mapBrowser = await launchBrowser();
         try {
           const mapPage = await mapBrowser.newPage();
           await mapPage.setViewport({ width: 800, height: 400 });

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getRequiredUser } from "@/lib/session";
-import puppeteer from "puppeteer";
+import { launchBrowser } from "@/lib/browser";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -107,7 +107,7 @@ export async function GET(req: Request) {
         <p style="margin-top:30px;font-size:9px;color:#8A92A0;">Direkta GmbH · www.direkta.de · Generiert am ${dateStr}</p>
       </body></html>`;
 
-      const browser = await puppeteer.launch({ headless: true, args: ["--no-sandbox", "--disable-setuid-sandbox"] });
+      const browser = await launchBrowser();
       try {
         const page = await browser.newPage();
         await page.setContent(html, { waitUntil: "domcontentloaded" });

@@ -1,6 +1,6 @@
-import puppeteer from "puppeteer";
 import { readFile } from "fs/promises";
 import path from "path";
+import { launchBrowser } from "./browser";
 
 export async function generateExposePdf(exposeUrl: string): Promise<Buffer> {
   const htmlRes = await fetch(exposeUrl);
@@ -27,10 +27,7 @@ export async function generateExposePdf(exposeUrl: string): Promise<Buffer> {
   const localIframeRegex = /src="(\/uploads\/[^"]+\.pdf[^"]*)"/g;
   html = html.replace(localIframeRegex, 'src="about:blank" data-pdf-removed="true"');
 
-  const browser = await puppeteer.launch({
-    headless: true,
-    args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-gpu"],
-  });
+  const browser = await launchBrowser();
 
   try {
     const page = await browser.newPage();

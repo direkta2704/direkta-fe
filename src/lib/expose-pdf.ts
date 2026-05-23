@@ -1,4 +1,4 @@
-import puppeteer from "puppeteer";
+import { launchBrowser } from "./browser";
 
 // ── Public interfaces (unchanged) ────────────────────────────────────
 
@@ -2406,15 +2406,7 @@ ${sections.join("\n")}
 export async function generateExposePdf(data: ExposeData): Promise<Buffer> {
   const html = buildExposeHtml(data);
 
-  const browser = await puppeteer.launch({
-    headless: true,
-    args: [
-      "--no-sandbox",
-      "--disable-setuid-sandbox",
-      "--force-color-profile=srgb",
-      "--disable-features=ColorCorrectRendering",
-    ],
-  });
+  const browser = await launchBrowser();
 
   try {
     const page = await browser.newPage();
