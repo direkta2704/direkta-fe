@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useToast } from "../../components/dialog-provider";
 
 interface Props {
   listingId: string;
@@ -15,6 +16,7 @@ interface Props {
 }
 
 export default function ExposeSection({ listingId, initial, onSaveRef }: Props) {
+  const toast = useToast();
   const [headline, setHeadline] = useState(initial.exposeHeadline || "");
   const [location, setLocation] = useState(initial.locationDescription || "");
   const [building, setBuilding] = useState(initial.buildingDescription || "");
@@ -38,7 +40,7 @@ export default function ExposeSection({ listingId, initial, onSaveRef }: Props) 
       setBuilding(data.buildingDescription || "");
       setHighlights(data.highlights || []);
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Generierung fehlgeschlagen");
+      toast({ message: err instanceof Error ? err.message : "Generierung fehlgeschlagen", type: "error" });
     }
     setGenerating(false);
   }

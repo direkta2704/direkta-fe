@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import ExposeSection from "./expose-section";
 import { trackEvent, EVENTS } from "@/lib/posthog";
+import { useConfirm, useToast } from "../../components/dialog-provider";
 
 interface Comparable {
   id: string;
@@ -77,6 +78,8 @@ export default function ListingDetailPage() {
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
   const exposeSaveRef = useRef<(() => Promise<void>) | null>(null);
+  const confirm = useConfirm();
+  const toast = useToast();
 
   const [titleShort, setTitleShort] = useState("");
   const [descriptionLong, setDescriptionLong] = useState("");
@@ -313,7 +316,7 @@ export default function ListingDetailPage() {
               <span className="material-symbols-outlined text-lg">picture_as_pdf</span>
             </button>
             {listing.status === "ACTIVE" && (
-              <button onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/immobilien/${listing.slug}`); alert("Link kopiert!"); }} className="w-9 h-9 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 hover:text-blueprint transition-colors" title="Link kopieren">
+              <button onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/immobilien/${listing.slug}`); toast({ message: "Link kopiert!", type: "success" }); }} className="w-9 h-9 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 hover:text-blueprint transition-colors" title="Link kopieren">
                 <span className="material-symbols-outlined text-lg">share</span>
               </button>
             )}
@@ -351,7 +354,7 @@ export default function ListingDetailPage() {
           <div className="flex items-center gap-3">
             <button
               onClick={async () => {
-                if (!confirm("Verkauf wirklich abschliessen? Das Inserat wird endgueltig geschlossen.")) return;
+                if (!await confirm({ message: "Verkauf wirklich abschließen? Das Inserat wird endgültig geschlossen.", variant: "danger", confirmLabel: "Abschließen" })) return;
                 const res = await fetch(`/api/listings/${id}`, {
                   method: "PATCH",
                   headers: { "Content-Type": "application/json" },
@@ -369,7 +372,7 @@ export default function ListingDetailPage() {
             </button>
             <button
               onClick={async () => {
-                if (!confirm("Reservierung aufheben und Inserat wieder aktivieren?")) return;
+                if (!await confirm({ message: "Reservierung aufheben und Inserat wieder aktivieren?" })) return;
                 const res = await fetch(`/api/listings/${id}`, {
                   method: "PATCH",
                   headers: { "Content-Type": "application/json" },
@@ -719,7 +722,7 @@ export default function ListingDetailPage() {
             <div className="flex flex-wrap gap-3">
               <button
                 onClick={async () => {
-                  if (!confirm("Inserat pausieren? Es wird nicht mehr öffentlich sichtbar sein.")) return;
+                  if (!await confirm({ message: "Inserat pausieren? Es wird nicht mehr öffentlich sichtbar sein.", variant: "warning" })) return;
                   const res = await fetch(`/api/listings/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "PAUSED" }) });
                   if (res.ok) { const d = await res.json(); setListing((p) => p ? { ...p, ...d } : p); }
                 }}
@@ -730,7 +733,7 @@ export default function ListingDetailPage() {
               </button>
               <button
                 onClick={async () => {
-                  if (!confirm("Inserat als reserviert markieren? Bei Paket- und Einzelverkauf werden die zugehörigen Inserate automatisch zurückgezogen.")) return;
+                  if (!await confirm({ message: "Inserat als reserviert markieren? Bei Paket- und Einzelverkauf werden die zugehörigen Inserate automatisch zurückgezogen." })) return;
                   const res = await fetch(`/api/listings/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "RESERVED" }) });
                   if (res.ok) { const d = await res.json(); setListing((p) => p ? { ...p, ...d } : p); }
                 }}
@@ -741,7 +744,7 @@ export default function ListingDetailPage() {
               </button>
               <button
                 onClick={async () => {
-                  if (!confirm("Inserat zurückziehen? Es wird endgültig deaktiviert.")) return;
+                  if (!await confirm({ message: "Inserat zurückziehen? Es wird endgültig deaktiviert.", variant: "danger", confirmLabel: "Zurückziehen" })) return;
                   const res = await fetch(`/api/listings/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "WITHDRAWN" }) });
                   if (res.ok) { const d = await res.json(); setListing((p) => p ? { ...p, ...d } : p); }
                 }}

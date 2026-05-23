@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { signOut } from "next-auth/react";
+import { useToast } from "../components/dialog-provider";
 
 export default function GDPRSection() {
   const [exporting, setExporting] = useState(false);
@@ -10,6 +11,7 @@ export default function GDPRSection() {
   const [deleteInput, setDeleteInput] = useState("");
   const [exportDone, setExportDone] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
+  const toast = useToast();
 
   async function handleExport(format: "json" | "pdf" = "json") {
     if (format === "pdf") setExportingPdf(true); else setExporting(true);
@@ -26,7 +28,7 @@ export default function GDPRSection() {
       URL.revokeObjectURL(url);
       setExportDone(true);
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Export fehlgeschlagen");
+      toast({ message: err instanceof Error ? err.message : "Export fehlgeschlagen", type: "error" });
     }
     setExporting(false);
     setExportingPdf(false);
@@ -39,10 +41,10 @@ export default function GDPRSection() {
       const res = await fetch("/api/account/delete", { method: "POST" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      alert("Ihr Konto wurde zur Loeschung markiert. Sie werden jetzt abgemeldet.");
+      toast({ message: "Ihr Konto wurde zur Löschung markiert. Sie werden jetzt abgemeldet.", type: "success" });
       signOut({ callbackUrl: "/" });
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Loeschung fehlgeschlagen");
+      toast({ message: err instanceof Error ? err.message : "Löschung fehlgeschlagen", type: "error" });
       setDeleting(false);
     }
   }

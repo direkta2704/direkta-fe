@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Image from "next/image";
+import { useConfirm, useToast } from "../../components/dialog-provider";
 
 
 
@@ -144,6 +145,9 @@ export default function PropertyDetailPage() {
     primarySource: "",
     validUntil: "",
   });
+
+  const confirm = useConfirm();
+  const toast = useToast();
 
   const fetchProperty = useCallback(() => {
     fetch(`/api/properties/${id}`)
@@ -413,7 +417,7 @@ export default function PropertyDetailPage() {
 
   async function bulkDeletePhotos() {
     if (selectedPhotos.size === 0) return;
-    if (!confirm(`${selectedPhotos.size} Foto${selectedPhotos.size > 1 ? "s" : ""} löschen?`)) return;
+    if (!await confirm({ message: `${selectedPhotos.size} Foto${selectedPhotos.size > 1 ? "s" : ""} löschen?`, variant: "danger", confirmLabel: "Löschen" })) return;
     for (const photoId of selectedPhotos) {
       await fetch(`/api/media/${photoId}`, { method: "DELETE" });
     }
@@ -540,10 +544,10 @@ export default function PropertyDetailPage() {
         a.click();
         URL.revokeObjectURL(url);
       } else {
-        alert("PDF-Erstellung fehlgeschlagen.");
+        toast({ message: "PDF-Erstellung fehlgeschlagen.", type: "error" });
       }
     } catch {
-      alert("PDF-Erstellung fehlgeschlagen.");
+      toast({ message: "PDF-Erstellung fehlgeschlagen.", type: "error" });
     }
     setPdfDownloading(false);
   }
@@ -783,10 +787,10 @@ export default function PropertyDetailPage() {
           {hasListing && (
             <>
               <button
-                onClick={() => {
+                onClick={async () => {
                   const hasAnalyzed = photos.some(p => p.classification?.caption);
                   if (!hasAnalyzed) {
-                    if (!confirm("Die Fotos wurden noch nicht analysiert und die Texte nicht geprüft. Trotzdem PDF erstellen?")) return;
+                    if (!await confirm({ message: "Die Fotos wurden noch nicht analysiert und die Texte nicht geprüft. Trotzdem PDF erstellen?", variant: "warning", confirmLabel: "Trotzdem erstellen" })) return;
                   }
                   downloadPdf(property.listings[0].id);
                 }}
@@ -1306,7 +1310,7 @@ export default function PropertyDetailPage() {
                           <button
                             onClick={async (e) => {
                               e.stopPropagation();
-                              if (!confirm(`Wohnung "${unit.unitLabel || "Wohnung"}" wirklich löschen? Alle Fotos und Inserate dieser Wohnung werden ebenfalls gelöscht.`)) return;
+                              if (!await confirm({ message: `Wohnung "${unit.unitLabel || "Wohnung"}" wirklich löschen? Alle Fotos und Inserate dieser Wohnung werden ebenfalls gelöscht.`, variant: "danger", confirmLabel: "Löschen" })) return;
                               await fetch(`/api/properties/${unit.id}`, { method: "DELETE" });
                               fetchProperty();
                             }}
@@ -2079,7 +2083,7 @@ export default function PropertyDetailPage() {
                           {property.listings[0].status !== "ACTIVE" && (
                             <button
                               onClick={async () => {
-                                if (!confirm("Paket-Inserat wirklich löschen?")) return;
+                                if (!await confirm({ message: "Paket-Inserat wirklich löschen?", variant: "danger", confirmLabel: "Löschen" })) return;
                                 await fetch(`/api/listings/${property.listings[0].id}`, { method: "DELETE" });
                                 fetchProperty();
                               }}
@@ -2110,7 +2114,7 @@ export default function PropertyDetailPage() {
                           {unit.listings[0].status !== "ACTIVE" && (
                             <button
                               onClick={async () => {
-                                if (!confirm(`Inserat für ${unit.unitLabel} wirklich löschen?`)) return;
+                                if (!await confirm({ message: `Inserat für ${unit.unitLabel} wirklich löschen?`, variant: "danger", confirmLabel: "Löschen" })) return;
                                 await fetch(`/api/listings/${unit.listings[0].id}`, { method: "DELETE" });
                                 fetchProperty();
                               }}

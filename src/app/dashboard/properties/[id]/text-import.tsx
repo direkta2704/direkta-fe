@@ -1,8 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import { useToast } from "../../components/dialog-provider";
 
 export default function TextImport({ propertyId, onImported }: { propertyId: string; onImported: () => void }) {
+  const toast = useToast();
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
   const [importing, setImporting] = useState(false);
@@ -21,11 +23,11 @@ export default function TextImport({ propertyId, onImported }: { propertyId: str
         const res = await fetch("/api/extract-text", { method: "POST", body: formData });
         const data = await res.json();
         if (!res.ok) {
-          alert(data.error || "Fehler beim Extrahieren");
+          toast({ message: data.error || "Fehler beim Extrahieren", type: "error" });
         } else if (data.text) {
           setText(data.text);
         } else {
-          alert("Kein Text in der Datei gefunden");
+          toast({ message: "Kein Text in der Datei gefunden", type: "error" });
         }
       } else {
         const content = await file.text();
@@ -33,7 +35,7 @@ export default function TextImport({ propertyId, onImported }: { propertyId: str
       }
     } catch (err) {
       console.error("File read error:", err);
-      alert("Datei konnte nicht gelesen werden: " + (err instanceof Error ? err.message : ""));
+      toast({ message: "Datei konnte nicht gelesen werden: " + (err instanceof Error ? err.message : ""), type: "error" });
     }
     setUploading(false);
   }

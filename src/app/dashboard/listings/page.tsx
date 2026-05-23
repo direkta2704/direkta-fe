@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useConfirm, useToast } from "../components/dialog-provider";
 
 interface ListingItem {
   id: string;
@@ -66,6 +67,8 @@ export default function ListingsPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [deleting, setDeleting] = useState(false);
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
+  const confirm = useConfirm();
+  const toast = useToast();
 
   function toggleSelect(id: string, e: React.MouseEvent) {
     e.preventDefault();
@@ -84,7 +87,7 @@ export default function ListingsPage() {
   }
 
   async function deleteSelected() {
-    if (!confirm(`${selected.size} Inserat(e) wirklich löschen?`)) return;
+    if (!await confirm({ message: `${selected.size} Inserat(e) wirklich löschen?`, variant: "danger", confirmLabel: "Löschen" })) return;
     setDeleting(true);
     for (const id of selected) await fetch(`/api/listings/${id}`, { method: "DELETE" });
     setSelected(new Set());
@@ -93,7 +96,7 @@ export default function ListingsPage() {
   }
 
   async function bulkAction(action: string) {
-    if (!confirm(`${selected.size} Inserat(e) ${action === "ACTIVE" ? "veröffentlichen" : action === "PAUSED" ? "pausieren" : "zurückziehen"}?`)) return;
+    if (!await confirm({ message: `${selected.size} Inserat(e) ${action === "ACTIVE" ? "veröffentlichen" : action === "PAUSED" ? "pausieren" : "zurückziehen"}?` })) return;
     for (const id of selected) {
       await fetch(`/api/listings/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: action }) });
     }
@@ -110,13 +113,13 @@ export default function ListingsPage() {
   async function quickAction(id: string, action: string) {
     setMenuOpen(null);
     if (action === "delete") {
-      if (!confirm("Inserat wirklich löschen?")) return;
+      if (!await confirm({ message: "Inserat wirklich löschen?", variant: "danger", confirmLabel: "Löschen" })) return;
       await fetch(`/api/listings/${id}`, { method: "DELETE" });
       await reload();
     } else if (action === "duplicate") {
       const res = await fetch(`/api/listings/${id}/duplicate`, { method: "POST" });
       if (res.ok) await reload();
-      else alert("Duplizieren fehlgeschlagen");
+      else toast({ message: "Duplizieren fehlgeschlagen", type: "error" });
     } else if (action === "pause" || action === "activate" || action === "withdraw" || action === "reactivate") {
       const status = action === "pause" ? "PAUSED" : action === "withdraw" ? "WITHDRAWN" : "ACTIVE";
       await fetch(`/api/listings/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }) });
@@ -126,7 +129,7 @@ export default function ListingsPage() {
       if (listing) {
         const url = `${window.location.origin}/immobilien/${listing.slug}`;
         if (navigator.share) navigator.share({ title: listing.titleShort || "", url });
-        else { navigator.clipboard.writeText(url); alert("Link kopiert!"); }
+        else { navigator.clipboard.writeText(url); toast({ message: "Link kopiert!", type: "success" }); }
       }
     }
   }

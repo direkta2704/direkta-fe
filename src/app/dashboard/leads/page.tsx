@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useToast } from "../components/dialog-provider";
 
 interface Lead {
   id: string;
@@ -59,6 +60,7 @@ function scoreColor(score: number | null): string {
 }
 
 export default function LeadsPage() {
+  const toast = useToast();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
@@ -295,7 +297,7 @@ export default function LeadsPage() {
                         onClick={() => {
                           const url = `${window.location.origin}/immobilien/${selectedLead.listing.slug}#anfrage`;
                           navigator.clipboard.writeText(url);
-                          alert("Besichtigungslink kopiert!");
+                          toast({ message: "Besichtigungslink kopiert!", type: "success" });
                         }}
                         className="flex-1 bg-white border border-slate-200 hover:border-primary text-blueprint py-2.5 rounded-xl text-xs font-black uppercase tracking-[0.15em] transition-colors flex items-center justify-center gap-2"
                       >

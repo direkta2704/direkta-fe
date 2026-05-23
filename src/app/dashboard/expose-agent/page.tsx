@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import type { WorkingMemory } from "@/lib/expose-agent";
+import { useConfirm, useToast } from "../components/dialog-provider";
 
 function renderMarkdown(text: string) {
   return text.split("\n").map((line, i) => {
@@ -61,6 +62,8 @@ export default function ExposeAgentPage() {
   const photoInputRef = useRef<HTMLInputElement>(null);
   const energyInputRef = useRef<HTMLInputElement>(null);
   const floorplanInputRef = useRef<HTMLInputElement>(null);
+  const confirm = useConfirm();
+  const toast = useToast();
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -99,8 +102,8 @@ export default function ExposeAgentPage() {
     return () => { cancelled = true; };
   }, []);
 
-  function startNewConversation() {
-    if (!confirm("Aktuelles Gespräch verlassen und ein neues starten?")) return;
+  async function startNewConversation() {
+    if (!await confirm({ message: "Aktuelles Gespräch verlassen und ein neues starten?" })) return;
     setConversationId(null);
     setTurns([]);
     setMemory(null);
@@ -123,7 +126,7 @@ export default function ExposeAgentPage() {
       setCostCents(data.costCents || 0);
       setMaxCostCents(data.maxCostCents || 500);
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Fehler beim Starten");
+      toast({ message: err instanceof Error ? err.message : "Fehler beim Starten", type: "error" });
     }
     setStarting(false);
   }
@@ -180,7 +183,7 @@ export default function ExposeAgentPage() {
 
   function toggleVoiceInput() {
     if (!("webkitSpeechRecognition" in window) && !("SpeechRecognition" in window)) {
-      alert("Ihr Browser unterstützt keine Spracheingabe. Bitte verwenden Sie Chrome.");
+      toast({ message: "Ihr Browser unterstützt keine Spracheingabe. Bitte verwenden Sie Chrome.", type: "error" });
       return;
     }
     if (isRecording) {
@@ -247,7 +250,7 @@ export default function ExposeAgentPage() {
           setTimeout(() => sendText(`${data.photoCount} Fotos hochgeladen. Bitte Preis berechnen und Entwurf erstellen.`), 500);
         }
       } catch (err) {
-        alert(err instanceof Error ? err.message : "Upload fehlgeschlagen");
+        toast({ message: err instanceof Error ? err.message : "Upload fehlgeschlagen", type: "error" });
       }
       setUploading(false);
     },
@@ -277,7 +280,7 @@ export default function ExposeAgentPage() {
           setTimeout(() => sendText(`${keys.length} Fotos${targetInfo} hochgeladen.`), 800);
         }
       } catch (err) {
-        alert(err instanceof Error ? err.message : "Upload fehlgeschlagen");
+        toast({ message: err instanceof Error ? err.message : "Upload fehlgeschlagen", type: "error" });
       }
       setUploading(false);
     },
@@ -299,7 +302,7 @@ export default function ExposeAgentPage() {
       if (!res.ok) throw new Error(data.error);
       router.push(`/dashboard/listings/${data.listingId}`);
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Übergabe fehlgeschlagen");
+      toast({ message: err instanceof Error ? err.message : "Übergabe fehlgeschlagen", type: "error" });
     }
     setHanding(false);
   }
@@ -317,7 +320,7 @@ export default function ExposeAgentPage() {
       if (!res.ok) throw new Error(data.error);
       setMemory(data.memory);
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Speichern fehlgeschlagen");
+      toast({ message: err instanceof Error ? err.message : "Speichern fehlgeschlagen", type: "error" });
     }
     setLoading(false);
   }
@@ -342,7 +345,7 @@ export default function ExposeAgentPage() {
         { role: "SYSTEM", content: "✏️ Antwort korrigiert — der Assistent berücksichtigt die Änderung in der nächsten Nachricht." },
       ]);
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Speichern fehlgeschlagen");
+      toast({ message: err instanceof Error ? err.message : "Speichern fehlgeschlagen", type: "error" });
     }
     setLoading(false);
   }
@@ -358,7 +361,7 @@ export default function ExposeAgentPage() {
       if (!res.ok) throw new Error(data.error);
       if (data.memory) setMemory(data.memory);
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Löschen fehlgeschlagen");
+      toast({ message: err instanceof Error ? err.message : "Löschen fehlgeschlagen", type: "error" });
     }
   }
 

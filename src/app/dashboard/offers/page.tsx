@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useConfirm } from "../components/dialog-provider";
 
 interface Offer {
   id: string;
@@ -39,6 +40,7 @@ const STATUS_DE: Record<string, { label: string; color: string }> = {
 };
 
 export default function OffersPage() {
+  const confirm = useConfirm();
   const [offers, setOffers] = useState<Offer[]>([]);
   const [loading, setLoading] = useState(true);
   const [comparing, setComparing] = useState<string[]>([]);
@@ -58,7 +60,7 @@ export default function OffersPage() {
   }
 
   async function handleAccept(id: string) {
-    if (!confirm("Angebot wirklich annehmen? Alle anderen Angebote werden abgelehnt und das Inserat wird reserviert.")) return;
+    if (!await confirm({ message: "Angebot wirklich annehmen? Alle anderen Angebote werden abgelehnt und das Inserat wird reserviert.", variant: "warning", confirmLabel: "Annehmen" })) return;
     setAccepting(id);
     const res = await fetch(`/api/offers/${id}/accept`, { method: "POST" });
     if (res.ok) {
@@ -192,7 +194,7 @@ export default function OffersPage() {
                           <button
                             onClick={async (e) => {
                               e.stopPropagation();
-                              if (!confirm("Haben Sie den Ausweis des Käufers geprüft und bestätigen Sie dessen Identität?")) return;
+                              if (!await confirm({ message: "Haben Sie den Ausweis des Käufers geprüft und bestätigen Sie dessen Identität?" })) return;
                               await fetch(`/api/buyers/${offer.buyer.id}/verify`, { method: "POST" });
                               setOffers(prev => prev.map(o => o.id === offer.id ? { ...o, buyer: { ...o.buyer, idVerifiedAt: new Date().toISOString() } } : o));
                             }}
