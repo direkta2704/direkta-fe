@@ -10,25 +10,12 @@ export default function Home() {
   const router = useRouter();
   const [modalView, setModalView] = useState<"signin" | "signup" | null>(null);
   const [mobileNav, setMobileNav] = useState(false);
-  const [listingsLoaded, setListingsLoaded] = useState(false);
-  const [publicListings, setPublicListings] = useState<Array<{
-    id: string; slug: string; titleShort: string | null; askingPrice: string | null;
-    property: { type: string; street: string; houseNumber: string; postcode: string; city: string; livingArea: number; rooms: number | null; media: { storageKey: string }[]; energyCert: { energyClass: string } | null };
-  }>>([]);
-
   useEffect(() => {
     if (status === "authenticated") {
       const timer = setTimeout(() => router.replace("/dashboard"), 100);
       return () => clearTimeout(timer);
     }
   }, [status, router]);
-
-  useEffect(() => {
-    fetch("/api/public/listings")
-      .then((r) => r.json())
-      .then((data) => { setPublicListings(Array.isArray(data) ? data.slice(0, 6) : []); setListingsLoaded(true); })
-      .catch(() => setListingsLoaded(true));
-  }, []);
 
   useEffect(() => {
     const observe = () => {
@@ -1054,87 +1041,6 @@ export default function Home() {
           </div>
         </section>
 
-        {/* ========== AKTUELLE INSERATE ========== */}
-        {listingsLoaded && publicListings.length > 0 && (
-          <section className="py-28 px-6 bg-white">
-            <div className="max-w-7xl mx-auto">
-              <div className="text-center max-w-3xl mx-auto mb-16 reveal">
-                <div className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-4 py-1.5 text-primary mb-6">
-                  <span className="material-symbols-outlined text-sm">search</span>
-                  <span className="text-[10px] font-black uppercase tracking-[0.2em]">Aktuelle Inserate</span>
-                </div>
-                <h2 className="text-5xl lg:text-7xl font-black tracking-[-0.04em] leading-[0.9] text-blueprint">
-                  Immobilien entdecken.
-                  <br />
-                  <span className="text-primary">Direkt vom Eigentümer.</span>
-                </h2>
-                <p className="mt-8 text-lg text-slate-600 leading-relaxed">
-                  Alle Inserate ohne Maklerprovision. Kontaktieren Sie den Eigentümer direkt.
-                </p>
-              </div>
-
-              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 reveal-stagger reveal">
-                {publicListings.map((l) => {
-                  const p = l.property;
-                  const photo = p.media[0];
-                  const price = l.askingPrice ? Number(l.askingPrice) : null;
-                  const TYPE_DE: Record<string, string> = {
-                    ETW: "Wohnung", EFH: "Einfamilienhaus", MFH: "Mehrfamilienhaus",
-                    DHH: "Doppelhaushälfte", RH: "Reihenhaus", GRUNDSTUECK: "Grundstück",
-                  };
-                  return (
-                    <a
-                      key={l.id}
-                      href={`/immobilien/${l.slug}`}
-                      className="bg-white rounded-2xl border border-slate-200 overflow-hidden hover:shadow-xl hover:shadow-primary/10 hover:border-primary/30 transition-all group"
-                    >
-                      <div className="relative aspect-[16/10] bg-slate-100">
-                        {photo ? (
-                          <img src={photo.storageKey} alt={`${p.street} ${p.houseNumber}`} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center">
-                            <span className="material-symbols-outlined text-4xl text-slate-300">home_work</span>
-                          </div>
-                        )}
-                        {price && (
-                          <div className="absolute bottom-3 left-3 bg-blueprint/90 backdrop-blur-sm text-white px-3 py-1.5 rounded-lg font-black text-lg">
-                            €{price.toLocaleString("de-DE")}
-                          </div>
-                        )}
-                        <div className="absolute top-3 left-3 bg-primary text-white text-[9px] font-black px-2 py-1 rounded-full uppercase tracking-widest">
-                          {TYPE_DE[p.type] || p.type}
-                        </div>
-                      </div>
-                      <div className="p-5">
-                        <h3 className="font-black text-blueprint text-lg group-hover:text-primary transition-colors truncate">
-                          {l.titleShort || `${p.street} ${p.houseNumber}`}
-                        </h3>
-                        <p className="text-sm text-slate-500 mt-1">{p.postcode} {p.city}</p>
-                        <div className="flex items-center gap-4 mt-4 pt-4 border-t border-slate-100 text-xs text-slate-500">
-                          <span>{p.livingArea} m²</span>
-                          {p.rooms && <span>{p.rooms} Zi.</span>}
-                          {p.energyCert && <span className="text-primary font-bold">{p.energyCert.energyClass}</span>}
-                        </div>
-                      </div>
-                    </a>
-                  );
-                })}
-              </div>
-
-              {publicListings.length >= 3 && (
-                <div className="text-center mt-10">
-                  <a
-                    href="/immobilien"
-                    className="inline-flex items-center gap-2 bg-blueprint hover:bg-primary text-white px-8 py-4 rounded-full text-sm font-black uppercase tracking-[0.18em] transition-all duration-300 hover:scale-[1.03]"
-                  >
-                    Alle Inserate anzeigen
-                    <span className="material-symbols-outlined text-lg">arrow_forward</span>
-                  </a>
-                </div>
-              )}
-            </div>
-          </section>
-        )}
 
         {/* ========== ARCHETYPES ========== */}
         <section className="py-28 px-6 bg-white">
